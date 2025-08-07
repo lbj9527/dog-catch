@@ -1,0 +1,205 @@
+/* Dog-Catch 悬浮球样式 */
+
+/* 悬浮球容器 */
+.dog-catch-floating-ball {
+  position: fixed;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  z-index: 999999;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  top: 50%;
+  right: 20px;
+  transform: translateY(-50%);
+}
+
+/* 悬浮球图标 */
+.dog-catch-floating-ball::before {
+  content: '🐾';
+  font-size: 24px;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+/* 悬浮球状态动画 */
+.dog-catch-floating-ball.idle:not(:hover) {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+/* 呼吸动画 */
+@keyframes breathe {
+  0%, 100% {
+    transform: translateY(-50%) scale(1.0);
+  }
+  50% {
+    transform: translateY(-50%) scale(1.02);
+  }
+}
+
+/* 悬停状态 */
+.dog-catch-floating-ball:hover {
+  transform: translateY(-50%) scale(1.05);
+  box-shadow: 0 12px 40px rgba(102, 126, 234, 0.4);
+  background: linear-gradient(135deg, #7c8df0 0%, #8b5fbf 100%);
+  animation: none; /* 悬停时停止呼吸动画 */
+}
+
+.dog-catch-floating-ball:hover::before {
+  transform: scale(1.1);
+}
+
+/* 点击状态 */
+.dog-catch-floating-ball:active {
+  transform: translateY(-50%) scale(0.95);
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.6);
+}
+
+/* 脉冲动画 */
+.dog-catch-floating-ball.pulse {
+  animation: pulse 0.6s ease-out;
+}
+
+@keyframes pulse {
+  0% {
+    transform: translateY(-50%) scale(1);
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+  }
+  50% {
+    transform: translateY(-50%) scale(1.1);
+    box-shadow: 0 0 0 20px rgba(102, 126, 234, 0);
+  }
+  100% {
+    transform: translateY(-50%) scale(1);
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+  }
+}
+
+/* 涟漪效果 */
+.dog-catch-floating-ball::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  transition: all 0.6s ease-out;
+  pointer-events: none;
+}
+
+.dog-catch-floating-ball.ripple::after {
+  width: 120px;
+  height: 120px;
+  opacity: 0;
+}
+
+/* 拖拽状态 */
+.dog-catch-floating-ball.dragging {
+  transform: translateY(-50%) scale(1.1);
+  box-shadow: 0 16px 48px rgba(102, 126, 234, 0.5);
+  cursor: grabbing;
+  z-index: 1000000;
+}
+
+/* 检测状态动画 */
+.dog-catch-floating-ball.detecting {
+  animation: detecting 2s linear infinite;
+}
+
+@keyframes detecting {
+  0% {
+    transform: translateY(-50%) rotate(0deg);
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+  }
+  50% {
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.6);
+  }
+  100% {
+    transform: translateY(-50%) rotate(360deg);
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+  }
+}
+
+/* 发现资源时的波纹效果 */
+.dog-catch-floating-ball.found-resource {
+  animation: foundResource 1s ease-out;
+}
+
+@keyframes foundResource {
+  0% {
+    transform: translateY(-50%) scale(1);
+  }
+  25% {
+    transform: translateY(-50%) scale(1.15);
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7);
+  }
+  50% {
+    transform: translateY(-50%) scale(1.05);
+    box-shadow: 0 0 0 20px rgba(102, 126, 234, 0);
+  }
+  75% {
+    transform: translateY(-50%) scale(1.1);
+    box-shadow: 0 0 0 40px rgba(102, 126, 234, 0);
+  }
+  100% {
+    transform: translateY(-50%) scale(1);
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+  }
+}
+
+/* 新资源光晕闪烁 */
+.dog-catch-floating-ball.new-resource {
+  animation: newResourceGlow 0.8s ease-in-out 3;
+}
+
+@keyframes newResourceGlow {
+  0%, 100% {
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+  }
+  50% {
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.8), 0 0 20px rgba(255, 255, 255, 0.5);
+  }
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .dog-catch-floating-ball {
+    width: 48px;
+    height: 48px;
+    right: 15px;
+  }
+  
+  .dog-catch-floating-ball::before {
+    font-size: 20px;
+  }
+}
+
+/* 高对比度模式支持 */
+@media (prefers-contrast: high) {
+  .dog-catch-floating-ball {
+    border: 2px solid #ffffff;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* 减少动画模式支持 */
+@media (prefers-reduced-motion: reduce) {
+  .dog-catch-floating-ball,
+  .dog-catch-floating-ball::before,
+  .dog-catch-floating-ball::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,0 +1,21 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 狗爪图标 -->
+  <g fill="white">
+    <!-- 主爪垫 -->
+    <ellipse cx="12" cy="16" rx="4" ry="3" opacity="0.9"/>
+    
+    <!-- 脚趾垫 -->
+    <ellipse cx="8" cy="10" rx="1.5" ry="2" opacity="0.8"/>
+    <ellipse cx="11" cy="8" rx="1.5" ry="2" opacity="0.8"/>
+    <ellipse cx="13" cy="8" rx="1.5" ry="2" opacity="0.8"/>
+    <ellipse cx="16" cy="10" rx="1.5" ry="2" opacity="0.8"/>
+  </g>
+  
+  <!-- 添加一些光泽效果 -->
+  <g fill="rgba(255,255,255,0.3)">
+    <ellipse cx="11" cy="15" rx="2" ry="1.5"/>
+    <ellipse cx="9" cy="9.5" rx="0.8" ry="1"/>
+    <ellipse cx="12" cy="7.5" rx="0.8" ry="1"/>
+    <ellipse cx="15" cy="9.5" rx="0.8" ry="1"/>
+  </g>
+</svg>
