@@ -106,9 +106,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'TOGGLE_EXTENSION':
       handleToggleExtension(sender.tab, sendResponse);
       return true;
-      
+
+    case 'closeExtension':
+      handleCloseExtension(sender.tab, sendResponse);
+      return true;
+
     default:
-      console.warn('未知消息类型:', message.type);
+      console.warn('未知消息类型:', message.type || message.action);
   }
 });
 
@@ -215,11 +219,11 @@ async function handleToggleExtension(tab, sendResponse) {
   try {
     const result = await chrome.storage.local.get('dog-catch-settings');
     const settings = result['dog-catch-settings'] || {};
-    
+
     settings.enabled = !settings.enabled;
-    
+
     await chrome.storage.local.set({ 'dog-catch-settings': settings });
-    
+
     // 通知内容脚本
     chrome.tabs.sendMessage(tab.id, {
       type: 'EXTENSION_TOGGLED',
@@ -227,11 +231,44 @@ async function handleToggleExtension(tab, sendResponse) {
     }).catch(error => {
       console.log('发送消息到内容脚本失败:', error);
     });
-    
+
     sendResponse({ success: true, enabled: settings.enabled });
   } catch (error) {
     console.error('切换扩展状态失败:', error);
     sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * 关闭扩展
+ */
+async function handleCloseExtension(tab, sendResponse) {
+  try {
+    const result = await chrome.storage.local.get('dog-catch-settings');
+    const settings = result['dog-catch-settings'] || {};
+
+    // 设置扩展为禁用状态
+    settings.enabled = false;
+
+    await chrome.storage.local.set({ 'dog-catch-settings': settings });
+
+    // 通知内容脚本关闭扩展
+    chrome.tabs.sendMessage(tab.id, {
+      type: 'EXTENSION_CLOSED'
+    }).catch(error => {
+      console.log('发送消息到内容脚本失败:', error);
+    });
+
+    console.log('Dog-Catch 扩展已关闭');
+
+    if (sendResponse) {
+      sendResponse({ success: true });
+    }
+  } catch (error) {
+    console.error('关闭扩展失败:', error);
+    if (sendResponse) {
+      sendResponse({ success: false, error: error.message });
+    }
   }
 }
 

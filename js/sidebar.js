@@ -156,10 +156,15 @@ class DogCatchSidebar {
    */
   hide() {
     if (!this.sidebar || !this.isVisible) return;
-    
+
     this.isVisible = false;
     DOMUtils.removeClass(this.sidebar, DOG_CATCH_CONSTANTS.CLASSES.SIDEBAR_SHOW);
-    
+
+    // 显示悬浮球
+    if (window.dogCatchFloatingBall) {
+      window.dogCatchFloatingBall.show();
+    }
+
     // 触发隐藏事件
     this.dispatchEvent('hide');
   }

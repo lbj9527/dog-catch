@@ -256,7 +256,34 @@
     window.removeEventListener('beforeunload', cleanup);
   }
   
+  /**
+   * 监听来自background script的消息
+   */
+  if (typeof chrome !== 'undefined' && chrome.runtime) {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      switch (message.type) {
+        case 'EXTENSION_CLOSED':
+          console.log('收到扩展关闭消息');
+          cleanup();
+          break;
+        case 'EXTENSION_TOGGLED':
+          console.log('扩展状态切换:', message.enabled);
+          if (!message.enabled) {
+            cleanup();
+          } else {
+            // 重新初始化
+            setTimeout(initDogCatch, 100);
+          }
+          break;
+        case 'SETTINGS_UPDATED':
+          console.log('设置已更新:', message.settings);
+          // 这里可以处理设置更新
+          break;
+      }
+    });
+  }
+
   // 导出清理函数供外部调用
   window.dogCatchCleanup = cleanup;
-  
+
 })();

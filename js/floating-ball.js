@@ -6,11 +6,12 @@
 class DogCatchFloatingBall {
   constructor() {
     this.ball = null;
+    this.contextMenu = null;
     this.isDragging = false;
     this.dragOffset = { x: 0, y: 0 };
     this.position = DOG_CATCH_CONSTANTS.DEFAULTS.BALL_POSITION;
     this.isVisible = true;
-    
+
     this.init();
   }
   
@@ -64,24 +65,30 @@ class DogCatchFloatingBall {
    */
   bindEvents() {
     if (!this.ball) return;
-    
+
     // 点击事件
     this.ball.addEventListener('click', this.handleClick.bind(this));
-    
+
+    // 右键菜单事件
+    this.ball.addEventListener('contextmenu', this.handleContextMenu.bind(this));
+
     // 鼠标事件
     this.ball.addEventListener('mousedown', this.handleMouseDown.bind(this));
     this.ball.addEventListener('mouseenter', this.handleMouseEnter.bind(this));
     this.ball.addEventListener('mouseleave', this.handleMouseLeave.bind(this));
-    
+
     // 全局鼠标事件（用于拖拽）
     document.addEventListener('mousemove', this.handleMouseMove.bind(this));
     document.addEventListener('mouseup', this.handleMouseUp.bind(this));
-    
+
+    // 全局点击事件（用于关闭右键菜单）
+    document.addEventListener('click', this.handleDocumentClick.bind(this));
+
     // 触摸事件（移动端支持）
     this.ball.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
     document.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
     document.addEventListener('touchend', this.handleTouchEnd.bind(this));
-    
+
     // 窗口大小变化事件
     window.addEventListener('resize', debounce(this.handleResize.bind(this), 250));
   }
@@ -92,16 +99,42 @@ class DogCatchFloatingBall {
   handleClick(event) {
     event.preventDefault();
     event.stopPropagation();
-    
+
     // 如果正在拖拽，不触发点击
     if (this.isDragging) return;
-    
+
     // 添加点击动画
     this.addPulseAnimation();
     this.addRippleAnimation();
-    
-    // 触发侧边栏显示
+
+    // 触发侧边栏显示并隐藏悬浮球
     this.toggleSidebar();
+    this.hide();
+  }
+
+  /**
+   * 处理右键菜单事件
+   */
+  handleContextMenu(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    // 如果正在拖拽，不显示菜单
+    if (this.isDragging) return;
+
+    this.showContextMenu(event);
+  }
+
+  /**
+   * 处理文档点击事件
+   */
+  handleDocumentClick(event) {
+    // 如果点击的不是悬浮球或右键菜单，则隐藏右键菜单
+    if (this.contextMenu &&
+        !this.ball.contains(event.target) &&
+        !this.contextMenu.contains(event.target)) {
+      this.hideContextMenu();
+    }
   }
   
   /**
@@ -401,6 +434,227 @@ class DogCatchFloatingBall {
       window.dogCatchSidebar.toggle();
     }
   }
+
+  /**
+   * 显示右键菜单
+   */
+  showContextMenu(event) {
+    // 隐藏已存在的菜单
+    this.hideContextMenu();
+
+    // 创建右键菜单
+    this.contextMenu = DOMUtils.createElement('div', {
+      className: 'dog-catch-context-menu',
+      innerHTML: `
+        <div class="dog-catch-context-menu-item" data-action="close-extension">
+          <span class="icon">🚫</span>
+          <span class="text">关闭插件</span>
+        </div>
+        <div class="dog-catch-context-menu-item" data-action="settings">
+          <span class="icon">⚙️</span>
+          <span class="text">设置</span>
+        </div>
+      `
+    });
+
+    // 添加菜单样式
+    this.contextMenu.style.cssText = `
+      position: fixed;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      padding: 8px 0;
+      min-width: 140px;
+      z-index: 999999;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      color: #333;
+    `;
+
+    // 计算菜单位置
+    const ballRect = this.ball.getBoundingClientRect();
+    let menuX = ballRect.right + 10;
+    let menuY = ballRect.top;
+
+    // 确保菜单不超出屏幕边界
+    if (menuX + 140 > window.innerWidth) {
+      menuX = ballRect.left - 150;
+    }
+    if (menuY + 80 > window.innerHeight) {
+      menuY = window.innerHeight - 80;
+    }
+
+    this.contextMenu.style.left = `${menuX}px`;
+    this.contextMenu.style.top = `${menuY}px`;
+
+    // 添加菜单项样式
+    const menuItems = this.contextMenu.querySelectorAll('.dog-catch-context-menu-item');
+    menuItems.forEach(item => {
+      item.style.cssText = `
+        display: flex;
+        align-items: center;
+        padding: 8px 16px;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+      `;
+
+      const icon = item.querySelector('.icon');
+      const text = item.querySelector('.text');
+
+      if (icon) {
+        icon.style.cssText = `
+          margin-right: 8px;
+          font-size: 16px;
+        `;
+      }
+
+      if (text) {
+        text.style.cssText = `
+          flex: 1;
+        `;
+      }
+
+      // 悬停效果
+      item.addEventListener('mouseenter', () => {
+        item.style.backgroundColor = 'rgba(0, 0, 0, 0.05)';
+      });
+
+      item.addEventListener('mouseleave', () => {
+        item.style.backgroundColor = 'transparent';
+      });
+
+      // 点击事件
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.handleContextMenuClick(item.dataset.action);
+      });
+    });
+
+    // 添加到页面
+    document.body.appendChild(this.contextMenu);
+
+    // 添加显示动画
+    this.contextMenu.style.opacity = '0';
+    this.contextMenu.style.transform = 'scale(0.9)';
+
+    requestAnimationFrame(() => {
+      this.contextMenu.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+      this.contextMenu.style.opacity = '1';
+      this.contextMenu.style.transform = 'scale(1)';
+    });
+  }
+
+  /**
+   * 隐藏右键菜单
+   */
+  hideContextMenu() {
+    if (this.contextMenu) {
+      this.contextMenu.style.opacity = '0';
+      this.contextMenu.style.transform = 'scale(0.9)';
+
+      setTimeout(() => {
+        if (this.contextMenu) {
+          this.contextMenu.remove();
+          this.contextMenu = null;
+        }
+      }, 200);
+    }
+  }
+
+  /**
+   * 处理右键菜单点击
+   */
+  handleContextMenuClick(action) {
+    this.hideContextMenu();
+
+    switch (action) {
+      case 'close-extension':
+        this.closeExtension();
+        break;
+      case 'settings':
+        this.openSettings();
+        break;
+    }
+  }
+
+  /**
+   * 关闭插件
+   */
+  closeExtension() {
+    // 隐藏所有组件
+    this.hide();
+    if (window.dogCatchSidebar) {
+      window.dogCatchSidebar.hide();
+    }
+
+    // 发送消息给background script关闭插件
+    if (typeof chrome !== 'undefined' && chrome.runtime) {
+      chrome.runtime.sendMessage({
+        action: 'closeExtension'
+      }).catch(() => {
+        // 忽略错误，可能是在开发环境
+      });
+    }
+
+    // 销毁组件
+    setTimeout(() => {
+      this.destroy();
+      if (window.dogCatchSidebar) {
+        window.dogCatchSidebar.destroy();
+      }
+    }, 300);
+  }
+
+  /**
+   * 打开设置
+   */
+  openSettings() {
+    // 这里可以实现设置功能
+    console.log('打开设置面板');
+    // 暂时显示一个提示
+    this.showNotification('设置功能即将推出');
+  }
+
+  /**
+   * 显示通知
+   */
+  showNotification(message) {
+    const notification = DOMUtils.createElement('div', {
+      className: 'dog-catch-notification',
+      textContent: message
+    });
+
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 12px 20px;
+      border-radius: 6px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      z-index: 999999;
+      opacity: 0;
+      transform: translateY(-10px);
+      transition: all 0.3s ease;
+    `;
+
+    document.body.appendChild(notification);
+
+    requestAnimationFrame(() => {
+      notification.style.opacity = '1';
+      notification.style.transform = 'translateY(0)';
+    });
+
+    setTimeout(() => {
+      notification.style.opacity = '0';
+      notification.style.transform = 'translateY(-10px)';
+      setTimeout(() => notification.remove(), 300);
+    }, 3000);
+  }
   
   /**
    * 显示悬浮球
@@ -426,6 +680,10 @@ class DogCatchFloatingBall {
    * 销毁悬浮球
    */
   destroy() {
+    // 隐藏右键菜单
+    this.hideContextMenu();
+
+    // 移除悬浮球
     if (this.ball) {
       this.ball.remove();
       this.ball = null;
