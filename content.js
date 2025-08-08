@@ -266,7 +266,18 @@
       switch (message.type) {
         case 'TOGGLE_SIDEBAR':
         case 'OPEN_SIDEBAR':
-          if (window.dogCatchSidebar) {
+          // 检查悬浮球是否已经显示（使用 DOM 检测更可靠）
+          const floatingBallElement = document.querySelector('.dog-catch-floating-ball');
+          const isFloatingBallVisible = floatingBallElement &&
+            window.getComputedStyle(floatingBallElement).display !== 'none' &&
+            window.getComputedStyle(floatingBallElement).visibility !== 'hidden';
+
+          if (isFloatingBallVisible) {
+            console.log('悬浮球已显示，插件已激活，忽略扩展图标点击');
+            sendResponse({ success: true, message: 'Plugin already active, floating ball visible' });
+          } else if (window.dogCatchSidebar) {
+            // 悬浮球未显示，说明插件未激活，打开侧边栏
+            console.log('悬浮球未显示，打开侧边栏激活插件');
             window.dogCatchSidebar.show();
             sendResponse({ success: true });
           } else {

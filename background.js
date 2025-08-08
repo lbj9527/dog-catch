@@ -321,12 +321,16 @@ chrome.action.onClicked.addListener(async (tab) => {
   console.log('扩展图标被点击，标签页:', tab.url);
 
   try {
-    // 发送消息到内容脚本，打开侧边栏
-    await chrome.tabs.sendMessage(tab.id, {
+    // 发送消息到内容脚本，检查插件状态并决定是否打开侧边栏
+    const response = await chrome.tabs.sendMessage(tab.id, {
       type: 'TOGGLE_SIDEBAR'
     });
+
+    if (response && response.message) {
+      console.log('扩展图标点击处理结果:', response.message);
+    }
   } catch (error) {
-    console.error('打开侧边栏失败:', error);
+    console.error('处理扩展图标点击失败:', error);
 
     // 如果内容脚本未加载，尝试重新注入
     try {
