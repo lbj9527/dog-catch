@@ -32,7 +32,9 @@ const DOG_CATCH_CONSTANTS = {
   RESOURCE_TYPES: {
     VIDEO: 'video',
     AUDIO: 'audio',
-    IMAGE: 'image'
+    IMAGE: 'image',
+    STREAM: 'stream',
+    UNKNOWN: 'unknown'
   },
   
   // 存储键名
@@ -316,6 +318,34 @@ const FormatUtils = {
   truncateText(text, maxLength = 50) {
     if (!text || text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
+  },
+
+  /**
+   * 格式化相对时间
+   * @param {number} timestamp - 时间戳
+   * @returns {string}
+   */
+  formatRelativeTime(timestamp) {
+    if (!timestamp) return '未知';
+
+    const now = Date.now();
+    const diff = now - timestamp;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (seconds < 60) {
+      return '刚刚';
+    } else if (minutes < 60) {
+      return `${minutes}分钟前`;
+    } else if (hours < 24) {
+      return `${hours}小时前`;
+    } else if (days < 7) {
+      return `${days}天前`;
+    } else {
+      return new Date(timestamp).toLocaleDateString();
+    }
   }
 };
 
