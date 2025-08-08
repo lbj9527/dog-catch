@@ -261,11 +261,35 @@
    */
   if (typeof chrome !== 'undefined' && chrome.runtime) {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      console.log('内容脚本收到消息:', message);
+
       switch (message.type) {
+        case 'TOGGLE_SIDEBAR':
+        case 'OPEN_SIDEBAR':
+          if (window.dogCatchSidebar) {
+            window.dogCatchSidebar.show();
+            sendResponse({ success: true });
+          } else {
+            console.warn('侧边栏组件未初始化');
+            sendResponse({ success: false, error: 'Sidebar not initialized' });
+          }
+          break;
+
+        case 'CLOSE_SIDEBAR':
+          if (window.dogCatchSidebar) {
+            window.dogCatchSidebar.hide();
+            sendResponse({ success: true });
+          } else {
+            sendResponse({ success: false, error: 'Sidebar not initialized' });
+          }
+          break;
+
         case 'EXTENSION_CLOSED':
           console.log('收到扩展关闭消息');
           cleanup();
+          sendResponse({ success: true });
           break;
+
         case 'EXTENSION_TOGGLED':
           console.log('扩展状态切换:', message.enabled);
           if (!message.enabled) {
@@ -274,12 +298,21 @@
             // 重新初始化
             setTimeout(initDogCatch, 100);
           }
+          sendResponse({ success: true });
           break;
+
         case 'SETTINGS_UPDATED':
           console.log('设置已更新:', message.settings);
           // 这里可以处理设置更新
+          sendResponse({ success: true });
           break;
+
+        default:
+          console.log('未知消息类型:', message.type);
+          sendResponse({ success: false, error: 'Unknown message type' });
       }
+
+      return true; // 保持消息通道开放以支持异步响应
     });
   }
 

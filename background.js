@@ -310,8 +310,50 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
  */
 chrome.tabs.onActivated.addListener((activeInfo) => {
   console.log('切换到标签页:', activeInfo.tabId);
-  
+
   // 这里可以更新扩展状态
+});
+
+/**
+ * 处理扩展图标点击事件
+ */
+chrome.action.onClicked.addListener(async (tab) => {
+  console.log('扩展图标被点击，标签页:', tab.url);
+
+  try {
+    // 发送消息到内容脚本，打开侧边栏
+    await chrome.tabs.sendMessage(tab.id, {
+      type: 'TOGGLE_SIDEBAR'
+    });
+  } catch (error) {
+    console.error('打开侧边栏失败:', error);
+
+    // 如果内容脚本未加载，尝试重新注入
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['js/utils.js', 'js/floating-ball.js', 'js/sidebar.js', 'content.js']
+      });
+
+      await chrome.scripting.insertCSS({
+        target: { tabId: tab.id },
+        files: ['css/floating-ball.css', 'css/sidebar.css']
+      });
+
+      // 重新尝试发送消息
+      setTimeout(async () => {
+        try {
+          await chrome.tabs.sendMessage(tab.id, {
+            type: 'TOGGLE_SIDEBAR'
+          });
+        } catch (retryError) {
+          console.error('重试打开侧边栏失败:', retryError);
+        }
+      }, 500);
+    } catch (injectError) {
+      console.error('注入脚本失败:', injectError);
+    }
+  }
 });
 
 /**

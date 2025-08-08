@@ -8,6 +8,8 @@ class DogCatchFloatingBall {
     this.ball = null;
     this.contextMenu = null;
     this.isDragging = false;
+    this.hasDragged = false; // 新增：标记是否发生了实际拖拽
+    this.dragStartPosition = { x: 0, y: 0 }; // 新增：记录拖拽开始位置
     this.dragOffset = { x: 0, y: 0 };
     this.position = DOG_CATCH_CONSTANTS.DEFAULTS.BALL_POSITION;
     this.isVisible = true;
@@ -100,8 +102,12 @@ class DogCatchFloatingBall {
     event.preventDefault();
     event.stopPropagation();
 
-    // 如果正在拖拽，不触发点击
-    if (this.isDragging) return;
+    // 如果正在拖拽或刚刚完成拖拽，不触发点击
+    if (this.isDragging || this.hasDragged) {
+      // 重置拖拽标记
+      this.hasDragged = false;
+      return;
+    }
 
     // 添加点击动画
     this.addPulseAnimation();
@@ -142,13 +148,21 @@ class DogCatchFloatingBall {
    */
   handleMouseDown(event) {
     event.preventDefault();
-    
+
     this.isDragging = true;
+    this.hasDragged = false; // 重置拖拽标记
+
+    // 记录拖拽开始位置
+    this.dragStartPosition = {
+      x: event.clientX,
+      y: event.clientY
+    };
+
     this.dragOffset = {
       x: event.clientX - this.ball.offsetLeft,
       y: event.clientY - this.ball.offsetTop
     };
-    
+
     DOMUtils.addClass(this.ball, DOG_CATCH_CONSTANTS.ANIMATIONS.DRAGGING);
     document.body.style.userSelect = 'none';
   }
@@ -158,12 +172,23 @@ class DogCatchFloatingBall {
    */
   handleMouseMove(event) {
     if (!this.isDragging) return;
-    
+
     event.preventDefault();
-    
+
+    // 计算移动距离，判断是否为真正的拖拽
+    const moveDistance = Math.sqrt(
+      Math.pow(event.clientX - this.dragStartPosition.x, 2) +
+      Math.pow(event.clientY - this.dragStartPosition.y, 2)
+    );
+
+    // 如果移动距离超过阈值（5像素），则认为是拖拽
+    if (moveDistance > 5) {
+      this.hasDragged = true;
+    }
+
     const x = event.clientX - this.dragOffset.x;
     const y = event.clientY - this.dragOffset.y;
-    
+
     this.setPosition(x, y);
   }
   
@@ -172,16 +197,24 @@ class DogCatchFloatingBall {
    */
   handleMouseUp(event) {
     if (!this.isDragging) return;
-    
+
     this.isDragging = false;
     DOMUtils.removeClass(this.ball, DOG_CATCH_CONSTANTS.ANIMATIONS.DRAGGING);
     document.body.style.userSelect = '';
-    
-    // 磁性吸附到边缘
-    this.snapToEdge();
-    
-    // 保存位置
-    this.savePosition();
+
+    // 如果发生了拖拽，执行磁性吸附和保存位置
+    if (this.hasDragged) {
+      // 磁性吸附到边缘
+      this.snapToEdge();
+
+      // 保存位置
+      this.savePosition();
+
+      // 延迟重置拖拽标记，确保 click 事件能正确判断
+      setTimeout(() => {
+        this.hasDragged = false;
+      }, 10);
+    }
   }
   
   /**
@@ -205,14 +238,22 @@ class DogCatchFloatingBall {
    */
   handleTouchStart(event) {
     event.preventDefault();
-    
+
     const touch = event.touches[0];
     this.isDragging = true;
+    this.hasDragged = false; // 重置拖拽标记
+
+    // 记录触摸开始位置
+    this.dragStartPosition = {
+      x: touch.clientX,
+      y: touch.clientY
+    };
+
     this.dragOffset = {
       x: touch.clientX - this.ball.offsetLeft,
       y: touch.clientY - this.ball.offsetTop
     };
-    
+
     DOMUtils.addClass(this.ball, DOG_CATCH_CONSTANTS.ANIMATIONS.DRAGGING);
   }
   
@@ -221,13 +262,25 @@ class DogCatchFloatingBall {
    */
   handleTouchMove(event) {
     if (!this.isDragging) return;
-    
+
     event.preventDefault();
-    
+
     const touch = event.touches[0];
+
+    // 计算移动距离，判断是否为真正的拖拽
+    const moveDistance = Math.sqrt(
+      Math.pow(touch.clientX - this.dragStartPosition.x, 2) +
+      Math.pow(touch.clientY - this.dragStartPosition.y, 2)
+    );
+
+    // 如果移动距离超过阈值（5像素），则认为是拖拽
+    if (moveDistance > 5) {
+      this.hasDragged = true;
+    }
+
     const x = touch.clientX - this.dragOffset.x;
     const y = touch.clientY - this.dragOffset.y;
-    
+
     this.setPosition(x, y);
   }
   
@@ -236,15 +289,23 @@ class DogCatchFloatingBall {
    */
   handleTouchEnd(event) {
     if (!this.isDragging) return;
-    
+
     this.isDragging = false;
     DOMUtils.removeClass(this.ball, DOG_CATCH_CONSTANTS.ANIMATIONS.DRAGGING);
-    
-    // 磁性吸附到边缘
-    this.snapToEdge();
-    
-    // 保存位置
-    this.savePosition();
+
+    // 如果发生了拖拽，执行磁性吸附和保存位置
+    if (this.hasDragged) {
+      // 磁性吸附到边缘
+      this.snapToEdge();
+
+      // 保存位置
+      this.savePosition();
+
+      // 延迟重置拖拽标记，确保 click 事件能正确判断
+      setTimeout(() => {
+        this.hasDragged = false;
+      }, 10);
+    }
   }
   
   /**

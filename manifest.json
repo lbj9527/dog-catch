@@ -15,7 +15,8 @@
     "activeTab",
     "storage",
     "webRequest",
-    "webNavigation"
+    "webNavigation",
+    "scripting"
   ],
   
   "host_permissions": [
@@ -36,7 +37,6 @@
   ],
   
   "action": {
-    "default_popup": "popup.html",
     "default_title": "Dog-Catch - 媒体资源检测"
   },
   
