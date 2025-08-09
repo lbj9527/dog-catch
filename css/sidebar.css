@@ -159,6 +159,28 @@
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dog-catch-filter-btn .icon {
+  font-size: 12px;
+}
+
+.dog-catch-filter-btn .label {
+  font-size: 12px;
+}
+
+.dog-catch-filter-btn .count {
+  background: rgba(0, 0, 0, 0.1);
+  color: #333;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 16px;
+  text-align: center;
 }
 
 .dog-catch-filter-btn:hover {
@@ -170,6 +192,11 @@
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border-color: transparent;
+}
+
+.dog-catch-filter-btn.active .count {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
 }
 
 /* 控制行 */

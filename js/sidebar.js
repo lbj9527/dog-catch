@@ -175,11 +175,31 @@ class DogCatchSidebar {
         attributes: {
           'data-type': filter.type
         },
-        innerHTML: `${filter.icon} ${filter.label}`,
         events: {
           click: () => this.handleTypeFilter(filter.type)
         }
       });
+
+      // 创建按钮内容：图标 + 标签 + 数量
+      const iconSpan = DOMUtils.createElement('span', {
+        className: 'icon',
+        textContent: filter.icon
+      });
+
+      const labelSpan = DOMUtils.createElement('span', {
+        className: 'label',
+        textContent: filter.label
+      });
+
+      const countSpan = DOMUtils.createElement('span', {
+        className: 'count',
+        textContent: '0'
+      });
+
+      filterBtn.appendChild(iconSpan);
+      filterBtn.appendChild(labelSpan);
+      filterBtn.appendChild(countSpan);
+
       typeFilters.appendChild(filterBtn);
     });
 
@@ -191,6 +211,11 @@ class DogCatchSidebar {
 
     filterSection.appendChild(searchContainer);
     filterSection.appendChild(controlsRow);
+
+    // 初始化时设置所有数量为0
+    setTimeout(() => {
+      this.updateFilterButtonCounts([]);
+    }, 0);
 
     return filterSection;
   }
@@ -854,42 +879,63 @@ class DogCatchSidebar {
     const statsContent = this.sidebar.querySelector('.dog-catch-stats-content');
     if (!statsContent) return;
 
-    // 计算统计信息
-    const stats = this.calculateStats(resources);
+    // 只显示发现耗时
     const detectionTime = this.calculateDetectionTime();
 
     statsContent.innerHTML = `
-      <div class="dog-catch-stats-item">
-        <span class="icon">📊</span>
-        <span class="label">总数量</span>
-        <span class="value">${stats.total}</span>
-      </div>
-      <div class="dog-catch-stats-item">
-        <span class="icon">💾</span>
-        <span class="label">总大小</span>
-        <span class="value">${FormatUtils.formatFileSize(stats.totalSize)}</span>
-      </div>
-      <div class="dog-catch-stats-item">
-        <span class="icon">🎬</span>
-        <span class="label">视频</span>
-        <span class="value">${stats.video}</span>
-      </div>
-      <div class="dog-catch-stats-item">
-        <span class="icon">🎵</span>
-        <span class="label">音频</span>
-        <span class="value">${stats.audio}</span>
-      </div>
-      <div class="dog-catch-stats-item">
-        <span class="icon">🖼️</span>
-        <span class="label">图片</span>
-        <span class="value">${stats.image}</span>
-      </div>
       <div class="dog-catch-stats-item">
         <span class="icon">⏱️</span>
         <span class="label">发现耗时</span>
         <span class="value">${detectionTime}s</span>
       </div>
     `;
+
+    // 更新筛选按钮上的数量显示
+    this.updateFilterButtonCounts(resources);
+  }
+
+  /**
+   * 更新筛选按钮上的数量显示
+   */
+  updateFilterButtonCounts(resources) {
+    const stats = this.calculateStats(resources);
+
+    // 更新各个筛选按钮的数量显示
+    const filterButtons = this.sidebar.querySelectorAll('.dog-catch-filter-btn');
+    filterButtons.forEach(btn => {
+      const type = btn.getAttribute('data-type');
+      const countSpan = btn.querySelector('.count');
+
+      let count = 0;
+      switch (type) {
+        case 'all':
+          count = stats.total;
+          break;
+        case 'video':
+          count = stats.video;
+          break;
+        case 'audio':
+          count = stats.audio;
+          break;
+        case 'image':
+          count = stats.image;
+          break;
+        case 'stream':
+          count = stats.stream;
+          break;
+      }
+
+      // 更新或创建数量显示
+      if (countSpan) {
+        countSpan.textContent = count;
+      } else {
+        const newCountSpan = DOMUtils.createElement('span', {
+          className: 'count',
+          textContent: count
+        });
+        btn.appendChild(newCountSpan);
+      }
+    });
   }
 
   /**
