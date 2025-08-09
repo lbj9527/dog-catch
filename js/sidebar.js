@@ -12,12 +12,8 @@ class DogCatchSidebar {
     this.searchQuery = '';
     this.activeFilter = 'all';
     this.virtualScroll = null;
-    this.useVirtualScroll = true; // 是否使用虚拟滚动
-    this.performanceMetrics = {
-      renderTime: 0,
-      lastRenderStart: 0,
-      totalResources: 0
-    };
+    // 始终使用虚拟滚动，简化逻辑
+    // 简化后不再需要复杂的性能监控
 
     this.init();
   }
@@ -187,21 +183,11 @@ class DogCatchSidebar {
       typeFilters.appendChild(filterBtn);
     });
 
-    // 性能设置按钮
-    const performanceBtn = DOMUtils.createElement('button', {
-      className: 'dog-catch-performance-btn',
-      innerHTML: '⚙️ 性能',
-      events: {
-        click: () => this.togglePerformanceSettings()
-      }
-    });
-
     const controlsRow = DOMUtils.createElement('div', {
       className: 'dog-catch-controls-row'
     });
 
     controlsRow.appendChild(typeFilters);
-    controlsRow.appendChild(performanceBtn);
 
     filterSection.appendChild(searchContainer);
     filterSection.appendChild(controlsRow);
@@ -213,18 +199,26 @@ class DogCatchSidebar {
    * 初始化虚拟滚动
    */
   initVirtualScroll(container) {
-    if (!this.useVirtualScroll || !window.VirtualScroll) {
-      return;
+    if (!window.VirtualScroll) {
+      console.warn('VirtualScroll 组件未加载，使用降级渲染');
+      return false;
     }
 
-    this.virtualScroll = new VirtualScroll(container, {
-      itemHeight: 140, // 资源卡片高度
-      bufferSize: 3,   // 缓冲区大小
-      threshold: 20,   // 启用虚拟滚动的最小项目数
-      renderItem: (resource, index) => {
-        return this.createResourceCard(resource, index);
-      }
-    });
+    try {
+      this.virtualScroll = new VirtualScroll(container, {
+        itemHeight: 130, // 资源卡片高度
+        bufferSize: 3,   // 缓冲区大小
+        threshold: 0,    // 始终使用虚拟滚动，移除阈值限制
+        renderItem: (resource, index) => {
+          return this.createResourceCard(resource, index);
+        }
+      });
+      console.log('虚拟滚动初始化成功');
+      return true;
+    } catch (error) {
+      console.error('虚拟滚动初始化失败:', error);
+      return false;
+    }
   }
 
   /**
@@ -339,6 +333,7 @@ class DogCatchSidebar {
    * 刷新资源列表
    */
   async refreshResources() {
+    console.log('开始刷新资源列表...');
     this.setLoading(true);
 
     try {
@@ -367,6 +362,7 @@ class DogCatchSidebar {
       // 出错时显示模拟数据
       this.addMockResources();
     } finally {
+      console.log('设置 loading = false，准备渲染资源');
       this.setLoading(false);
     }
   }
@@ -419,7 +415,10 @@ class DogCatchSidebar {
    * 渲染资源列表
    */
   renderResources() {
+    console.log(`renderResources 被调用，isLoading: ${this.isLoading}, 资源数量: ${this.resources.length}`);
+
     if (this.isLoading) {
+      console.log('显示加载状态（骨架屏）');
       const resourceList = DOMUtils.find('.dog-catch-resource-list', this.sidebar);
       if (resourceList) {
         resourceList.innerHTML = '';
@@ -428,6 +427,7 @@ class DogCatchSidebar {
       return;
     }
 
+    console.log('调用 renderFilteredResources');
     // 使用过滤渲染
     this.renderFilteredResources();
   }
@@ -457,13 +457,9 @@ class DogCatchSidebar {
           </div>
         </div>
         <div class="dog-catch-resource-details">
-          <div class="dog-catch-resource-primary-info">
+          <div class="dog-catch-resource-info-row">
             <div class="dog-catch-skeleton" style="height: 12px; width: 60px; border-radius: 4px;"></div>
-            <div class="dog-catch-skeleton" style="height: 12px; width: 50px; border-radius: 4px;"></div>
-          </div>
-          <div class="dog-catch-resource-secondary-info">
-            <div class="dog-catch-skeleton" style="height: 11px; width: 40px; border-radius: 4px;"></div>
-            <div class="dog-catch-skeleton" style="height: 11px; width: 70px; border-radius: 4px;"></div>
+            <div class="dog-catch-skeleton" style="height: 12px; width: 70px; border-radius: 4px;"></div>
           </div>
         </div>
         <div class="dog-catch-resource-actions">
@@ -576,9 +572,9 @@ class DogCatchSidebar {
       className: 'dog-catch-resource-details'
     });
 
-    // 第一行：大小和时长
-    const primaryInfo = DOMUtils.createElement('div', {
-      className: 'dog-catch-resource-primary-info'
+    // 单行显示：文件大小和检测时间
+    const infoRow = DOMUtils.createElement('div', {
+      className: 'dog-catch-resource-info-row'
     });
 
     if (resource.size) {
@@ -586,38 +582,16 @@ class DogCatchSidebar {
         className: 'dog-catch-resource-size',
         innerHTML: `<span class="icon">📊</span>${FormatUtils.formatFileSize(resource.size)}`
       });
-      primaryInfo.appendChild(size);
-    }
-
-    if (resource.duration) {
-      const duration = DOMUtils.createElement('div', {
-        className: 'dog-catch-resource-duration',
-        innerHTML: `<span class="icon">⏱️</span>${FormatUtils.formatDuration(resource.duration)}`
-      });
-      primaryInfo.appendChild(duration);
-    }
-
-    // 第二行：扩展名和检测时间
-    const secondaryInfo = DOMUtils.createElement('div', {
-      className: 'dog-catch-resource-secondary-info'
-    });
-
-    if (resource.ext) {
-      const ext = DOMUtils.createElement('div', {
-        className: 'dog-catch-resource-ext',
-        innerHTML: `<span class="icon">📄</span>${resource.ext.toUpperCase()}`
-      });
-      secondaryInfo.appendChild(ext);
+      infoRow.appendChild(size);
     }
 
     const timestamp = DOMUtils.createElement('div', {
       className: 'dog-catch-resource-timestamp',
       innerHTML: `<span class="icon">🕒</span>${FormatUtils.formatRelativeTime(resource.timestamp)}`
     });
-    secondaryInfo.appendChild(timestamp);
+    infoRow.appendChild(timestamp);
 
-    details.appendChild(primaryInfo);
-    details.appendChild(secondaryInfo);
+    details.appendChild(infoRow);
 
     // 操作按钮
     const actions = DOMUtils.createElement('div', {
@@ -759,9 +733,6 @@ class DogCatchSidebar {
    * 渲染过滤后的资源
    */
   renderFilteredResources() {
-    // 开始性能监控
-    this.performanceMetrics.lastRenderStart = performance.now();
-
     let filteredResources = [...this.resources];
 
     // 应用类型过滤
@@ -780,6 +751,13 @@ class DogCatchSidebar {
       );
     }
 
+    // 按时间戳排序（最新的在前）
+    filteredResources.sort((a, b) => {
+      const timeA = a.timestamp || 0;
+      const timeB = b.timestamp || 0;
+      return timeB - timeA;
+    });
+
     // 渲染过滤后的资源
     const resourceList = DOMUtils.find('.dog-catch-resource-list', this.sidebar);
     if (!resourceList) return;
@@ -789,16 +767,6 @@ class DogCatchSidebar {
 
     // 更新统计信息
     this.updateStatsPanel(filteredResources);
-
-    // 结束性能监控
-    this.performanceMetrics.renderTime = performance.now() - this.performanceMetrics.lastRenderStart;
-    this.performanceMetrics.totalResources = filteredResources.length;
-
-    // 如果渲染时间过长，考虑启用虚拟滚动
-    if (this.performanceMetrics.renderTime > 100 && !this.useVirtualScroll) {
-      console.log('检测到渲染性能问题，建议启用虚拟滚动');
-      this.useVirtualScroll = true;
-    }
   }
 
   /**
@@ -830,16 +798,36 @@ class DogCatchSidebar {
   }
 
   /**
-   * 渲染资源卡片
+   * 渲染资源卡片 - 统一使用虚拟滚动
    */
   renderResourceCards(container, resources) {
-    // 如果使用虚拟滚动
-    if (this.virtualScroll && this.useVirtualScroll) {
+    console.log('开始渲染资源卡片，资源数量:', resources.length);
+
+    // 始终使用虚拟滚动
+    if (this.virtualScroll) {
+      console.log('使用现有虚拟滚动实例');
       this.virtualScroll.setData(resources);
       return;
     }
 
-    // 普通渲染
+    // 降级处理：如果虚拟滚动未初始化，重新初始化
+    console.warn('虚拟滚动未初始化，正在重新初始化...');
+    const initSuccess = this.initVirtualScroll(container);
+
+    if (initSuccess && this.virtualScroll) {
+      console.log('重新初始化成功，设置数据');
+      this.virtualScroll.setData(resources);
+    } else {
+      // 最后的降级：直接渲染
+      console.warn('虚拟滚动初始化失败，使用降级渲染');
+      this.renderFallback(container, resources);
+    }
+  }
+
+  /**
+   * 降级渲染方法
+   */
+  renderFallback(container, resources) {
     container.innerHTML = '';
 
     if (resources.length === 0) {
@@ -868,6 +856,7 @@ class DogCatchSidebar {
 
     // 计算统计信息
     const stats = this.calculateStats(resources);
+    const detectionTime = this.calculateDetectionTime();
 
     statsContent.innerHTML = `
       <div class="dog-catch-stats-item">
@@ -895,7 +884,11 @@ class DogCatchSidebar {
         <span class="label">图片</span>
         <span class="value">${stats.image}</span>
       </div>
-      ${this.renderPerformanceStats()}
+      <div class="dog-catch-stats-item">
+        <span class="icon">⏱️</span>
+        <span class="label">发现耗时</span>
+        <span class="value">${detectionTime}s</span>
+      </div>
     `;
   }
 
@@ -940,43 +933,31 @@ class DogCatchSidebar {
   }
 
   /**
-   * 渲染性能统计
+   * 计算资源发现总耗时
    */
-  renderPerformanceStats() {
-    const renderTime = this.performanceMetrics.renderTime;
-    const isVirtualScrollEnabled = this.useVirtualScroll && this.virtualScroll;
-
-    // 只在开发模式或性能有问题时显示
-    if (renderTime < 50 && !isVirtualScrollEnabled) {
-      return '';
+  calculateDetectionTime() {
+    if (this.resources.length === 0) {
+      return '0.0';
     }
 
-    const performanceColor = renderTime < 50 ? '#27ae60' : renderTime < 100 ? '#f39c12' : '#e74c3c';
+    // 计算从最早到最晚资源的时间跨度
+    const timestamps = this.resources
+      .map(r => r.timestamp)
+      .filter(t => t && typeof t === 'number')
+      .sort((a, b) => a - b);
 
-    return `
-      <div class="dog-catch-stats-item performance">
-        <span class="icon">⚡</span>
-        <span class="label">渲染</span>
-        <span class="value" style="color: ${performanceColor}">${renderTime.toFixed(1)}ms</span>
-      </div>
-      ${isVirtualScrollEnabled ? `
-        <div class="dog-catch-stats-item">
-          <span class="icon">🚀</span>
-          <span class="label">虚拟滚动</span>
-          <span class="value" style="color: #667eea">已启用</span>
-        </div>
-      ` : ''}
-    `;
+    if (timestamps.length < 2) {
+      return '< 0.1';
+    }
+
+    const detectionSpan = (timestamps[timestamps.length - 1] - timestamps[0]) / 1000;
+    return Math.max(detectionSpan, 0.1).toFixed(1);
   }
 
   /**
-   * 切换性能设置
+   * 重新初始化虚拟滚动（用于故障恢复）
    */
-  togglePerformanceSettings() {
-    const currentVirtualScroll = this.useVirtualScroll;
-    this.useVirtualScroll = !currentVirtualScroll;
-
-    // 重新初始化虚拟滚动
+  reinitializeVirtualScroll() {
     const resourceList = DOMUtils.find('.dog-catch-resource-list', this.sidebar);
     if (resourceList) {
       if (this.virtualScroll) {
@@ -984,20 +965,9 @@ class DogCatchSidebar {
         this.virtualScroll = null;
       }
 
-      if (this.useVirtualScroll) {
-        this.initVirtualScroll(resourceList);
-      }
-
-      // 重新渲染
+      this.initVirtualScroll(resourceList);
       this.renderFilteredResources();
     }
-
-    // 显示提示
-    const message = this.useVirtualScroll ? '虚拟滚动已启用' : '虚拟滚动已禁用';
-    console.log(message);
-
-    // 这里可以添加一个临时提示框
-    this.showTemporaryMessage(message);
   }
 
   /**
@@ -1047,6 +1017,7 @@ class DogCatchSidebar {
    * 设置加载状态
    */
   setLoading(loading) {
+    console.log(`设置 loading 状态: ${loading}`);
     this.isLoading = loading;
     this.renderResources();
   }

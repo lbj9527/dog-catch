@@ -6,7 +6,7 @@ class VirtualScroll {
   constructor(container, options = {}) {
     this.container = container;
     this.options = {
-      itemHeight: options.itemHeight || 120, // 每个项目的高度
+      itemHeight: options.itemHeight || 160, // 每个项目的高度（增加到160px以适应完整的资源卡片）
       bufferSize: options.bufferSize || 5,   // 缓冲区大小
       threshold: options.threshold || 50,    // 启用虚拟滚动的最小项目数
       ...options
@@ -90,19 +90,28 @@ class VirtualScroll {
   }
 
   /**
-   * 设置数据
+   * 设置数据 - 始终使用虚拟滚动
    */
   setData(data) {
+    console.log('虚拟滚动 setData 被调用，数据长度:', data.length);
     this.data = data;
-    
-    // 如果数据量小于阈值，使用普通渲染
-    if (data.length < this.options.threshold) {
-      this.renderAll();
-      return;
+
+    // 清除容器中的骨架屏内容
+    if (this.container) {
+      console.log('清除容器中的骨架屏内容');
+      this.container.innerHTML = '';
+
+      // 重新创建 viewport
+      this.viewport = document.createElement('div');
+      this.viewport.style.position = 'relative';
+      this.container.appendChild(this.viewport);
     }
-    
+
+    // 始终使用虚拟滚动，移除threshold限制
     this.updateDimensions();
     this.updateVisibleItems();
+
+    console.log('虚拟滚动渲染完成');
   }
 
   /**
@@ -123,7 +132,8 @@ class VirtualScroll {
    * 更新可见项目
    */
   updateVisibleItems() {
-    if (this.data.length < this.options.threshold) {
+    if (this.data.length === 0) {
+      this.viewport.innerHTML = '';
       return;
     }
 

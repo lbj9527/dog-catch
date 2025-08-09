@@ -180,23 +180,7 @@
   gap: 12px;
 }
 
-/* 性能按钮 */
-.dog-catch-performance-btn {
-  padding: 6px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.8);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-  min-width: 60px;
-}
-
-.dog-catch-performance-btn:hover {
-  background: rgba(102, 126, 234, 0.1);
-  border-color: #667eea;
-}
+/* 性能按钮样式已移除 - 简化用户界面 */
 
 /* 统计信息面板 */
 .dog-catch-stats-panel {
@@ -306,12 +290,24 @@
 }
 
 /* 为每个卡片添加延迟 */
-.dog-catch-resource-card:nth-child(1) { animation-delay: 0ms; }
-.dog-catch-resource-card:nth-child(2) { animation-delay: 50ms; }
-.dog-catch-resource-card:nth-child(3) { animation-delay: 100ms; }
-.dog-catch-resource-card:nth-child(4) { animation-delay: 150ms; }
-.dog-catch-resource-card:nth-child(5) { animation-delay: 200ms; }
-.dog-catch-resource-card:nth-child(n+6) { animation-delay: 250ms; }
+.dog-catch-resource-card:nth-child(1) {
+  animation-delay: 0ms;
+}
+.dog-catch-resource-card:nth-child(2) {
+  animation-delay: 50ms;
+}
+.dog-catch-resource-card:nth-child(3) {
+  animation-delay: 100ms;
+}
+.dog-catch-resource-card:nth-child(4) {
+  animation-delay: 150ms;
+}
+.dog-catch-resource-card:nth-child(5) {
+  animation-delay: 200ms;
+}
+.dog-catch-resource-card:nth-child(n + 6) {
+  animation-delay: 250ms;
+}
 
 /* 卡片悬停效果 */
 .dog-catch-resource-card:hover {
@@ -351,7 +347,8 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     transform: scale(1);
   }
@@ -490,26 +487,17 @@
   margin-bottom: 12px;
 }
 
-.dog-catch-resource-primary-info,
-.dog-catch-resource-secondary-info {
+/* 单行信息显示 */
+.dog-catch-resource-info-row {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 12px;
-  margin-bottom: 6px;
-}
-
-.dog-catch-resource-primary-info {
   font-size: 12px;
-  font-weight: 500;
-}
-
-.dog-catch-resource-secondary-info {
-  font-size: 11px;
   color: #666;
 }
 
 .dog-catch-resource-size,
-.dog-catch-resource-duration,
-.dog-catch-resource-ext,
 .dog-catch-resource-timestamp {
   display: flex;
   align-items: center;
@@ -575,8 +563,12 @@
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 /* 加载文本样式 */
@@ -632,11 +624,11 @@
     width: 100vw;
     border-radius: 0;
   }
-  
+
   .dog-catch-sidebar-header {
     padding: 16px;
   }
-  
+
   .dog-catch-resource-list {
     padding: 16px;
   }
@@ -648,7 +640,7 @@
     background: rgba(255, 255, 255, 0.95);
     border: 2px solid #000;
   }
-  
+
   .dog-catch-resource-card {
     border: 2px solid #000;
   }
@@ -663,7 +655,7 @@
     animation: none !important;
     transition: none !important;
   }
-  
+
   .dog-catch-resource-card {
     opacity: 1;
     transform: none;
