@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Generate Dog-Catch Icons</title>
+  </head>
+  <body>
+    <h1>Dog-Catch 图标生成器</h1>
+    <p>请在浏览器中打开此文件，然后右键保存生成的图标</p>
+
+    <div style="display: flex; gap: 20px; flex-wrap: wrap">
+      <div>
+        <h3>16x16</h3>
+        <canvas id="icon16" width="16" height="16" style="border: 1px solid #ccc; image-rendering: pixelated"></canvas>
+      </div>
+      <div>
+        <h3>32x32</h3>
+        <canvas id="icon32" width="32" height="32" style="border: 1px solid #ccc"></canvas>
+      </div>
+      <div>
+        <h3>48x48</h3>
+        <canvas id="icon48" width="48" height="48" style="border: 1px solid #ccc"></canvas>
+      </div>
+      <div>
+        <h3>128x128</h3>
+        <canvas id="icon128" width="128" height="128" style="border: 1px solid #ccc"></canvas>
+      </div>
+    </div>
+
+    <script>
+      function drawIcon(canvas, size) {
+        const ctx = canvas.getContext('2d')
+        const center = size / 2
+        const radius = size * 0.45
+
+        // 清除画布
+        ctx.clearRect(0, 0, size, size)
+
+        // 绘制背景圆形
+        const gradient = ctx.createLinearGradient(0, 0, size, size)
+        gradient.addColorStop(0, '#3b82f6')
+        gradient.addColorStop(1, '#1d4ed8')
+
+        ctx.fillStyle = gradient
+        ctx.beginPath()
+        ctx.arc(center, center, radius, 0, 2 * Math.PI)
+        ctx.fill()
+
+        // 绘制边框
+        ctx.strokeStyle = '#1e40af'
+        ctx.lineWidth = size > 32 ? 2 : 1
+        ctx.stroke()
+
+        // 绘制狗爪印
+        ctx.fillStyle = 'white'
+
+        // 主爪垫
+        ctx.beginPath()
+        ctx.ellipse(center, center + size * 0.08, size * 0.09, size * 0.12, 0, 0, 2 * Math.PI)
+        ctx.fill()
+
+        // 脚趾垫
+        const toeSize = size * 0.04
+        const toeOffset = size * 0.15
+
+        // 左脚趾
+        ctx.beginPath()
+        ctx.ellipse(center - toeOffset, center - toeOffset * 0.7, toeSize, toeSize * 1.3, -0.3, 0, 2 * Math.PI)
+        ctx.fill()
+
+        // 中脚趾
+        ctx.beginPath()
+        ctx.ellipse(center, center - toeOffset, toeSize, toeSize * 1.3, 0, 0, 2 * Math.PI)
+        ctx.fill()
+
+        // 右脚趾
+        ctx.beginPath()
+        ctx.ellipse(center + toeOffset, center - toeOffset * 0.7, toeSize, toeSize * 1.3, 0.3, 0, 2 * Math.PI)
+        ctx.fill()
+
+        // 右外脚趾
+        ctx.beginPath()
+        ctx.ellipse(center + toeOffset * 1.3, center - toeOffset * 0.2, toeSize * 0.8, toeSize, 0.5, 0, 2 * Math.PI)
+        ctx.fill()
+
+        // 如果图标足够大，添加媒体符号
+        if (size >= 32) {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'
+          const mediaY = center + size * 0.25
+          const mediaSize = size * 0.06
+
+          // 播放按钮
+          ctx.beginPath()
+          ctx.moveTo(center - mediaSize * 2, mediaY - mediaSize)
+          ctx.lineTo(center - mediaSize * 2, mediaY + mediaSize)
+          ctx.lineTo(center - mediaSize, mediaY)
+          ctx.closePath()
+          ctx.fill()
+
+          // 暂停按钮
+          ctx.fillRect(center - mediaSize * 0.5, mediaY - mediaSize, mediaSize * 0.3, mediaSize * 2)
+          ctx.fillRect(center + mediaSize * 0.2, mediaY - mediaSize, mediaSize * 0.3, mediaSize * 2)
+
+          // 快进按钮
+          ctx.beginPath()
+          ctx.moveTo(center + mediaSize, mediaY - mediaSize)
+          ctx.lineTo(center + mediaSize * 2, mediaY)
+          ctx.lineTo(center + mediaSize, mediaY + mediaSize)
+          ctx.closePath()
+          ctx.fill()
+        }
+      }
+
+      // 生成所有尺寸的图标
+      drawIcon(document.getElementById('icon16'), 16)
+      drawIcon(document.getElementById('icon32'), 32)
+      drawIcon(document.getElementById('icon48'), 48)
+      drawIcon(document.getElementById('icon128'), 128)
+
+      // 添加下载功能
+      function downloadCanvas(canvas, filename) {
+        const link = document.createElement('a')
+        link.download = filename
+        link.href = canvas.toDataURL()
+        link.click()
+      }
+
+      // 自动下载所有图标
+      function downloadAllIcons() {
+        setTimeout(() => downloadCanvas(document.getElementById('icon16'), 'icon-16.png'), 100)
+        setTimeout(() => downloadCanvas(document.getElementById('icon32'), 'icon-32.png'), 200)
+        setTimeout(() => downloadCanvas(document.getElementById('icon48'), 'icon-48.png'), 300)
+        setTimeout(() => downloadCanvas(document.getElementById('icon128'), 'icon-128.png'), 400)
+      }
+
+      // 为每个canvas添加点击下载功能
+      document.getElementById('icon16').onclick = () => downloadCanvas(document.getElementById('icon16'), 'icon-16.png')
+      document.getElementById('icon32').onclick = () => downloadCanvas(document.getElementById('icon32'), 'icon-32.png')
+      document.getElementById('icon48').onclick = () => downloadCanvas(document.getElementById('icon48'), 'icon-48.png')
+      document.getElementById('icon128').onclick = () => downloadCanvas(document.getElementById('icon128'), 'icon-128.png')
+
+      console.log('图标生成完成！点击图标可下载对应的PNG文件。')
+    </script>
+
+    <div style="margin-top: 20px">
+      <button onclick="downloadAllIcons()" style="padding: 10px 20px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px">下载所有图标</button>
+    </div>
+
+    <p style="margin-top: 20px; color: #666">
+      点击"下载所有图标"按钮或点击任意图标可下载对应尺寸的PNG文件。<br />
+      下载后请将文件放入 icons/ 目录中，然后重新加载扩展。
+    </p>
+  </body>
+</html>

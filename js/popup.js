@@ -1,521 +1,375 @@
-// Dog-Catch Popup JavaScript
-// 基于 MVC 架构的 View 层实现
+/**
+ * Dog-Catch Popup 界面逻辑
+ * 主界面交互和数据展示
+ */
 
 class DogCatchPopup {
     constructor() {
         this.resources = [];
+        this.filteredResources = [];
         this.currentFilter = 'all';
-        this.isEnabled = true;
-        
-        this.initializeElements();
+
+        this.initElements();
         this.bindEvents();
         this.loadData();
     }
-    
-    initializeElements() {
+
+    initElements() {
         // 获取DOM元素
-        this.elements = {
-            resourceCount: document.getElementById('resourceCount'),
-            resourceList: document.getElementById('resourceList'),
-            emptyState: document.getElementById('emptyState'),
-            typeFilter: document.getElementById('typeFilter'),
-            deepSearchBtn: document.getElementById('deepSearchBtn'),
-            floatingUIBtn: document.getElementById('floatingUIBtn'),
-            settingsBtn: document.getElementById('settingsBtn'),
-            enableBtn: document.getElementById('enableBtn'),
-            enableIcon: document.getElementById('enableIcon'),
-            clearBtn: document.getElementById('clearBtn'),
-            statusText: document.getElementById('statusText'),
-            resourceCardTemplate: document.getElementById('resourceCardTemplate')
-        };
+        this.contentArea = document.getElementById('contentArea');
+        this.loadingState = document.getElementById('loadingState');
+        this.emptyState = document.getElementById('emptyState');
+        this.resourceList = document.getElementById('resourceList');
+        this.deepSearchBtn = document.getElementById('deepSearchBtn');
+        this.refreshBtn = document.getElementById('refreshBtn');
+        this.filterBtns = document.querySelectorAll('.dog-catch-filter-btn');
+        this.totalCount = document.getElementById('totalCount');
+        this.totalSize = document.getElementById('totalSize');
+        this.lastUpdate = document.getElementById('lastUpdate');
+        this.previewModal = document.getElementById('previewModal');
+        this.previewTitle = document.getElementById('previewTitle');
+        this.previewBody = document.getElementById('previewBody');
+        this.closePreviewBtn = document.getElementById('closePreviewBtn');
     }
-    
+
     bindEvents() {
-        // 筛选器事件
-        this.elements.typeFilter.addEventListener('change', (e) => {
-            this.currentFilter = e.target.value;
-            this.renderResources();
-            this.updateFilterOptions();
+        // 深度搜索
+        this.deepSearchBtn.addEventListener('click', () => {
+            this.performDeepSearch();
         });
 
-        // 初始化筛选选项
-        this.updateFilterOptions();
-        
-        // 深度搜索按钮
-        this.elements.deepSearchBtn.addEventListener('click', () => {
-            this.triggerDeepSearch();
+        // 刷新
+        this.refreshBtn.addEventListener('click', () => {
+            this.loadData();
         });
 
-        // 浮动界面按钮
-        this.elements.floatingUIBtn.addEventListener('click', () => {
-            this.toggleFloatingUI();
+        // 筛选器
+        this.filterBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                this.setFilter(e.target.dataset.type);
+            });
         });
 
-        // 设置按钮
-        this.elements.settingsBtn.addEventListener('click', () => {
-            chrome.runtime.openOptionsPage();
+        // 预览模态框
+        this.closePreviewBtn.addEventListener('click', () => {
+            this.closePreview();
         });
-        
-        // 启用/禁用按钮
-        this.elements.enableBtn.addEventListener('click', () => {
-            this.toggleEnable();
-        });
-        
-        // 清空按钮
-        this.elements.clearBtn.addEventListener('click', () => {
-            this.clearResources();
+
+        this.previewModal.addEventListener('click', (e) => {
+            if (e.target === this.previewModal) {
+                this.closePreview();
+            }
         });
     }
-    
+
     async loadData() {
+        this.showLoading();
+        
         try {
-            this.updateStatus('加载中...');
+            // 从background获取数据
+            const response = await chrome.runtime.sendMessage({ action: 'getAllData' });
             
-            // 获取当前标签ID
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            this.currentTabId = tab.id;
-            
-            // 从后台脚本获取数据
-            const response = await chrome.runtime.sendMessage({
-                Message: "getAllData",
-                tabId: this.currentTabId
-            });
-            
-            if (response && response !== "error") {
+            if (response && typeof response === 'object') {
                 this.processData(response);
             } else {
                 this.resources = [];
             }
             
-            this.renderResources();
-            this.updateStatus('就绪');
+            this.filterResources();
+            this.updateStats();
+            this.updateLastUpdate();
             
         } catch (error) {
             console.error('加载数据失败:', error);
-            this.updateStatus('加载失败');
+            this.showEmpty();
         }
     }
-    
+
     processData(data) {
         this.resources = [];
         
-        // 处理当前标签的数据
-        if (data[this.currentTabId] && Array.isArray(data[this.currentTabId])) {
-            this.resources = data[this.currentTabId].map(item => ({
-                ...item,
-                type: this.getResourceType(item),
-                formattedSize: this.formatFileSize(item.size),
-                formattedTime: this.formatTime(item.getTime)
-            }));
+        // 处理来自background的数据
+        for (const tabId in data) {
+            if (data[tabId] && Array.isArray(data[tabId])) {
+                this.resources.push(...data[tabId]);
+            }
         }
         
-        // 按时间排序（最新的在前）
-        this.resources.sort((a, b) => b.getTime - a.getTime);
+        // 模拟数据（用于界面测试）
+        if (this.resources.length === 0) {
+            this.resources = this.generateMockData();
+        }
     }
-    
+
+    generateMockData() {
+        return [
+            {
+                name: 'sample_video.mp4',
+                url: 'https://example.com/video.mp4',
+                size: 15728640, // 15MB
+                ext: 'mp4',
+                type: 'video/mp4',
+                getTime: Date.now() - 60000
+            },
+            {
+                name: 'audio_track.mp3',
+                url: 'https://example.com/audio.mp3',
+                size: 5242880, // 5MB
+                ext: 'mp3',
+                type: 'audio/mpeg',
+                getTime: Date.now() - 120000
+            },
+            {
+                name: 'playlist.m3u8',
+                url: 'https://example.com/playlist.m3u8',
+                size: 1024,
+                ext: 'm3u8',
+                type: 'application/vnd.apple.mpegurl',
+                getTime: Date.now() - 30000
+            }
+        ];
+    }
+
+    filterResources() {
+        this.filteredResources = this.resources.filter(resource => {
+            // 类型筛选
+            return this.currentFilter === 'all' || this.getResourceType(resource) === this.currentFilter;
+        });
+
+        this.renderResources();
+    }
+
     getResourceType(resource) {
-        return getResourceType(resource);
+        if (resource.type) {
+            if (resource.type.startsWith('video/')) return 'video';
+            if (resource.type.startsWith('audio/')) return 'audio';
+            if (resource.type.startsWith('image/')) return 'image';
+        }
+        
+        if (resource.ext) {
+            const videoExts = ['mp4', 'webm', 'avi', 'mov', 'wmv', 'flv', 'm3u8', 'mpd'];
+            const audioExts = ['mp3', 'wav', 'aac', 'ogg', 'm4a'];
+            const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+            
+            if (videoExts.includes(resource.ext.toLowerCase())) return 'video';
+            if (audioExts.includes(resource.ext.toLowerCase())) return 'audio';
+            if (imageExts.includes(resource.ext.toLowerCase())) return 'image';
+        }
+        
+        return 'document';
     }
 
-    formatFileSize(bytes) {
-        return formatFileSize(bytes);
-    }
-
-    formatTime(timestamp) {
-        return formatTime(timestamp);
-    }
-    
     renderResources() {
-        const filteredResources = this.getFilteredResources();
-
-        // 更新计数
-        this.elements.resourceCount.textContent = filteredResources.length;
-
-        // 清空列表
-        this.elements.resourceList.innerHTML = '';
-
-        if (filteredResources.length === 0) {
-            this.elements.resourceList.appendChild(this.elements.emptyState);
+        if (this.filteredResources.length === 0) {
+            this.showEmpty();
             return;
         }
 
-        // 渲染资源卡片
-        filteredResources.forEach(resource => {
-            const card = this.createResourceCard(resource);
-            this.elements.resourceList.appendChild(card);
-        });
-    }
-
-    getFilteredResources() {
-        if (this.currentFilter === 'all') {
-            return this.resources;
-        }
-
-        return this.resources.filter(resource => {
-            const resourceCategory = this.getResourceCategory(resource);
-            return resourceCategory === this.currentFilter;
-        });
-    }
-
-    getResourceCategory(resource) {
-        const ext = resource.ext?.toLowerCase();
-        const type = resource.type?.toLowerCase();
-        const url = resource.url?.toLowerCase();
-
-        // 视频类型
-        const videoExts = ['mp4', 'webm', 'ogg', 'avi', 'mov', 'wmv', 'flv', 'mkv', '3gp'];
-        const videoTypes = ['video/'];
-
-        if (videoExts.includes(ext) || videoTypes.some(t => type?.includes(t))) {
-            return 'video';
-        }
-
-        // 音频类型
-        const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma'];
-        const audioTypes = ['audio/'];
-
-        if (audioExts.includes(ext) || audioTypes.some(t => type?.includes(t))) {
-            return 'audio';
-        }
-
-        // 流媒体类型
-        if (ext === 'm3u8' || url?.includes('.m3u8') || type?.includes('mpegurl')) {
-            return 'stream';
-        }
-
-        if (ext === 'mpd' || url?.includes('.mpd') || type?.includes('dash')) {
-            return 'stream';
-        }
-
-        if (ext === 'ts' || url?.includes('.ts')) {
-            return 'stream';
-        }
-
-        // 图片类型
-        const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
-        const imageTypes = ['image/'];
-
-        if (imageExts.includes(ext) || imageTypes.some(t => type?.includes(t))) {
-            return 'image';
-        }
-
-        // 文档类型
-        const docExts = ['pdf', 'doc', 'docx', 'txt', 'rtf'];
-        const docTypes = ['application/pdf', 'text/'];
-
-        if (docExts.includes(ext) || docTypes.some(t => type?.includes(t))) {
-            return 'document';
-        }
-
-        return 'other';
-    }
-
-    updateFilterOptions() {
-        const categories = {};
-
-        // 统计各类型资源数量
-        this.resources.forEach(resource => {
-            const category = this.getResourceCategory(resource);
-            categories[category] = (categories[category] || 0) + 1;
-        });
-
-        // 更新筛选选项
-        const filterSelect = this.elements.filterSelect;
-        const currentValue = filterSelect.value;
-
-        filterSelect.innerHTML = `
-            <option value="all">全部 (${this.resources.length})</option>
-            ${categories.video ? `<option value="video">视频 (${categories.video})</option>` : ''}
-            ${categories.audio ? `<option value="audio">音频 (${categories.audio})</option>` : ''}
-            ${categories.stream ? `<option value="stream">流媒体 (${categories.stream})</option>` : ''}
-            ${categories.image ? `<option value="image">图片 (${categories.image})</option>` : ''}
-            ${categories.document ? `<option value="document">文档 (${categories.document})</option>` : ''}
-            ${categories.other ? `<option value="other">其他 (${categories.other})</option>` : ''}
-        `;
-
-        // 恢复之前的选择
-        if (currentValue && [...filterSelect.options].some(opt => opt.value === currentValue)) {
-            filterSelect.value = currentValue;
-        }
-    }
-    
-    createResourceCard(resource) {
-        const template = this.elements.resourceCardTemplate.content.cloneNode(true);
-        const card = template.querySelector('.resource-card');
+        this.showResourceList();
         
-        // 设置数据
-        card.dataset.requestId = resource.requestId;
-        card.querySelector('.resource-name').textContent = resource.name || '未知文件';
-        card.querySelector('.resource-name').title = resource.name || resource.url;
-        card.querySelector('.resource-size').textContent = resource.formattedSize;
-        card.querySelector('.resource-type').textContent = resource.ext?.toUpperCase() || 'Unknown';
-        card.querySelector('.resource-time').textContent = resource.formattedTime;
-        card.querySelector('.resource-url').textContent = resource.url;
-        card.querySelector('.resource-url').title = resource.url;
-        
-        // 绑定按钮事件
-        this.bindCardEvents(card, resource);
-        
-        return card;
-    }
-    
-    bindCardEvents(card, resource) {
-        const previewBtn = card.querySelector('.btn-preview');
-        const playBtn = card.querySelector('.btn-play');
-        const copyBtn = card.querySelector('.btn-copy');
-        const previewWindow = card.querySelector('.preview-window');
-        const previewClose = card.querySelector('.preview-close');
-        
-        // 简单预览
-        previewBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.showSimplePreview(card, resource);
-        });
-        
-        // 详细预览（Video.js播放器）
-        playBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.openDetailedPreview(resource);
-        });
-        
-        // 复制链接
-        copyBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.copyToClipboard(resource.url);
-        });
-        
-        // 关闭预览
-        previewClose.addEventListener('click', (e) => {
-            e.stopPropagation();
-            previewWindow.style.display = 'none';
-        });
-    }
-    
-    showSimplePreview(card, resource) {
-        const previewWindow = card.querySelector('.preview-window');
-        const videoPlayer = card.querySelector('video.preview-player');
-        const audioPlayer = card.querySelector('audio.preview-player');
+        this.resourceList.innerHTML = this.filteredResources.map(resource => 
+            this.createResourceItem(resource)
+        ).join('');
 
-        // 隐藏所有播放器
-        videoPlayer.style.display = 'none';
-        audioPlayer.style.display = 'none';
-
-        // 根据资源类型和扩展名判断播放器类型
-        const isVideo = this.isVideoResource(resource);
-        const isAudio = this.isAudioResource(resource);
-
-        if (isVideo) {
-            // 视频资源使用 video 元素
-            videoPlayer.src = resource.url;
-            videoPlayer.style.display = 'block';
-
-            // 设置视频属性
-            videoPlayer.controls = true;
-            videoPlayer.preload = 'metadata';
-            videoPlayer.muted = true; // 自动播放需要静音
-
-            // 错误处理
-            videoPlayer.onerror = () => {
-                this.showPreviewError(card, '视频加载失败');
-            };
-
-        } else if (isAudio) {
-            // 音频资源使用 audio 元素
-            audioPlayer.src = resource.url;
-            audioPlayer.style.display = 'block';
-
-            // 设置音频属性
-            audioPlayer.controls = true;
-            audioPlayer.preload = 'metadata';
-
-            // 错误处理
-            audioPlayer.onerror = () => {
-                this.showPreviewError(card, '音频加载失败');
-            };
-        }
-
-        previewWindow.style.display = 'block';
+        // 绑定资源项事件
+        this.bindResourceEvents();
     }
 
-    isVideoResource(resource) {
-        const videoExts = ['mp4', 'webm', 'ogg', 'avi', 'mov', 'wmv', 'flv', 'mkv', '3gp'];
-        const videoTypes = ['video/', 'application/x-mpegurl', 'application/dash+xml'];
+    createResourceItem(resource) {
+        const type = this.getResourceType(resource);
+        const size = this.formatSize(resource.size || 0);
+        const time = this.formatTime(resource.getTime);
+        const typeIcon = this.getTypeIcon(type);
 
-        const ext = resource.ext?.toLowerCase();
-        const type = resource.type?.toLowerCase();
-        const url = resource.url?.toLowerCase();
-
-        return videoExts.includes(ext) ||
-               videoTypes.some(t => type?.includes(t)) ||
-               url?.includes('.m3u8') ||
-               url?.includes('.mpd');
-    }
-
-    isAudioResource(resource) {
-        const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma'];
-        const audioTypes = ['audio/'];
-
-        const ext = resource.ext?.toLowerCase();
-        const type = resource.type?.toLowerCase();
-
-        return audioExts.includes(ext) ||
-               audioTypes.some(t => type?.includes(t));
-    }
-
-    showPreviewError(card, message) {
-        const previewWindow = card.querySelector('.preview-window');
-        const previewContent = previewWindow.querySelector('.preview-content');
-
-        previewContent.innerHTML = `
-            <div class="player-error">
-                <div>⚠️ ${message}</div>
-                <div style="font-size: 12px; margin-top: 8px; opacity: 0.8;">
-                    请尝试使用详细预览或直接下载
+        return `
+            <div class="dog-catch-resource-item" data-url="${resource.url}">
+                <div class="dog-catch-resource-icon ${type}">
+                    ${typeIcon}
+                </div>
+                <div class="dog-catch-resource-info">
+                    <div class="dog-catch-resource-name" title="${resource.name}">
+                        ${resource.name}
+                    </div>
+                    <div class="dog-catch-resource-meta">
+                        <span class="dog-catch-resource-size">${size}</span>
+                        <span class="dog-catch-resource-type">${resource.ext || type}</span>
+                        <span>${time}</span>
+                    </div>
+                </div>
+                <div class="dog-catch-resource-actions">
+                    <button class="dog-catch-action-btn preview-btn" title="预览">
+                        👁️
+                    </button>
+                    <button class="dog-catch-action-btn download-btn" title="下载">
+                        💾
+                    </button>
+                    <button class="dog-catch-action-btn copy-btn" title="复制链接">
+                        📋
+                    </button>
                 </div>
             </div>
         `;
     }
-    
-    openDetailedPreview(resource) {
-        // 在新标签页中打开 Video.js 播放器
-        const playerUrl = chrome.runtime.getURL('player.html') + 
-                         '?url=' + encodeURIComponent(resource.url) +
-                         '&name=' + encodeURIComponent(resource.name || '未知文件') +
-                         '&type=' + encodeURIComponent(resource.type);
-        
-        chrome.tabs.create({ url: playerUrl });
+
+    bindResourceEvents() {
+        // 预览按钮
+        document.querySelectorAll('.preview-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const item = e.target.closest('.dog-catch-resource-item');
+                const url = item.dataset.url;
+                this.showPreview(url);
+            });
+        });
+
+        // 下载按钮
+        document.querySelectorAll('.download-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const item = e.target.closest('.dog-catch-resource-item');
+                const url = item.dataset.url;
+                this.downloadResource(url);
+            });
+        });
+
+        // 复制按钮
+        document.querySelectorAll('.copy-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const item = e.target.closest('.dog-catch-resource-item');
+                const url = item.dataset.url;
+                this.copyToClipboard(url);
+            });
+        });
     }
-    
+
+    getTypeIcon(type) {
+        const icons = {
+            video: '🎬',
+            audio: '🎵',
+            image: '🖼️',
+            document: '📄'
+        };
+        return icons[type] || '📄';
+    }
+
+    formatSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    formatTime(timestamp) {
+        if (!timestamp) return '--';
+        const now = Date.now();
+        const diff = now - timestamp;
+        const minutes = Math.floor(diff / 60000);
+        
+        if (minutes < 1) return '刚刚';
+        if (minutes < 60) return `${minutes}分钟前`;
+        
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}小时前`;
+        
+        const days = Math.floor(hours / 24);
+        return `${days}天前`;
+    }
+
+    setFilter(type) {
+        this.currentFilter = type;
+        
+        // 更新按钮状态
+        this.filterBtns.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.type === type);
+        });
+        
+        this.filterResources();
+    }
+
+
+
+    showPreview(url) {
+        this.previewTitle.textContent = '媒体预览';
+        this.previewBody.innerHTML = `
+            <video controls style="width: 100%; max-height: 400px;">
+                <source src="${url}">
+                您的浏览器不支持视频播放。
+            </video>
+        `;
+        this.previewModal.classList.add('show');
+    }
+
+    closePreview() {
+        this.previewModal.classList.remove('show');
+    }
+
+    downloadResource(url) {
+        chrome.downloads.download({ url: url });
+    }
+
     async copyToClipboard(text) {
         try {
             await navigator.clipboard.writeText(text);
-            this.updateStatus('链接已复制', 2000);
+            this.showNotification('链接已复制到剪贴板', 'success');
         } catch (error) {
             console.error('复制失败:', error);
-            this.updateStatus('复制失败', 2000);
         }
     }
-    
-    async triggerDeepSearch() {
+
+    showNotification(message, type = 'info') {
+        // TODO: 实现通知功能
+        console.log(`${type}: ${message}`);
+    }
+
+    updateStats() {
+        this.totalCount.textContent = this.resources.length;
+        
+        const totalBytes = this.resources.reduce((sum, resource) => sum + (resource.size || 0), 0);
+        this.totalSize.textContent = this.formatSize(totalBytes);
+    }
+
+    updateLastUpdate() {
+        this.lastUpdate.textContent = new Date().toLocaleTimeString();
+    }
+
+    showLoading() {
+        this.loadingState.style.display = 'block';
+        this.emptyState.style.display = 'none';
+        this.resourceList.style.display = 'none';
+    }
+
+    showEmpty() {
+        this.loadingState.style.display = 'none';
+        this.emptyState.style.display = 'block';
+        this.resourceList.style.display = 'none';
+    }
+
+    showResourceList() {
+        this.loadingState.style.display = 'none';
+        this.emptyState.style.display = 'none';
+        this.resourceList.style.display = 'block';
+    }
+
+    async performDeepSearch() {
+        this.deepSearchBtn.disabled = true;
+        this.deepSearchBtn.innerHTML = '<div class="dog-catch-spinner"></div> 搜索中...';
+
         try {
-            // 使用新的加载反馈系统
-            window.dogCatchFeedback.showLoading('deepSearch', {
-                message: '正在进行深度搜索...',
-                cancellable: true,
-                timeout: 30000
-            });
+            // 发送深度搜索请求
+            await chrome.runtime.sendMessage({ action: 'performDeepSearch' });
 
-            this.elements.deepSearchBtn.disabled = true;
-
-            // 触发深度搜索
-            const response = await chrome.runtime.sendMessage({
-                Message: "triggerDeepSearch",
-                tabId: this.currentTabId
-            });
-
-            window.dogCatchFeedback.hideLoading('deepSearch');
-
-            if (response === "ok") {
-                window.dogCatchFeedback.showSuccess('深度搜索完成');
-                // 重新加载数据
-                setTimeout(() => this.loadData(), 1000);
-            } else {
-                window.dogCatchFeedback.showError('深度搜索失败', '请重试或检查网络连接', {
-                    retry: () => this.triggerDeepSearch()
-                });
-            }
+            // 等待一段时间后重新加载数据
+            setTimeout(() => {
+                this.loadData();
+            }, 2000);
 
         } catch (error) {
             console.error('深度搜索失败:', error);
-            window.dogCatchFeedback.hideLoading('deepSearch');
-            window.dogCatchFeedback.showError('深度搜索失败', error.message || '未知错误', {
-                details: error.stack,
-                retry: () => this.triggerDeepSearch()
-            });
         } finally {
-            this.elements.deepSearchBtn.disabled = false;
-        }
-    }
-
-    async toggleFloatingUI() {
-        try {
-            // 使用新的加载反馈系统
-            window.dogCatchFeedback.showLoading('floatingUI', {
-                message: '正在打开浮动界面...',
-                timeout: 10000
-            });
-
-            this.elements.floatingUIBtn.disabled = true;
-
-            // 切换浮动界面
-            const response = await chrome.runtime.sendMessage({
-                Message: "toggleFloatingUI",
-                tabId: this.currentTabId
-            });
-
-            window.dogCatchFeedback.hideLoading('floatingUI');
-
-            if (response && response.success) {
-                window.dogCatchFeedback.showSuccess('浮动界面已打开');
-                // 关闭当前弹窗
-                setTimeout(() => window.close(), 1000);
-            } else {
-                window.dogCatchFeedback.showError('浮动界面打开失败', '请重试或检查权限设置', {
-                    retry: () => this.toggleFloatingUI()
-                });
-            }
-
-        } catch (error) {
-            console.error('浮动界面切换失败:', error);
-            window.dogCatchFeedback.hideLoading('floatingUI');
-            window.dogCatchFeedback.showError('浮动界面切换失败', error.message || '未知错误', {
-                details: error.stack,
-                retry: () => this.toggleFloatingUI()
-            });
-        } finally {
-            this.elements.floatingUIBtn.disabled = false;
-        }
-    }
-    
-    async toggleEnable() {
-        try {
-            const response = await chrome.runtime.sendMessage({
-                Message: "enable"
-            });
-            
-            this.isEnabled = response;
-            this.elements.enableIcon.textContent = this.isEnabled ? '🟢' : '🔴';
-            this.updateStatus(this.isEnabled ? '已启用' : '已禁用', 2000);
-            
-        } catch (error) {
-            console.error('切换状态失败:', error);
-        }
-    }
-    
-    async clearResources() {
-        try {
-            await chrome.runtime.sendMessage({
-                Message: "ClearIcon",
-                tabId: this.currentTabId,
-                type: true
-            });
-            
-            this.resources = [];
-            this.renderResources();
-            this.updateStatus('已清空', 2000);
-            
-        } catch (error) {
-            console.error('清空失败:', error);
-        }
-    }
-    
-    updateStatus(text, duration = 0) {
-        this.elements.statusText.textContent = text;
-        
-        if (duration > 0) {
-            setTimeout(() => {
-                this.elements.statusText.textContent = '就绪';
-            }, duration);
+            this.deepSearchBtn.disabled = false;
+            this.deepSearchBtn.innerHTML = '深度搜索';
         }
     }
 }

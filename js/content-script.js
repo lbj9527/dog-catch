@@ -1,99 +1,75 @@
-// Dog-Catch Content Script
-// 基于 cat-catch 的成熟架构，严格移植消息通信机制
+/**
+ * Dog-Catch Content Script
+ * 页面内容操作和资源注入
+ */
 
-// 心跳保活连接 - 防止 Service Worker 被终止
-const port = chrome.runtime.connect({ name: "HeartBeat" });
-port.onMessage.addListener(function (message) {
-    // 心跳响应
-});
+// 避免重复注入
+if (typeof window.dogCatchContentScriptLoaded === 'undefined') {
+    window.dogCatchContentScriptLoaded = true;
 
-// 监听来自页面的消息 - 深度搜索脚本通信
-window.addEventListener("message", (event) => {
-    if (!event.data || !event.data.action) { return; }
-    
-    // 处理深度搜索发现的媒体资源 - 保持与 cat-catch 一致的消息格式
-    if (event.data.action == "catCatchAddMedia") {
-        if (!event.data.url) { return; }
-        chrome.runtime.sendMessage({
-            Message: "addMedia",
-            url: event.data.url,
-            href: event.data.href ?? event.source.location.href,
-            extraExt: event.data.ext,
-            mime: event.data.mime,
-            requestHeaders: { referer: event.data.referer },
-            requestId: event.data.requestId
-        });
-    }
-    
-    // 处理深度搜索发现的加密密钥 - 保持与 cat-catch 一致的消息格式
-    if (event.data.action == "catCatchAddKey") {
-        if (!event.data.key) { return; }
-        chrome.runtime.sendMessage({
-            Message: "addKey",
-            key: event.data.key,
-            href: event.data.href ?? event.source.location.href,
-            ext: event.data.ext
-        });
-    }
-});
-
-// 监听来自后台脚本的消息
-chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
-    // 脚本注入请求处理
-    if (Message.Message == "injectScript") {
-        try {
-            const script = document.createElement('script');
-            script.src = chrome.runtime.getURL(Message.scriptPath);
-            script.onload = function() {
-                this.remove();
-                sendResponse("ok");
-            };
-            script.onerror = function() {
-                this.remove();
-                sendResponse("error");
-            };
-            (document.head || document.documentElement).appendChild(script);
-        } catch (error) {
-            sendResponse("error");
-        }
-        return true;
-    }
-    
-    // 获取页面信息
-    if (Message.Message == "getPageInfo") {
-        sendResponse({
-            title: document.title,
-            url: window.location.href,
-            favicon: getFavicon()
-        });
-        return true;
-    }
-    
-    return false;
-});
-
-// 获取页面图标
-function getFavicon() {
-    const favicon = document.querySelector('link[rel="icon"]') || 
-                   document.querySelector('link[rel="shortcut icon"]') ||
-                   document.querySelector('link[rel="apple-touch-icon"]');
-    return favicon ? favicon.href : null;
-}
-
-// 页面加载完成后的初始化
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initialize);
-} else {
-    initialize();
-}
-
-function initialize() {
-    // 通知后台脚本页面已准备就绪
-    chrome.runtime.sendMessage({
-        Message: "pageReady",
-        url: window.location.href,
-        title: document.title
+    // 心跳保活连接
+    const port = chrome.runtime.connect({ name: "HeartBeat" });
+    port.onMessage.addListener(function (message) {
+        // 心跳响应
     });
-}
 
-console.log("Dog-Catch Content Script loaded");
+    // 监听来自页面的消息
+    window.addEventListener("message", function (event) {
+        // 只接受来自同一窗口的消息
+        if (event.source !== window) return;
+
+        // 处理深度搜索发现的资源
+        if (event.data.action === "dogCatchAddMedia") {
+            chrome.runtime.sendMessage({
+                action: "addMedia",
+                data: event.data
+            });
+        }
+
+        // 处理深度搜索发现的密钥
+        if (event.data.action === "dogCatchAddKey") {
+            chrome.runtime.sendMessage({
+                action: "addKey",
+                data: event.data
+            });
+        }
+    });
+
+    // 注入深度搜索脚本的函数
+    function injectSearchScript() {
+        // 检查是否已经注入
+        if (document.querySelector('#dog-catch-search-script')) {
+            return;
+        }
+
+        // 创建脚本元素
+        const script = document.createElement('script');
+        script.id = 'dog-catch-search-script';
+        script.src = chrome.runtime.getURL('js/search.js');
+        script.onload = function() {
+            this.remove();
+        };
+        
+        // 注入到页面
+        (document.head || document.documentElement).appendChild(script);
+    }
+
+    // 监听来自background的消息
+    chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
+        if (message.action === "injectSearchScript") {
+            injectSearchScript();
+            sendResponse("ok");
+        }
+        
+        if (message.action === "getPageInfo") {
+            sendResponse({
+                title: document.title,
+                url: window.location.href
+            });
+        }
+        
+        return true;
+    });
+
+    console.log('Dog-Catch Content Script loaded');
+}

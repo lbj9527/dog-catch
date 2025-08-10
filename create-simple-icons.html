@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create Simple Icons</title>
+</head>
+<body>
+    <h1>创建简单图标</h1>
+    <p>这个页面将自动创建并下载图标文件</p>
+    
+    <script>
+        // 创建一个简单的图标
+        function createSimpleIcon(size) {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            
+            // 绘制蓝色圆形背景
+            ctx.fillStyle = '#3b82f6';
+            ctx.beginPath();
+            ctx.arc(size/2, size/2, size/2 - 2, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // 绘制白色狗爪印
+            ctx.fillStyle = 'white';
+            const center = size / 2;
+            const scale = size / 32; // 基于32px设计
+            
+            // 主爪垫
+            ctx.beginPath();
+            ctx.ellipse(center, center + 3*scale, 4*scale, 5*scale, 0, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // 脚趾垫
+            ctx.beginPath();
+            ctx.ellipse(center - 5*scale, center - 3*scale, 2*scale, 3*scale, -0.3, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.ellipse(center, center - 5*scale, 2*scale, 3*scale, 0, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.ellipse(center + 5*scale, center - 3*scale, 2*scale, 3*scale, 0.3, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.ellipse(center + 7*scale, center, 1.5*scale, 2*scale, 0.5, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            return canvas;
+        }
+        
+        // 下载canvas为PNG
+        function downloadCanvas(canvas, filename) {
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/png');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        // 创建所有尺寸的图标
+        function createAllIcons() {
+            const sizes = [16, 32, 48, 128];
+            
+            sizes.forEach((size, index) => {
+                setTimeout(() => {
+                    const canvas = createSimpleIcon(size);
+                    downloadCanvas(canvas, `icon-${size}.png`);
+                    console.log(`Created icon-${size}.png`);
+                }, index * 500);
+            });
+            
+            document.getElementById('status').innerHTML = '正在创建图标文件...';
+            
+            setTimeout(() => {
+                document.getElementById('status').innerHTML = '所有图标文件已创建完成！请将下载的文件放入 icons/ 目录中。';
+            }, sizes.length * 500 + 1000);
+        }
+        
+        // 页面加载完成后自动创建图标
+        window.onload = function() {
+            createAllIcons();
+        };
+    </script>
+    
+    <div id="status">正在准备创建图标...</div>
+    
+    <p style="margin-top: 20px; color: #666;">
+        图标文件将自动下载。请将下载的文件放入项目的 icons/ 目录中，然后重新加载Chrome扩展。
+    </p>
+</body>
+</html>
