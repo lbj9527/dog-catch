@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第四阶段深度搜索测试 - Dog-Catch</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #2196F3;
+        }
+        .btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .btn:hover {
+            background: #1976D2;
+        }
+        .btn.danger {
+            background: #f44336;
+        }
+        .btn.danger:hover {
+            background: #d32f2f;
+        }
+        .result {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            color: #2e7d32;
+        }
+        .error {
+            color: #c62828;
+        }
+        .info {
+            color: #1976d2;
+        }
+        .warning {
+            color: #f57c00;
+        }
+        .code-block {
+            background: #263238;
+            color: #eeffff;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>第四阶段深度搜索功能测试</h1>
+        <p>测试深度搜索脚本注入、API 劫持和加密密钥检测功能</p>
+        
+        <div class="test-section">
+            <h3>1. 脚本注入测试</h3>
+            <button class="btn" onclick="testScriptInjection()">测试脚本注入</button>
+            <button class="btn" onclick="checkInjectionStatus()">检查注入状态</button>
+            <div id="injection-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>2. XMLHttpRequest 劫持测试</h3>
+            <button class="btn" onclick="testXHRHijack()">测试 XHR 劫持</button>
+            <button class="btn" onclick="testXHRWithMedia()">测试 XHR 媒体请求</button>
+            <div id="xhr-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>3. Fetch API 劫持测试</h3>
+            <button class="btn" onclick="testFetchHijack()">测试 Fetch 劫持</button>
+            <button class="btn" onclick="testFetchWithMedia()">测试 Fetch 媒体请求</button>
+            <div id="fetch-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>4. 编码函数劫持测试</h3>
+            <button class="btn" onclick="testBtoaAtob()">测试 btoa/atob 劫持</button>
+            <button class="btn" onclick="testFromCharCode()">测试 fromCharCode 劫持</button>
+            <button class="btn" onclick="testEscape()">测试 escape 劫持</button>
+            <div id="encoding-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>5. 加密密钥检测测试</h3>
+            <button class="btn" onclick="testKeyDetection()">测试密钥检测</button>
+            <button class="btn" onclick="testArrayBufferKey()">测试 ArrayBuffer 密钥</button>
+            <button class="btn" onclick="testBase64Key()">测试 Base64 密钥</button>
+            <div id="key-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>6. M3U8/MPD 内容检测测试</h3>
+            <button class="btn" onclick="testM3U8Detection()">测试 M3U8 检测</button>
+            <button class="btn" onclick="testMPDDetection()">测试 MPD 检测</button>
+            <button class="btn" onclick="testJSONMediaDetection()">测试 JSON 媒体检测</button>
+            <div id="media-detection-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>7. 正则匹配测试</h3>
+            <button class="btn" onclick="testRegexMatching()">测试正则匹配</button>
+            <button class="btn" onclick="testRegexWithDifferentTypes()">测试不同类型正则</button>
+            <div id="regex-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>8. 综合功能测试</h3>
+            <button class="btn" onclick="runComprehensiveTest()">运行综合测试</button>
+            <button class="btn danger" onclick="clearAllResults()">清空所有结果</button>
+            <div id="comprehensive-result" class="result"></div>
+        </div>
+    </div>
+    
+    <script>
+        // 测试脚本注入
+        function testScriptInjection() {
+            const result = document.getElementById('injection-result');
+            result.innerHTML = '<span class="info">正在测试脚本注入...</span>\n';
+            
+            // 通过扩展 API 触发深度搜索
+            chrome.runtime.sendMessage({ Message: "triggerDeepSearch" }, function(response) {
+                if (chrome.runtime.lastError) {
+                    result.innerHTML += `<span class="error">✗ 脚本注入失败: ${chrome.runtime.lastError.message}</span>\n`;
+                } else if (response === "ok") {
+                    result.innerHTML += '<span class="success">✓ 脚本注入成功</span>\n';
+                    result.innerHTML += '<span class="info">深度搜索脚本已注入到页面主世界</span>\n';
+                } else {
+                    result.innerHTML += '<span class="error">✗ 脚本注入失败</span>\n';
+                }
+            });
+        }
+        
+        // 检查注入状态
+        function checkInjectionStatus() {
+            const result = document.getElementById('injection-result');
+            result.innerHTML += '\n<span class="info">检查注入状态...</span>\n';
+            
+            // 检查是否有劫持的函数
+            const checks = [
+                { name: 'XMLHttpRequest.prototype.open', original: XMLHttpRequest.prototype.open.toString().includes('[native code]') },
+                { name: 'fetch', original: fetch.toString().includes('[native code]') },
+                { name: 'btoa', original: btoa.toString().includes('[native code]') },
+                { name: 'atob', original: atob.toString().includes('[native code]') },
+                { name: 'String.fromCharCode', original: String.fromCharCode.toString().includes('[native code]') }
+            ];
+            
+            checks.forEach(check => {
+                const status = check.original ? '原生' : '已劫持';
+                const className = check.original ? 'warning' : 'success';
+                result.innerHTML += `<span class="${className}">${check.name}: ${status}</span>\n`;
+            });
+        }
+        
+        // 测试 XHR 劫持
+        function testXHRHijack() {
+            const result = document.getElementById('xhr-result');
+            result.innerHTML = '<span class="info">测试 XMLHttpRequest 劫持...</span>\n';
+            
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', 'https://httpbin.org/json');
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    result.innerHTML += `<span class="success">✓ XHR 请求完成: ${xhr.status}</span>\n`;
+                    result.innerHTML += `<span class="info">响应长度: ${xhr.response.length} 字符</span>\n`;
+                }
+            };
+            xhr.send();
+        }
+        
+        // 测试 XHR 媒体请求
+        function testXHRWithMedia() {
+            const result = document.getElementById('xhr-result');
+            result.innerHTML += '\n<span class="info">测试 XHR 媒体请求...</span>\n';
+            
+            // 模拟包含媒体 URL 的 JSON 响应
+            const mockMediaData = {
+                video: {
+                    url: "https://example.com/video.mp4",
+                    playlist: "https://example.com/playlist.m3u8"
+                },
+                audio: "https://example.com/audio.mp3"
+            };
+            
+            // 创建模拟响应
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', 'data:application/json,' + encodeURIComponent(JSON.stringify(mockMediaData)));
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    result.innerHTML += '<span class="success">✓ 媒体数据 XHR 请求完成</span>\n';
+                    result.innerHTML += '<span class="info">深度搜索脚本应该检测到媒体 URL</span>\n';
+                }
+            };
+            xhr.send();
+        }
+        
+        // 测试 Fetch 劫持
+        function testFetchHijack() {
+            const result = document.getElementById('fetch-result');
+            result.innerHTML = '<span class="info">测试 Fetch API 劫持...</span>\n';
+            
+            fetch('https://httpbin.org/json')
+                .then(response => response.json())
+                .then(data => {
+                    result.innerHTML += '<span class="success">✓ Fetch 请求完成</span>\n';
+                    result.innerHTML += `<span class="info">响应数据: ${JSON.stringify(data).substring(0, 100)}...</span>\n`;
+                })
+                .catch(error => {
+                    result.innerHTML += `<span class="error">✗ Fetch 请求失败: ${error.message}</span>\n`;
+                });
+        }
+        
+        // 测试 Fetch 媒体请求
+        function testFetchWithMedia() {
+            const result = document.getElementById('fetch-result');
+            result.innerHTML += '\n<span class="info">测试 Fetch 媒体请求...</span>\n';
+            
+            const m3u8Content = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:10
+#EXTINF:10.0,
+https://example.com/segment1.ts
+#EXTINF:10.0,
+https://example.com/segment2.ts
+#EXT-X-ENDLIST`;
+            
+            fetch('data:application/vnd.apple.mpegurl,' + encodeURIComponent(m3u8Content))
+                .then(response => response.text())
+                .then(data => {
+                    result.innerHTML += '<span class="success">✓ M3U8 内容 Fetch 完成</span>\n';
+                    result.innerHTML += '<span class="info">深度搜索脚本应该检测到 M3U8 内容</span>\n';
+                })
+                .catch(error => {
+                    result.innerHTML += `<span class="error">✗ M3U8 Fetch 失败: ${error.message}</span>\n`;
+                });
+        }
+        
+        // 测试 btoa/atob 劫持
+        function testBtoaAtob() {
+            const result = document.getElementById('encoding-result');
+            result.innerHTML = '<span class="info">测试 btoa/atob 劫持...</span>\n';
+            
+            // 测试普通编码
+            const testString = "Hello World";
+            const encoded = btoa(testString);
+            const decoded = atob(encoded);
+            
+            result.innerHTML += `<span class="success">✓ btoa 编码: ${testString} -> ${encoded}</span>\n`;
+            result.innerHTML += `<span class="success">✓ atob 解码: ${encoded} -> ${decoded}</span>\n`;
+            
+            // 测试 24 字符 Base64 密钥（应该被检测）
+            const base64Key = "MTIzNDU2Nzg5MDEyMzQ1Ng=="; // 24 字符，以 == 结尾
+            result.innerHTML += `<span class="info">测试 Base64 密钥: ${base64Key}</span>\n`;
+            atob(base64Key);
+            result.innerHTML += '<span class="success">✓ Base64 密钥应该被检测到</span>\n';
+        }
+        
+        // 测试 fromCharCode 劫持
+        function testFromCharCode() {
+            const result = document.getElementById('encoding-result');
+            result.innerHTML += '\n<span class="info">测试 String.fromCharCode 劫持...</span>\n';
+            
+            // 测试 M3U8 内容
+            const m3u8Chars = [35, 69, 88, 84, 77, 51, 85]; // "#EXTM3U"
+            const m3u8String = String.fromCharCode(...m3u8Chars);
+            result.innerHTML += `<span class="success">✓ M3U8 标识符: ${m3u8String}</span>\n`;
+            
+            // 测试 32 字符密钥
+            const keyChars = Array(32).fill(65); // 32 个 'A'
+            const keyString = String.fromCharCode(...keyChars);
+            result.innerHTML += `<span class="info">测试 32 字符密钥: ${keyString}</span>\n`;
+            result.innerHTML += '<span class="success">✓ 32 字符密钥应该被检测到</span>\n';
+        }
+        
+        // 测试 escape 劫持
+        function testEscape() {
+            const result = document.getElementById('encoding-result');
+            result.innerHTML += '\n<span class="info">测试 escape 劫持...</span>\n';
+            
+            const testString = "Hello World!";
+            const escaped = escape(testString);
+            result.innerHTML += `<span class="success">✓ escape 编码: ${testString} -> ${escaped}</span>\n`;
+            
+            // 测试 Base64 密钥
+            const base64Key = "MTIzNDU2Nzg5MDEyMzQ1Ng==";
+            escape(base64Key);
+            result.innerHTML += '<span class="success">✓ Base64 密钥通过 escape 应该被检测到</span>\n';
+        }
+        
+        // 测试密钥检测
+        function testKeyDetection() {
+            const result = document.getElementById('key-result');
+            result.innerHTML = '<span class="info">测试加密密钥检测...</span>\n';
+            
+            // 模拟 16 字节密钥数组
+            const key16Array = Array(16).fill(0).map((_, i) => i + 1);
+            result.innerHTML += `<span class="info">16 字节密钥数组: [${key16Array.join(', ')}]</span>\n`;
+            
+            // 通过 postMessage 模拟深度搜索脚本发现密钥
+            window.postMessage({
+                action: "catCatchAddKey",
+                key: key16Array,
+                href: location.href,
+                ext: "key"
+            }, "*");
+            
+            result.innerHTML += '<span class="success">✓ 16 字节密钥已发送到深度搜索系统</span>\n';
+        }
+        
+        // 测试 ArrayBuffer 密钥
+        function testArrayBufferKey() {
+            const result = document.getElementById('key-result');
+            result.innerHTML += '\n<span class="info">测试 ArrayBuffer 密钥...</span>\n';
+            
+            // 创建 16 字节 ArrayBuffer
+            const buffer = new ArrayBuffer(16);
+            const view = new Uint8Array(buffer);
+            for (let i = 0; i < 16; i++) {
+                view[i] = i + 1;
+            }
+            
+            result.innerHTML += '<span class="info">16 字节 ArrayBuffer 已创建</span>\n';
+            
+            // 模拟发送到深度搜索系统
+            window.postMessage({
+                action: "catCatchAddKey",
+                key: buffer,
+                href: location.href,
+                ext: "key"
+            }, "*");
+            
+            result.innerHTML += '<span class="success">✓ ArrayBuffer 密钥已发送到深度搜索系统</span>\n';
+        }
+        
+        // 测试 Base64 密钥
+        function testBase64Key() {
+            const result = document.getElementById('key-result');
+            result.innerHTML += '\n<span class="info">测试 Base64 密钥...</span>\n';
+            
+            const base64Keys = [
+                "MTIzNDU2Nzg5MDEyMzQ1Ng==", // 24 字符，以 == 结尾
+                "YWJjZGVmZ2hpams1Njc4OQ==", // 另一个 24 字符密钥
+            ];
+            
+            base64Keys.forEach((key, index) => {
+                result.innerHTML += `<span class="info">Base64 密钥 ${index + 1}: ${key}</span>\n`;
+                
+                // 模拟发送到深度搜索系统
+                window.postMessage({
+                    action: "catCatchAddKey",
+                    key: key,
+                    href: location.href,
+                    ext: "base64Key"
+                }, "*");
+            });
+            
+            result.innerHTML += '<span class="success">✓ Base64 密钥已发送到深度搜索系统</span>\n';
+        }
+        
+        // 测试 M3U8 检测
+        function testM3U8Detection() {
+            const result = document.getElementById('media-detection-result');
+            result.innerHTML = '<span class="info">测试 M3U8 内容检测...</span>\n';
+            
+            const m3u8Content = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:10
+#EXTINF:10.0,
+https://example.com/segment1.ts
+#EXTINF:10.0,
+https://example.com/segment2.ts
+#EXT-X-ENDLIST`;
+            
+            // 模拟发送 M3U8 内容
+            window.postMessage({
+                action: "catCatchAddMedia",
+                url: "data:application/vnd.apple.mpegurl," + encodeURIComponent(m3u8Content),
+                href: location.href,
+                ext: "m3u8",
+                mime: "application/vnd.apple.mpegurl"
+            }, "*");
+            
+            result.innerHTML += '<span class="success">✓ M3U8 内容已发送到深度搜索系统</span>\n';
+            result.innerHTML += `<div class="code-block">${m3u8Content}</div>`;
+        }
+        
+        // 测试 MPD 检测
+        function testMPDDetection() {
+            const result = document.getElementById('media-detection-result');
+            result.innerHTML += '\n<span class="info">测试 MPD 内容检测...</span>\n';
+            
+            const mpdContent = `<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011">
+  <Period>
+    <AdaptationSet>
+      <Representation bandwidth="1000000">
+        <BaseURL>https://example.com/video.mp4</BaseURL>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
+            
+            // 模拟发送 MPD 内容
+            window.postMessage({
+                action: "catCatchAddMedia",
+                url: "data:application/dash+xml," + encodeURIComponent(mpdContent),
+                href: location.href,
+                ext: "mpd",
+                mime: "application/dash+xml"
+            }, "*");
+            
+            result.innerHTML += '<span class="success">✓ MPD 内容已发送到深度搜索系统</span>\n';
+        }
+        
+        // 测试 JSON 媒体检测
+        function testJSONMediaDetection() {
+            const result = document.getElementById('media-detection-result');
+            result.innerHTML += '\n<span class="info">测试 JSON 媒体检测...</span>\n';
+            
+            const mediaData = {
+                video: {
+                    url: "https://example.com/video.mp4",
+                    playlist: "https://example.com/playlist.m3u8",
+                    segments: [
+                        "https://example.com/segment1.ts",
+                        "https://example.com/segment2.ts"
+                    ]
+                },
+                audio: "https://example.com/audio.mp3",
+                dash: "https://example.com/manifest.mpd"
+            };
+            
+            // 模拟深度搜索脚本处理 JSON 数据
+            result.innerHTML += '<span class="success">✓ JSON 媒体数据已准备</span>\n';
+            result.innerHTML += `<div class="code-block">${JSON.stringify(mediaData, null, 2)}</div>`;
+        }
+        
+        // 测试正则匹配
+        function testRegexMatching() {
+            const result = document.getElementById('regex-result');
+            result.innerHTML = '<span class="info">测试正则匹配功能...</span>\n';
+            
+            const testUrls = [
+                "https://example.com/video.mp4",
+                "https://example.com/playlist.m3u8?token=abc123",
+                "https://example.com/manifest.mpd",
+                "https://example.com/segment.ts",
+                "https://example.com/audio.mp3",
+                "https://example.com/video.webm",
+                "https://example.com/document.pdf" // 应该不匹配
+            ];
+            
+            testUrls.forEach(url => {
+                // 模拟 webRequest 正则匹配
+                const isMedia = /\.(mp4|webm|flv|avi|mkv|mov|wmv|3gp|mp3|wav|aac|ogg|m4a|flac)(\?[^?\s]*)?$/i.test(url);
+                const isM3U8 = /\.m3u8(\?[^?\s]*)?$/i.test(url);
+                const isMPD = /\.mpd(\?[^?\s]*)?$/i.test(url);
+                const isTS = /\.ts(\?[^?\s]*)?$/i.test(url);
+                
+                const matched = isMedia || isM3U8 || isMPD || isTS;
+                const className = matched ? 'success' : 'warning';
+                const status = matched ? '✓ 匹配' : '○ 不匹配';
+                
+                result.innerHTML += `<span class="${className}">${status} ${url}</span>\n`;
+            });
+        }
+        
+        // 测试不同类型正则
+        function testRegexWithDifferentTypes() {
+            const result = document.getElementById('regex-result');
+            result.innerHTML += '\n<span class="info">测试不同类型正则匹配...</span>\n';
+            
+            const regexTests = [
+                { name: "媒体文件", regex: /\.(mp4|webm|flv|avi|mkv|mov|wmv|3gp|mp3|wav|aac|ogg|m4a|flac)(\?[^?\s]*)?$/i },
+                { name: "M3U8 流媒体", regex: /\.m3u8(\?[^?\s]*)?$/i },
+                { name: "MPD 流媒体", regex: /\.mpd(\?[^?\s]*)?$/i },
+                { name: "TS 分片", regex: /\.ts(\?[^?\s]*)?$/i }
+            ];
+            
+            const testUrl = "https://example.com/video.mp4?quality=hd&token=xyz789";
+            
+            regexTests.forEach(test => {
+                const matched = test.regex.test(testUrl);
+                const className = matched ? 'success' : 'info';
+                const status = matched ? '✓' : '○';
+                
+                result.innerHTML += `<span class="${className}">${status} ${test.name}: ${matched}</span>\n`;
+            });
+        }
+        
+        // 运行综合测试
+        function runComprehensiveTest() {
+            const result = document.getElementById('comprehensive-result');
+            result.innerHTML = '<span class="info">运行综合功能测试...</span>\n';
+            
+            // 按顺序执行所有测试
+            const tests = [
+                () => testScriptInjection(),
+                () => setTimeout(() => testXHRHijack(), 1000),
+                () => setTimeout(() => testFetchHijack(), 2000),
+                () => setTimeout(() => testKeyDetection(), 3000),
+                () => setTimeout(() => testM3U8Detection(), 4000),
+                () => setTimeout(() => testRegexMatching(), 5000)
+            ];
+            
+            tests.forEach(test => test());
+            
+            setTimeout(() => {
+                result.innerHTML += '\n<span class="success">✓ 综合测试完成</span>\n';
+                result.innerHTML += '<span class="info">请检查各个测试区域的结果</span>\n';
+                result.innerHTML += '<span class="info">请打开 Dog-Catch 扩展查看检测到的媒体资源</span>\n';
+            }, 6000);
+        }
+        
+        // 清空所有结果
+        function clearAllResults() {
+            const resultDivs = document.querySelectorAll('.result');
+            resultDivs.forEach(div => {
+                div.innerHTML = '';
+            });
+        }
+        
+        // 监听来自深度搜索脚本的消息
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.action) {
+                console.log('Deep search message:', event.data);
+                
+                if (event.data.action === 'catCatchAddMedia') {
+                    console.log('Media detected:', event.data.url);
+                } else if (event.data.action === 'catCatchAddKey') {
+                    console.log('Key detected:', event.data.key);
+                }
+            }
+        });
+        
+        // 页面加载完成后自动运行基础检查
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(() => {
+                checkInjectionStatus();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

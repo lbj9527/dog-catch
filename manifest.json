@@ -1,0 +1,72 @@
+{
+  "manifest_version": 3,
+  "name": "Dog-Catch",
+  "version": "0.1.0",
+  "description": "A simplified media resource detection and preview extension based on cat-catch",
+  "minimum_chrome_version": "93",
+  
+  "background": {
+    "service_worker": "js/background.js"
+  },
+  
+  "action": {
+    "default_icon": "img/icon.png",
+    "default_title": "Dog-Catch",
+    "default_popup": "popup.html"
+  },
+  
+  "icons": {
+    "64": "img/icon.png",
+    "128": "img/icon128.png"
+  },
+
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  
+  "permissions": [
+    "tabs",
+    "webRequest",
+    "storage",
+    "webNavigation",
+    "alarms",
+    "scripting"
+  ],
+  
+  "host_permissions": [
+    "*://*/*",
+    "<all_urls>"
+  ],
+  
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*/*",
+        "http://*/*"
+      ],
+      "js": [
+        "js/content-script.js",
+        "js/floating-ui.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "search-script/*",
+        "player.html",
+        "js/player.js",
+        "js/ui-components.js",
+        "js/event-system.js",
+        "js/feedback-system.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}

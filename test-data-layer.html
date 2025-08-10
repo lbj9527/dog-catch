@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dog-Catch 数据层测试</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #2196F3;
+        }
+        .btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .btn:hover {
+            background: #1976D2;
+        }
+        .result {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .success {
+            color: #2e7d32;
+        }
+        .error {
+            color: #c62828;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Dog-Catch 数据层测试</h1>
+        <p>测试第二阶段数据层开发的各项功能</p>
+        
+        <div class="test-section">
+            <h3>1. 数据管理器初始化测试</h3>
+            <button class="btn" onclick="testDataManagerInit()">测试初始化</button>
+            <div id="init-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>2. 资源添加和去重测试</h3>
+            <button class="btn" onclick="testAddMedia()">添加测试资源</button>
+            <button class="btn" onclick="testDuplicateCheck()">测试去重机制</button>
+            <div id="media-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>3. 存储机制测试</h3>
+            <button class="btn" onclick="testStorage()">测试存储保存</button>
+            <button class="btn" onclick="testStorageRestore()">测试存储恢复</button>
+            <div id="storage-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>4. 缓存清理测试</h3>
+            <button class="btn" onclick="testCacheCleanup()">测试缓存清理</button>
+            <button class="btn" onclick="testRedundantCleanup()">测试冗余清理</button>
+            <div id="cleanup-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>5. 性能保护测试</h3>
+            <button class="btn" onclick="testPerformanceProtection()">测试性能保护</button>
+            <button class="btn" onclick="testDebounceStorage()">测试防抖存储</button>
+            <div id="performance-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>6. findMedia 函数测试</h3>
+            <button class="btn" onclick="testFindMedia()">测试 findMedia 函数</button>
+            <button class="btn" onclick="testWebRequestData()">测试 webRequest 数据处理</button>
+            <div id="findmedia-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>7. 统计信息</h3>
+            <button class="btn" onclick="showStats()">显示统计信息</button>
+            <div id="stats-result" class="result"></div>
+        </div>
+    </div>
+    
+    <script>
+        // 模拟全局变量 G
+        window.G = {
+            initSyncComplete: true,
+            initLocalComplete: true,
+            tabId: 1,
+            enable: true,
+            checkDuplicates: true,
+            maxLength: 9999
+        };
+        
+        // 模拟 SetIcon 函数
+        window.SetIcon = function(options) {
+            console.log('SetIcon called with:', options);
+        };
+        
+        // 模拟 chrome.tabs.get
+        if (!window.chrome) {
+            window.chrome = {
+                tabs: {
+                    get: function(tabId, callback) {
+                        callback({
+                            id: tabId,
+                            title: '测试页面',
+                            url: 'https://example.com',
+                            favIconUrl: 'https://example.com/favicon.ico'
+                        });
+                    }
+                },
+                storage: {
+                    session: {
+                        set: function(data, callback) {
+                            console.log('Session storage set:', data);
+                            callback && callback();
+                        },
+                        get: function(keys, callback) {
+                            callback({ MediaData: {} });
+                        }
+                    }
+                }
+            };
+        }
+        
+        // 加载数据管理器和工具函数
+        let dataManager;
+
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+
+        // 初始化 - 按顺序加载脚本
+        Promise.all([
+            loadScript('js/utils.js'),
+            loadScript('js/data-manager.js')
+        ]).then(() => {
+            dataManager = new DataManager();
+            document.getElementById('init-result').innerHTML =
+                '<span class="success">✓ 工具函数和数据管理器加载成功</span>';
+        }).catch(error => {
+            document.getElementById('init-result').innerHTML =
+                '<span class="error">✗ 加载失败: ' + error.message + '</span>';
+        });
+        
+        // 测试函数
+        function testDataManagerInit() {
+            const result = document.getElementById('init-result');
+            if (dataManager) {
+                const stats = dataManager.getStats();
+                result.innerHTML = `<span class="success">✓ 数据管理器初始化成功</span>
+初始统计信息: ${JSON.stringify(stats, null, 2)}`;
+            } else {
+                result.innerHTML = '<span class="error">✗ 数据管理器未初始化</span>';
+            }
+        }
+        
+        function testAddMedia() {
+            const result = document.getElementById('media-result');
+            if (!dataManager) {
+                result.innerHTML = '<span class="error">✗ 数据管理器未初始化</span>';
+                return;
+            }
+            
+            const testData = {
+                url: 'https://example.com/video.mp4',
+                name: 'test-video.mp4',
+                ext: 'mp4',
+                size: 1024 * 1024,
+                tabId: 1,
+                requestId: 'test-request-1'
+            };
+            
+            const success = dataManager.addMedia(testData);
+            const stats = dataManager.getStats();
+            
+            result.innerHTML = `<span class="${success ? 'success' : 'error'}">
+${success ? '✓' : '✗'} 添加媒体资源: ${success ? '成功' : '失败'}</span>
+统计信息: ${JSON.stringify(stats, null, 2)}`;
+        }
+        
+        function testDuplicateCheck() {
+            const result = document.getElementById('media-result');
+            if (!dataManager) {
+                result.innerHTML = '<span class="error">✗ 数据管理器未初始化</span>';
+                return;
+            }
+            
+            // 添加相同的资源
+            const testData = {
+                url: 'https://example.com/video.mp4',
+                name: 'test-video.mp4',
+                ext: 'mp4',
+                size: 1024 * 1024,
+                tabId: 1,
+                requestId: 'test-request-duplicate'
+            };
+            
+            const success = dataManager.addMedia(testData);
+            const stats = dataManager.getStats();
+            
+            result.innerHTML += `\n<span class="${!success ? 'success' : 'error'}">
+${!success ? '✓' : '✗'} 去重检测: ${!success ? '成功阻止重复' : '未能阻止重复'}</span>
+统计信息: ${JSON.stringify(stats, null, 2)}`;
+        }
+        
+        function testStorage() {
+            const result = document.getElementById('storage-result');
+            if (!dataManager) {
+                result.innerHTML = '<span class="error">✗ 数据管理器未初始化</span>';
+                return;
+            }
+            
+            dataManager.saveToStorage();
+            result.innerHTML = '<span class="success">✓ 存储保存测试完成</span>';
+        }
+        
+        function testStorageRestore() {
+            const result = document.getElementById('storage-result');
+            if (!dataManager) {
+                result.innerHTML = '<span class="error">✗ 数据管理器未初始化</span>';
+                return;
+            }
+            
+            dataManager.restoreFromStorage();
+            result.innerHTML += '\n<span class="success">✓ 存储恢复测试完成</span>';
+        }
+        
+        function testCacheCleanup() {
+            const result = document.getElementById('cleanup-result');
+            if (!dataManager) {
+                result.innerHTML = '<span class="error">✗ 数据管理器未初始化</span>';
+                return;
+            }
+            
+            dataManager.clearTabData(1);
+            const stats = dataManager.getStats();
+            
+            result.innerHTML = `<span class="success">✓ 缓存清理测试完成</span>
+清理后统计信息: ${JSON.stringify(stats, null, 2)}`;
+        }
+        
+        function testRedundantCleanup() {
+            const result = document.getElementById('cleanup-result');
+            if (!dataManager) {
+                result.innerHTML = '<span class="error">✗ 数据管理器未初始化</span>';
+                return;
+            }
+            
+            dataManager.clearRedundant();
+            result.innerHTML += '\n<span class="success">✓ 冗余清理测试完成</span>';
+        }
+        
+        function testPerformanceProtection() {
+            const result = document.getElementById('performance-result');
+            if (!dataManager) {
+                result.innerHTML = '<span class="error">✗ 数据管理器未初始化</span>';
+                return;
+            }
+            
+            // 添加大量数据测试性能保护
+            for (let i = 0; i < 10; i++) {
+                dataManager.addMedia({
+                    url: `https://example.com/video${i}.mp4`,
+                    name: `test-video${i}.mp4`,
+                    ext: 'mp4',
+                    size: 1024 * 1024,
+                    tabId: 1,
+                    requestId: `test-request-${i}`
+                });
+            }
+            
+            const stats = dataManager.getStats();
+            result.innerHTML = `<span class="success">✓ 性能保护测试完成</span>
+添加10个资源后统计信息: ${JSON.stringify(stats, null, 2)}`;
+        }
+        
+        function testDebounceStorage() {
+            const result = document.getElementById('performance-result');
+            result.innerHTML += '\n<span class="success">✓ 防抖存储测试完成（需要在实际环境中测试）</span>';
+        }
+        
+        function testFindMedia() {
+            const result = document.getElementById('findmedia-result');
+            if (!window.findMedia) {
+                result.innerHTML = '<span class="error">✗ findMedia 函数未定义</span>';
+                return;
+            }
+
+            // 模拟 webRequest 数据
+            const mockWebRequestData = {
+                url: 'https://example.com/video.mp4',
+                tabId: 1,
+                requestId: 'test-request-findmedia',
+                type: 'xmlhttprequest',
+                responseHeaders: [
+                    { name: 'Content-Type', value: 'video/mp4' },
+                    { name: 'Content-Length', value: '1048576' }
+                ],
+                allRequestHeaders: [
+                    { name: 'Referer', value: 'https://example.com' }
+                ]
+            };
+
+            // 测试 findMedia 函数
+            try {
+                const success = window.findMedia(mockWebRequestData, false, true);
+                result.innerHTML = `<span class="success">✓ findMedia 函数测试成功</span>
+测试数据: ${JSON.stringify(mockWebRequestData, null, 2)}
+处理结果: ${success}`;
+            } catch (error) {
+                result.innerHTML = `<span class="error">✗ findMedia 函数测试失败: ${error.message}</span>`;
+            }
+        }
+
+        function testWebRequestData() {
+            const result = document.getElementById('findmedia-result');
+
+            // 测试工具函数
+            const testUrl = 'https://example.com/path/video.mp4';
+            const [fileName, ext] = fileNameParse(new URL(testUrl).pathname);
+
+            const mockHeaders = [
+                { name: 'Content-Type', value: 'video/mp4; charset=utf-8' },
+                { name: 'Content-Length', value: '2097152' },
+                { name: 'Content-Disposition', value: 'attachment; filename="test-video.mp4"' }
+            ];
+
+            const headerInfo = getResponseHeadersValue({ responseHeaders: mockHeaders });
+
+            result.innerHTML += `\n<span class="success">✓ 工具函数测试</span>
+文件名解析: fileName="${fileName}", ext="${ext}"
+响应头解析: ${JSON.stringify(headerInfo, null, 2)}`;
+        }
+
+        function showStats() {
+            const result = document.getElementById('stats-result');
+            if (!dataManager) {
+                result.innerHTML = '<span class="error">✗ 数据管理器未初始化</span>';
+                return;
+            }
+
+            const stats = dataManager.getStats();
+            const allData = dataManager.getAllData();
+
+            result.innerHTML = `统计信息: ${JSON.stringify(stats, null, 2)}
+所有数据: ${JSON.stringify(allData, null, 2)}`;
+        }
+    </script>
+</body>
+</html>

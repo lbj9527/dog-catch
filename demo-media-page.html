@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>媒体资源演示页面 - Dog-Catch 测试</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2196F3;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+        }
+        .section h2 {
+            color: #666;
+            margin-top: 0;
+        }
+        .media-item {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 4px solid #2196F3;
+        }
+        .media-item h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .media-url {
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 12px;
+            color: #666;
+            background: #fff;
+            padding: 5px;
+            border-radius: 3px;
+        }
+        .btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover {
+            background: #1976D2;
+        }
+        .status {
+            background: #e8f5e8;
+            color: #2e7d32;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            text-align: center;
+        }
+        video, audio {
+            max-width: 100%;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>媒体资源演示页面</h1>
+        <div class="status">
+            📡 Dog-Catch 扩展应该能够自动检测到此页面上的媒体资源
+        </div>
+        
+        <div class="section">
+            <h2>🎥 视频资源</h2>
+            <div class="media-item">
+                <h3>MP4 视频示例</h3>
+                <div class="media-url">https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4</div>
+                <button class="btn" onclick="loadVideo('mp4')">加载视频</button>
+                <video id="video-mp4" controls style="display:none;"></video>
+            </div>
+            
+            <div class="media-item">
+                <h3>WebM 视频示例</h3>
+                <div class="media-url">https://sample-videos.com/zip/10/webm/SampleVideo_1280x720_1mb.webm</div>
+                <button class="btn" onclick="loadVideo('webm')">加载视频</button>
+                <video id="video-webm" controls style="display:none;"></video>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🎵 音频资源</h2>
+            <div class="media-item">
+                <h3>MP3 音频示例</h3>
+                <div class="media-url">https://www.soundjay.com/misc/sounds/bell-ringing-05.wav</div>
+                <button class="btn" onclick="loadAudio('mp3')">加载音频</button>
+                <audio id="audio-mp3" controls style="display:none;"></audio>
+            </div>
+            
+            <div class="media-item">
+                <h3>WAV 音频示例</h3>
+                <div class="media-url">https://file-examples.com/storage/fe68c8a7c4c6f3c7b8b7b8b/2017/11/file_example_WAV_1MG.wav</div>
+                <button class="btn" onclick="loadAudio('wav')">加载音频</button>
+                <audio id="audio-wav" controls style="display:none;"></audio>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>📺 流媒体资源</h2>
+            <div class="media-item">
+                <h3>HLS (M3U8) 流媒体</h3>
+                <div class="media-url">https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8</div>
+                <button class="btn" onclick="fetchStream('m3u8')">获取 M3U8</button>
+                <div id="stream-m3u8-result"></div>
+            </div>
+            
+            <div class="media-item">
+                <h3>DASH (MPD) 流媒体</h3>
+                <div class="media-url">https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd</div>
+                <button class="btn" onclick="fetchStream('mpd')">获取 MPD</button>
+                <div id="stream-mpd-result"></div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🔄 动态加载测试</h2>
+            <button class="btn" onclick="dynamicLoadTest()">动态加载媒体资源</button>
+            <button class="btn" onclick="ajaxTest()">AJAX 请求测试</button>
+            <button class="btn" onclick="fetchTest()">Fetch API 测试</button>
+            <div id="dynamic-result"></div>
+        </div>
+        
+        <div class="section">
+            <h2>📊 检测状态</h2>
+            <button class="btn" onclick="checkDetectionStatus()">检查检测状态</button>
+            <div id="detection-status"></div>
+        </div>
+    </div>
+    
+    <script>
+        // 加载视频
+        function loadVideo(type) {
+            const video = document.getElementById(`video-${type}`);
+            const urls = {
+                'mp4': 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
+                'webm': 'https://sample-videos.com/zip/10/webm/SampleVideo_1280x720_1mb.webm'
+            };
+            
+            video.src = urls[type];
+            video.style.display = 'block';
+            video.load();
+        }
+        
+        // 加载音频
+        function loadAudio(type) {
+            const audio = document.getElementById(`audio-${type}`);
+            const urls = {
+                'mp3': 'https://www.soundjay.com/misc/sounds/bell-ringing-05.wav',
+                'wav': 'https://file-examples.com/storage/fe68c8a7c4c6f3c7b8b7b8b/2017/11/file_example_WAV_1MG.wav'
+            };
+            
+            audio.src = urls[type];
+            audio.style.display = 'block';
+            audio.load();
+        }
+        
+        // 获取流媒体
+        function fetchStream(type) {
+            const resultDiv = document.getElementById(`stream-${type}-result`);
+            const urls = {
+                'm3u8': 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
+                'mpd': 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd'
+            };
+            
+            resultDiv.innerHTML = '正在获取流媒体信息...';
+            
+            fetch(urls[type])
+                .then(response => response.text())
+                .then(data => {
+                    resultDiv.innerHTML = `<pre style="max-height:200px;overflow:auto;font-size:10px;">${data.substring(0, 500)}...</pre>`;
+                })
+                .catch(error => {
+                    resultDiv.innerHTML = `获取失败: ${error.message}`;
+                });
+        }
+        
+        // 动态加载测试
+        function dynamicLoadTest() {
+            const result = document.getElementById('dynamic-result');
+            result.innerHTML = '正在动态创建媒体元素...';
+            
+            // 动态创建视频元素
+            const video = document.createElement('video');
+            video.src = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+            video.controls = true;
+            video.style.maxWidth = '100%';
+            
+            result.innerHTML = '动态视频元素已创建';
+            result.appendChild(video);
+        }
+        
+        // AJAX 测试
+        function ajaxTest() {
+            const result = document.getElementById('dynamic-result');
+            result.innerHTML += '<br>正在进行 AJAX 请求...';
+            
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', 'https://sample-videos.com/zip/10/mp4/SampleVideo_640x360_1mb.mp4', true);
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    result.innerHTML += `<br>AJAX 请求完成: ${xhr.status}`;
+                }
+            };
+            xhr.send();
+        }
+        
+        // Fetch API 测试
+        function fetchTest() {
+            const result = document.getElementById('dynamic-result');
+            result.innerHTML += '<br>正在进行 Fetch 请求...';
+            
+            fetch('https://www.soundjay.com/misc/sounds/bell-ringing-04.wav', { method: 'HEAD' })
+                .then(response => {
+                    result.innerHTML += `<br>Fetch 请求完成: ${response.status}`;
+                })
+                .catch(error => {
+                    result.innerHTML += `<br>Fetch 请求失败: ${error.message}`;
+                });
+        }
+        
+        // 检查检测状态
+        function checkDetectionStatus() {
+            const result = document.getElementById('detection-status');
+            result.innerHTML = '正在检查 Dog-Catch 检测状态...';
+            
+            if (chrome && chrome.runtime) {
+                chrome.runtime.sendMessage({ Message: "getAllData" }, function(response) {
+                    if (chrome.runtime.lastError) {
+                        result.innerHTML = `检测状态: 扩展通信失败 - ${chrome.runtime.lastError.message}`;
+                    } else if (response && typeof response === 'object') {
+                        let totalCount = 0;
+                        for (let tabId in response) {
+                            if (Array.isArray(response[tabId])) {
+                                totalCount += response[tabId].length;
+                            }
+                        }
+                        result.innerHTML = `检测状态: 已检测到 ${totalCount} 个媒体资源`;
+                        
+                        if (totalCount > 0) {
+                            result.innerHTML += '<br><strong>检测到的资源:</strong>';
+                            for (let tabId in response) {
+                                if (Array.isArray(response[tabId]) && response[tabId].length > 0) {
+                                    response[tabId].forEach(item => {
+                                        result.innerHTML += `<div style="margin:5px 0;padding:5px;background:#f0f0f0;">
+                                            <strong>${item.name || 'Unknown'}</strong> (${item.ext || 'unknown'})
+                                            <br><small>${item.url}</small>
+                                        </div>`;
+                                    });
+                                }
+                            }
+                        }
+                    } else {
+                        result.innerHTML = '检测状态: 暂无检测到的媒体资源';
+                    }
+                });
+            } else {
+                result.innerHTML = '检测状态: Chrome 扩展 API 不可用';
+            }
+        }
+        
+        // 页面加载完成后自动触发一些请求
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('媒体演示页面已加载，Dog-Catch 应该开始检测媒体资源');
+            
+            // 延迟触发一些请求，让用户看到检测过程
+            setTimeout(() => {
+                fetch('https://httpbin.org/json').then(() => {
+                    console.log('JSON 请求完成');
+                });
+            }, 2000);
+            
+            setTimeout(() => {
+                fetch('https://httpbin.org/image/png').then(() => {
+                    console.log('图片请求完成');
+                });
+            }, 4000);
+        });
+    </script>
+</body>
+</html>

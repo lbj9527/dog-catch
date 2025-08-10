@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dog-Catch</title>
+    <link rel="stylesheet" href="css/popup.css">
+    <!-- Video.js 核心样式 -->
+    <link href="https://vjs.zencdn.net/8.6.1/video-js.css" rel="stylesheet">
+    <!-- Video.js 主题样式 -->
+    <style>
+        /* Video.js 播放器自定义样式 */
+        .video-js {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .video-js .vjs-big-play-button {
+            background-color: rgba(33, 150, 243, 0.8);
+            border-color: #2196F3;
+        }
+        .video-js .vjs-control-bar {
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+        .video-js .vjs-progress-control .vjs-progress-holder .vjs-play-progress {
+            background-color: #2196F3;
+        }
+    </style>
+</head>
+<body>
+    <div id="dogCatchApp">
+        <!-- 工具栏 -->
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <h1 class="app-title">Dog-Catch</h1>
+                <span class="resource-count" id="resourceCount">0</span>
+            </div>
+            <div class="toolbar-right">
+                <button id="deepSearchBtn" class="btn btn-primary" title="深度搜索页面中的隐藏媒体资源">
+                    <span class="icon">🔍</span>
+                </button>
+                <button id="floatingUIBtn" class="btn btn-secondary" title="打开浮动界面">
+                    <span class="icon">🪟</span>
+                </button>
+                <button id="clearBtn" class="btn btn-danger" title="清空当前页面的资源列表">
+                    <span class="icon">🗑️</span>
+                </button>
+                <button id="settingsBtn" class="btn btn-secondary" title="打开设置页面">
+                    <span class="icon">⚙️</span>
+                </button>
+                <button id="enableBtn" class="btn btn-toggle" title="启用/禁用资源检测">
+                    <span class="icon" id="enableIcon">🟢</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 筛选栏 -->
+        <div class="filter-bar">
+            <select id="typeFilter" class="filter-select">
+                <option value="all">所有类型</option>
+                <option value="video">视频</option>
+                <option value="audio">音频</option>
+                <option value="stream">流媒体</option>
+            </select>
+            <button id="clearBtn" class="btn btn-danger btn-small">清空</button>
+        </div>
+
+        <!-- 资源列表 -->
+        <div class="resource-list" id="resourceList">
+            <div class="empty-state" id="emptyState">
+                <div class="empty-icon">📁</div>
+                <p>暂无检测到媒体资源</p>
+                <p class="empty-hint">浏览包含视频或音频的网页，资源将自动显示在这里</p>
+            </div>
+        </div>
+
+        <!-- 状态栏 -->
+        <div class="status-bar">
+            <span class="status-text" id="statusText">就绪</span>
+            <span class="version">v0.1.0</span>
+        </div>
+    </div>
+
+    <!-- 资源卡片模板 -->
+    <template id="resourceCardTemplate">
+        <div class="resource-card" data-request-id="">
+            <div class="resource-info">
+                <div class="resource-name" title=""></div>
+                <div class="resource-details">
+                    <span class="resource-size"></span>
+                    <span class="resource-type"></span>
+                    <span class="resource-time"></span>
+                </div>
+                <div class="resource-url" title=""></div>
+            </div>
+            <div class="resource-actions">
+                <button class="btn btn-preview" title="简单预览">
+                    <span class="icon">👁️</span>
+                </button>
+                <button class="btn btn-play" title="详细预览">
+                    <span class="icon">▶️</span>
+                </button>
+                <button class="btn btn-copy" title="复制链接">
+                    <span class="icon">📋</span>
+                </button>
+            </div>
+            <!-- 简单预览窗口 -->
+            <div class="preview-window" style="display: none;">
+                <div class="preview-header">
+                    <span class="preview-title">预览</span>
+                    <button class="preview-close">×</button>
+                </div>
+                <div class="preview-content">
+                    <video class="preview-player" controls preload="metadata"></video>
+                    <audio class="preview-player" controls preload="metadata" style="display: none;"></audio>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Video.js 核心框架 -->
+    <script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
+    <!-- Video.js HLS 插件 -->
+    <script src="https://unpkg.com/@videojs/http-streaming@3.0.2/dist/videojs-http-streaming.min.js"></script>
+    <!-- Video.js DASH 插件 -->
+    <script src="https://unpkg.com/videojs-contrib-dash@5.1.1/dist/videojs-dash.min.js"></script>
+
+    <!-- 第七阶段：界面完善优化系统 -->
+    <script src="js/ui-components.js"></script>
+    <script src="js/event-system.js"></script>
+    <script src="js/feedback-system.js"></script>
+
+    <script src="js/utils.js"></script>
+    <script src="js/popup.js"></script>
+</body>
+</html>

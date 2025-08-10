@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dog-Catch 设置</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        h1 {
+            color: #2196F3;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+        }
+        .section h2 {
+            margin-top: 0;
+            color: #666;
+            font-size: 18px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        input[type="checkbox"] {
+            margin-right: 8px;
+        }
+        .btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn:hover {
+            background: #1976D2;
+        }
+        .status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+        .status.success {
+            background: #e8f5e8;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+        }
+        .status.error {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Dog-Catch 设置</h1>
+        
+        <div class="section">
+            <h2>基础设置</h2>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="enable" checked>
+                    启用扩展
+                </label>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="deepSearch">
+                    启用深度搜索（实验性功能）
+                </label>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="checkDuplicates" checked>
+                    检查重复资源
+                </label>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>支持的文件类型</h2>
+            <p>以下文件类型将被自动检测：</p>
+            <div class="form-group">
+                <label><input type="checkbox" id="ext-mp4" checked> MP4 视频文件</label>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="ext-m3u8" checked> M3U8 流媒体</label>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="ext-mpd" checked> MPD 流媒体</label>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="ext-webm" checked> WebM 视频文件</label>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="ext-flv" checked> FLV 视频文件</label>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="ext-mp3" checked> MP3 音频文件</label>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="ext-aac" checked> AAC 音频文件</label>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>关于</h2>
+            <p>Dog-Catch v0.1.0</p>
+            <p>基于 cat-catch 的简化版媒体资源检测扩展</p>
+            <p>专注于核心的资源检测和预览功能</p>
+        </div>
+        
+        <button class="btn" id="saveBtn">保存设置</button>
+        <div class="status" id="status"></div>
+    </div>
+    
+    <script src="js/options.js"></script>
+</body>
+</html>
