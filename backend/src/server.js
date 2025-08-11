@@ -6,6 +6,9 @@ const multer = require('multer');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const sqlite3 = require('sqlite3').verbose();
+const https = require('https');
+const http = require('http');
+const { URL } = require('url');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -100,6 +103,73 @@ const authenticateToken = (req, res, next) => {
 // 健康检查
 app.get('/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// HLS代理接口 - 解决CORS和防盗链问题
+app.get('/api/hls', async (req, res) => {
+    const { url } = req.query;
+    
+    if (!url) {
+        return res.status(400).json({ error: '缺少url参数' });
+    }
+    
+    try {
+        const targetUrl = new URL(url);
+        const isHttps = targetUrl.protocol === 'https:';
+        const requestModule = isHttps ? https : http;
+        
+        // 设置请求选项，包含必要的headers
+        const options = {
+            hostname: targetUrl.hostname,
+            port: targetUrl.port || (isHttps ? 443 : 80),
+            path: targetUrl.pathname + targetUrl.search,
+            method: 'GET',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Referer': 'https://missav.live/',
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'cross-site'
+            }
+        };
+        
+        const proxyReq = requestModule.request(options, (proxyRes) => {
+            // 设置CORS头
+            res.set({
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+                'Content-Type': proxyRes.headers['content-type'] || 'application/vnd.apple.mpegurl',
+                'Cache-Control': 'no-cache'
+            });
+            
+            // 设置状态码
+            res.status(proxyRes.statusCode);
+            
+            // 管道传输响应数据
+            proxyRes.pipe(res);
+        });
+        
+        proxyReq.on('error', (error) => {
+            console.error('代理请求错误:', error);
+            res.status(500).json({ error: '代理请求失败' });
+        });
+        
+        proxyReq.setTimeout(30000, () => {
+            proxyReq.destroy();
+            res.status(408).json({ error: '请求超时' });
+        });
+        
+        proxyReq.end();
+        
+    } catch (error) {
+        console.error('HLS代理错误:', error);
+        res.status(400).json({ error: '无效的URL参数' });
+    }
 });
 
 // 用户认证

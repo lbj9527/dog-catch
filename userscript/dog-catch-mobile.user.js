@@ -66,7 +66,7 @@
             const videoId = this.extractVideoId(location.href);
             
             // 跳转到自建播放器
-            const playerUrl = `http://localhost:3000/index.html?${new URLSearchParams({
+            const playerUrl = `http://localhost:3000/?${new URLSearchParams({
                 src: videoUrl,
                 type: videoType,
                 title: title || '',

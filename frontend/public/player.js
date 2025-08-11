@@ -65,11 +65,6 @@ class VideoPlayer {
             this.copyToClipboard(this.currentVideoUrl);
         };
         
-        // 新标签页打开
-        document.getElementById('openOriginal').onclick = () => {
-            window.open(this.currentVideoUrl, '_blank');
-        };
-        
         // 字幕开关
         document.getElementById('subtitleToggle').onclick = () => {
             this.toggleSubtitle();
@@ -154,8 +149,9 @@ class VideoPlayer {
     // 处理HLS视频
     async handleHLSVideo() {
         try {
-            // 检查是否为master playlist
-            const response = await fetch(this.currentVideoUrl);
+            // 通过代理检查是否为master playlist
+            const proxyUrl = `http://localhost:8000/api/hls?url=${encodeURIComponent(this.currentVideoUrl)}`;
+            const response = await fetch(proxyUrl);
             const content = await response.text();
             
             if (this.isMasterPlaylist(content)) {
@@ -167,13 +163,15 @@ class VideoPlayer {
                 const defaultQuality = this.selectDefaultQuality();
                 this.playVideo(defaultQuality.url, 'hls');
             } else {
-                // 直接播放
-                this.playVideo(this.currentVideoUrl, 'hls');
+                // 直接播放，也通过代理
+                const proxyUrl = `http://localhost:8000/api/hls?url=${encodeURIComponent(this.currentVideoUrl)}`;
+                this.playVideo(proxyUrl, 'hls');
             }
         } catch (error) {
             console.error('HLS处理错误:', error);
-            // 尝试直接播放
-            this.playVideo(this.currentVideoUrl, 'hls');
+            // 尝试通过代理直接播放
+            const proxyUrl = `http://localhost:8000/api/hls?url=${encodeURIComponent(this.currentVideoUrl)}`;
+            this.playVideo(proxyUrl, 'hls');
         }
     }
     
@@ -211,9 +209,12 @@ class VideoPlayer {
                     const resolution = this.extractResolution(line);
                     const bandwidth = this.extractBandwidth(line);
                     
+                    const originalUrl = new URL(nextLine, this.currentVideoUrl).href;
+                    const proxyUrl = `http://localhost:8000/api/hls?url=${encodeURIComponent(originalUrl)}`;
+                    
                     qualities.push({
                         resolution: resolution || `${Math.round(bandwidth / 1000)}k`,
-                        url: new URL(nextLine, this.currentVideoUrl).href,
+                        url: proxyUrl,
                         bandwidth: bandwidth
                     });
                 }
