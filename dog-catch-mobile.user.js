@@ -711,7 +711,7 @@
                 style="
                     margin-left: 10px;
                     cursor: pointer;
-            ">下载(Download)</span>
+            ">播放(Play)</span>
         `;
  
         div.querySelector(".copy-link").addEventListener("click", () => {
