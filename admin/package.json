@@ -1,0 +1,24 @@
+{
+  "name": "video-player-admin",
+  "version": "1.0.0",
+  "description": "Video player admin dashboard for subtitle management",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "vite preview --port 3001"
+  },
+  "dependencies": {
+    "vue": "^3.3.4",
+    "vue-router": "^4.2.4",
+    "element-plus": "^2.3.9",
+    "@element-plus/icons-vue": "^2.1.0",
+    "axios": "^1.5.0",
+    "js-cookie": "^3.0.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.3.4",
+    "vite": "^4.4.9"
+  }
+} 

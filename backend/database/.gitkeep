@@ -1,0 +1,3 @@
+# 此文件用于保持 database 目录在 git 中的存在
+# SQLite 数据库文件将存储在此目录中
+# 实际的数据库文件会被 .gitignore 忽略 

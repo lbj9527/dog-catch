@@ -1,0 +1,97 @@
+# ===========================================
+# M3U8视频播放器 + 字幕管理系统 .gitattributes
+# ===========================================
+
+# 设置默认行为
+* text=auto
+
+# ===== 源代码文件 =====
+# JavaScript/TypeScript
+*.js text eol=lf
+*.jsx text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.vue text eol=lf
+*.json text eol=lf
+
+# HTML/CSS
+*.html text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.sass text eol=lf
+*.less text eol=lf
+
+# 配置文件
+*.yml text eol=lf
+*.yaml text eol=lf
+*.xml text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.conf text eol=lf
+*.config text eol=lf
+
+# 文档文件
+*.md text eol=lf
+*.txt text eol=lf
+*.rtf text eol=lf
+
+# 字幕文件
+*.srt text eol=lf
+*.vtt text eol=lf
+*.ass text eol=lf
+*.ssa text eol=lf
+
+# ===== 脚本文件 =====
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# ===== 二进制文件 =====
+# 图片
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text eol=lf
+
+# 字体
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.otf binary
+
+# 音视频
+*.mp4 binary
+*.mp3 binary
+*.avi binary
+*.mov binary
+*.wmv binary
+*.flv binary
+*.m3u8 text eol=lf
+*.ts binary
+
+# 压缩文件
+*.zip binary
+*.tar binary
+*.gz binary
+*.rar binary
+*.7z binary
+
+# 数据库文件
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+
+# ===== Git LFS 跟踪 =====
+# 如果需要使用 Git LFS 跟踪大文件，取消下面的注释
+# *.mp4 filter=lfs diff=lfs merge=lfs -text
+# *.zip filter=lfs diff=lfs merge=lfs -text
+# *.db filter=lfs diff=lfs merge=lfs -text
+
+# ===== 语言检测 =====
+# 让 GitHub 正确识别项目语言
+*.vue linguist-language=Vue
+*.user.js linguist-language=JavaScript 

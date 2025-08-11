@@ -1,0 +1,217 @@
+/* 全局样式 */
+body {
+    margin: 0;
+    background: #0f0f0f;
+    color: #fff;
+    font-family: Arial, Helvetica, sans-serif;
+    line-height: 1.4;
+}
+
+/* 头部样式 */
+.header {
+    padding: 12px 16px;
+    background: rgba(0, 0, 0, 0.9);
+    border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 500;
+    flex: 1;
+    min-width: 200px;
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.controls select,
+.controls button {
+    padding: 6px 12px;
+    background: #333;
+    color: #fff;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+.controls button:hover {
+    background: #555;
+}
+
+.controls select:focus,
+.controls button:focus {
+    outline: 2px solid #007cba;
+    outline-offset: 1px;
+}
+
+#message {
+    color: #ccc;
+    font-size: 14px;
+    margin-left: auto;
+}
+
+/* 播放器容器样式 */
+.stage {
+    margin: 0 auto;
+    padding: 16px;
+    max-width: 960px;
+}
+
+.player-box {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.player-box .video-js {
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 8px;
+}
+
+/* Video.js 大播放按钮居中 */
+.video-js .vjs-big-play-button {
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    margin: 0 !important;
+    font-size: 3em !important;
+}
+
+/* 控制栏样式优化 */
+.video-js .vjs-control-bar {
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+    border-radius: 0 0 8px 8px;
+}
+
+.video-js .vjs-progress-control {
+    height: 6px;
+}
+
+.video-js .vjs-progress-control:hover {
+    height: 8px;
+}
+
+/* 响应式设计 */
+@media (min-width: 1440px) {
+    .stage {
+        max-width: 1280px;
+    }
+}
+
+@media (min-width: 1024px) and (max-width: 1439px) {
+    .stage {
+        max-width: 960px;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+    .stage {
+        max-width: 720px;
+        padding: 12px;
+    }
+    
+    .header {
+        padding: 10px 12px;
+    }
+    
+    .header h3 {
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 767px) {
+    .stage {
+        max-width: 100%;
+        padding: 8px;
+    }
+    
+    .header {
+        padding: 8px 12px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    
+    .header h3 {
+        font-size: 16px;
+        text-align: center;
+        min-width: auto;
+    }
+    
+    .controls {
+        justify-content: center;
+    }
+    
+    .controls button,
+    .controls select {
+        font-size: 12px;
+        padding: 4px 8px;
+    }
+    
+    #message {
+        text-align: center;
+        margin: 0;
+        font-size: 12px;
+    }
+}
+
+/* 加载状态 */
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    color: #ccc;
+}
+
+.loading::before {
+    content: '';
+    width: 20px;
+    height: 20px;
+    border: 2px solid #333;
+    border-top: 2px solid #007cba;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 8px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* 错误状态 */
+.error {
+    color: #ff6b6b;
+    background: rgba(255, 107, 107, 0.1);
+    padding: 8px 12px;
+    border-radius: 4px;
+    border-left: 3px solid #ff6b6b;
+}
+
+/* 成功状态 */
+.success {
+    color: #51cf66;
+    background: rgba(81, 207, 102, 0.1);
+    padding: 8px 12px;
+    border-radius: 4px;
+    border-left: 3px solid #51cf66;
+} 

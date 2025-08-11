@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频播放器</title>
+    <link href="https://vjs.zencdn.net/8.6.1/video-js.css" rel="stylesheet">
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <div class="header">
+        <h3 id="title">视频播放器</h3>
+        <div class="controls">
+            <select id="qualitySelect" style="display: none;">
+                <option value="">选择清晰度</option>
+            </select>
+            <button id="copyLink">复制链接</button>
+            <button id="openOriginal">新标签页打开</button>
+            <button id="subtitleToggle">字幕开关</button>
+        </div>
+        <span id="message"></span>
+    </div>
+
+    <div class="stage">
+        <div class="player-box">
+            <video
+                id="videoPlayer"
+                class="video-js vjs-default-skin"
+                controls
+                preload="auto"
+                width="960"
+                height="540"
+                data-setup="{}"
+            >
+                <p class="vjs-no-js">
+                    您的浏览器不支持视频播放，请升级浏览器或
+                    <a href="#" target="_blank" id="fallbackLink">直接访问视频链接</a>
+                </p>
+            </video>
+        </div>
+    </div>
+
+    <script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
+    <script src="./player.js"></script>
+</body>
+</html> 
