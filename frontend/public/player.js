@@ -288,7 +288,7 @@ class VideoPlayer {
         
         try {
             // 这里需要替换为实际的API地址
-            const response = await fetch(`https://api.your-domain.com/api/subtitle/${this.currentVideoId}`);
+            const response = await fetch(`http://localhost:8000/api/subtitle/${this.currentVideoId}`);
             
             if (response.ok) {
                 const subtitleText = await response.text();
