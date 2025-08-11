@@ -56,6 +56,175 @@
         xmlHttpRequest(details) {
             return ((typeof GM_xmlhttpRequest === "function") ? GM_xmlhttpRequest : GM.xmlHttpRequest)(details);
         },
+        openPlayer(videoUrl, videoType = 'auto', title = '') {
+            // 自动判断视频类型
+            if (videoType === 'auto') {
+                videoType = videoUrl.includes('.m3u8') ? 'hls' : 'mp4';
+            }
+            
+            // 构建播放器页面HTML
+            const playerHTML = `
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>${title || '视频播放器'}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/video.js@7/dist/video-js.min.css">
+    <style>
+        body { margin: 0; background: #0f0f0f; color: #fff; font-family: Arial, sans-serif; }
+        .header { padding: 8px 12px; background: rgba(0,0,0,0.8); border-bottom: 1px solid #333; }
+        .header h3 { margin: 0; font-size: 16px; margin-bottom: 8px; }
+        .header button { margin-right: 8px; padding: 4px 8px; background: #007cba; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .header button:hover { background: #005a87; }
+        .stage { margin: 0 auto; padding: 12px; max-width: 960px; }
+        .player-box { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+        .player-box .video-js { position: absolute; inset: 0; width: 100%; height: 100%; }
+        .video-js .vjs-big-play-button { position: absolute !important; top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) !important; margin: 0 !important; }
+        #msg { margin-left: 8px; color: #ccc; font-size: 14px; }
+        
+        /* 响应式断点 */
+        @media (min-width: 1440px) {
+            .stage { max-width: 1280px; }
+        }
+        @media (min-width: 1024px) and (max-width: 1439px) {
+            .stage { max-width: 960px; }
+        }
+        @media (min-width: 768px) and (max-width: 1023px) {
+            .stage { max-width: 720px; }
+        }
+        @media (max-width: 767px) {
+            .stage { max-width: 100%; padding: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h3 id="title">${title || '视频播放'}</h3>
+        <button id="copy">复制视频链接</button>
+        <button id="openOriginal">在新标签页打开</button>
+        <span id="msg"></span>
+    </div>
+         <div class="stage">
+         <div class="player-box">
+             <video id="player" class="video-js vjs-default-skin" controls preload="auto" data-setup='{}'>
+                 <p class="vjs-no-js">
+                     您的浏览器不支持视频播放，请 <a href="${videoUrl}" target="_blank">直接访问视频链接</a>
+                 </p>
+             </video>
+         </div>
+     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/video.js@7/dist/video.min.js"><\/script>
+    <script>
+    (function(){
+        const videoUrl = '${videoUrl}';
+        const videoType = '${videoType}';
+        const title = '${title}';
+        
+        // 设置复制按钮
+        document.getElementById('copy').onclick = function() {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(videoUrl).then(() => {
+                    document.getElementById('msg').textContent = '链接已复制';
+                    setTimeout(() => document.getElementById('msg').textContent = '', 2000);
+                });
+            } else {
+                // 兼容旧浏览器
+                const textarea = document.createElement('textarea');
+                textarea.value = videoUrl;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                document.getElementById('msg').textContent = '链接已复制';
+                setTimeout(() => document.getElementById('msg').textContent = '', 2000);
+            }
+        };
+        
+        // 设置打开原链接按钮
+        document.getElementById('openOriginal').onclick = function() {
+            window.open(videoUrl, '_blank');
+        };
+        
+        if (!videoUrl) {
+            document.getElementById('msg').textContent = '无效视频地址';
+            return;
+        }
+        
+        // 初始化 video.js 播放器
+        const player = videojs('player', {
+            controls: true,
+            fluid: true,
+            responsive: true,
+            playbackRates: [0.5, 1, 1.25, 1.5, 2],
+            html5: {
+                vhs: {
+                    overrideNative: true
+                }
+            }
+        });
+        
+        // 设置视频源
+        const source = videoType === 'hls' ? 
+            { src: videoUrl, type: 'application/x-mpegURL' } : 
+            { src: videoUrl, type: 'video/mp4' };
+            
+        player.src(source);
+        
+        // 播放器就绪后尝试播放
+        player.ready(function() {
+            player.play().catch(function(error) {
+                console.log('自动播放失败:', error);
+                document.getElementById('msg').textContent = '请点击播放按钮开始播放';
+            });
+        });
+        
+        // 错误处理
+        player.on('error', function() {
+            const error = player.error();
+            console.error('播放器错误:', error);
+            let errorMsg = '播放失败';
+            if (error) {
+                switch(error.code) {
+                    case 1:
+                        errorMsg = '视频加载被中止';
+                        break;
+                    case 2:
+                        errorMsg = '网络错误';
+                        break;
+                    case 3:
+                        errorMsg = '视频解码错误';
+                        break;
+                    case 4:
+                        errorMsg = '视频格式不支持';
+                        break;
+                    default:
+                        errorMsg = '播放失败，可能为跨域或防盗链限制';
+                }
+            }
+            document.getElementById('msg').textContent = errorMsg + '，建议尝试在原页面播放或下载';
+        });
+        
+        // 加载成功提示
+        player.on('loadstart', function() {
+            document.getElementById('msg').textContent = '正在加载视频...';
+        });
+        
+        player.on('canplay', function() {
+            document.getElementById('msg').textContent = '视频已就绪';
+            setTimeout(() => document.getElementById('msg').textContent = '', 2000);
+        });
+        
+    })();
+    <\/script>
+</body>
+</html>`;
+            
+            // 使用 data URL 打开新页面
+            const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(playerHTML);
+            this.openInTab(dataUrl);
+        },
         download(details) {
  
             return this.openInTab(details.url);
@@ -464,25 +633,9 @@
                     url: new URL(src),
                     duration: `${Math.ceil(v.duration * 10 / 60) / 10} mins`,
                     download() {
-                        const details = {
-                            url: src,
-                            name: (() => {
-                                let name = new URL(src).pathname.split("/").slice(-1)[0];
-                                if (!/\.\w+$/.test(name)) {
-                                    if (name.match(/^\s*$/)) name = Date.now();
-                                    name = name + ".mp4";
-                                }
-                                return name;
-                            })(),
-                            headers: {
-                                // referer: location.origin, // 不允许该头
-                                origin: location.origin
-                            },
-                            onerror(e) {
-                                mgmapi.openInTab(src);
-                            }
-                        };
-                        mgmapi.download(details);
+                        // 使用新的播放器页面
+                        const title = document.title || new URL(src).pathname.split("/").slice(-1)[0];
+                        mgmapi.openPlayer(src, 'mp4', title);
                     }
                 })
             }
@@ -516,13 +669,9 @@
             url,
             duration: manifest.duration ? `${Math.ceil(manifest.duration * 10 / 60) / 10} mins` : manifest.playlists ? `多(Multi)(${manifest.playlists.length})` : "未知(unknown)",
             async download() {
-                mgmapi.openInTab(
-                    `https://tools.thatwind.com/tool/m3u8downloader#${new URLSearchParams({
-                        m3u8: url.href,
-                        referer: location.href,
-                        filename: (await getTopTitle()) || ""
-                    })}`
-                );
+                // 使用新的播放器页面
+                const title = (await getTopTitle()) || document.title || url.pathname.split("/").slice(-1)[0];
+                mgmapi.openPlayer(url.href, 'hls', title);
             }
         })
  
