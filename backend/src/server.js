@@ -9,10 +9,26 @@ const sqlite3 = require('sqlite3').verbose();
 const https = require('https');
 const http = require('http');
 const { URL } = require('url');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 
 // 新增：为上游请求启用 Keep-Alive，以减少频繁建连的开销
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 128, keepAliveMsecs: 15000 });
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 128, keepAliveMsecs: 15000 });
+
+// 可选：SOCKS 代理（优先使用此代理覆盖默认 agent）
+// 设置环境变量 SOCKS_PROXY=socks5://127.0.0.1:7890 即可启用
+const SOCKS_PROXY_URL = process.env.SOCKS_PROXY || process.env.ALL_PROXY;
+let socksAgent = null;
+if (SOCKS_PROXY_URL) {
+    try {
+        socksAgent = new SocksProxyAgent(SOCKS_PROXY_URL);
+        // 提升并发/复用
+        socksAgent.keepAlive = true;
+        socksAgent.maxSockets = 128;
+    } catch (e) {
+        console.warn('SOCKS proxy init failed:', e.message);
+    }
+}
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -187,7 +203,7 @@ app.get('/api/hls', async (req, res) => {
         path: targetUrl.pathname + targetUrl.search,
         method: req.method || 'GET',
         headers,
-        agent: isHttps ? httpsAgent : httpAgent
+        agent: socksAgent ? socksAgent : (isHttps ? httpsAgent : httpAgent)
     };
 
     const proxyReq = requestModule.request(options, (proxyRes) => {
