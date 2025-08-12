@@ -18,7 +18,7 @@
     <!-- 工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
-        <el-button type="primary" @click="showUploadDialog = true">
+        <el-button type="primary" @click="openCreateUploadDialog">
           <el-icon><Upload /></el-icon>
           上传字幕
         </el-button>
@@ -289,12 +289,20 @@ const handleCurrentChange = (page) => {
   loadData()
 }
 
+const openCreateUploadDialog = () => {
+  // 工具栏的“上传字幕”始终进入创建模式
+  selectedVideoId.value = ''
+  showUploadDialog.value = true
+}
+
 const uploadSubtitle = (videoId) => {
-  selectedVideoId.value = videoId
+  // 表格行上的“上传”行为：带入该行的视频编号，但依然是创建模式
+  selectedVideoId.value = ''
   showUploadDialog.value = true
 }
 
 const updateSubtitle = (row) => {
+  // 明确进入“更新”模式：将所选视频编号传入
   selectedVideoId.value = row.video_id
   showUploadDialog.value = true
 }

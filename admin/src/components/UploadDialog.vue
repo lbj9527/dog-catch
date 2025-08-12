@@ -10,7 +10,7 @@
         <el-input
           v-model="form.videoId"
           placeholder="请输入视频编号，如：hmn-387"
-          :disabled="!!videoId"
+          :disabled="isUpdate"
         />
       </el-form-item>
       
@@ -48,15 +48,22 @@
     
     <template #footer>
       <div class="dialog-footer">
-        <el-button @click="handleClose">取消</el-button>
-        <el-button
-          type="primary"
-          @click="handleSubmit"
-          :loading="uploading"
-          :disabled="!currentFile || !form.videoId"
-        >
-          {{ uploading ? '上传中...' : (isUpdate ? '更新' : '上传') }}
+        <el-button @click="handleClose">
+          {{ uploadSuccess ? '关闭' : '取消' }}
         </el-button>
+        <template v-if="!uploadSuccess">
+          <el-button
+            type="primary"
+            @click="handleSubmit"
+            :loading="uploading"
+            :disabled="!currentFile || !form.videoId"
+          >
+            {{ uploading ? '上传中...' : (isUpdate ? '更新' : '上传') }}
+          </el-button>
+        </template>
+        <template v-else>
+          <el-button type="success" @click="handleClose">完成</el-button>
+        </template>
       </div>
     </template>
   </el-dialog>
@@ -87,6 +94,7 @@ const emit = defineEmits(['update:modelValue', 'success'])
 const formRef = ref()
 const uploadRef = ref()
 const uploading = ref(false)
+const uploadSuccess = ref(false)
 const currentFile = ref(null)
 const fileList = ref([])
 
@@ -150,6 +158,18 @@ const handleFileChange = (file) => {
   currentFile.value = file.raw
   form.file = file.raw
   
+  // 从文件名自动提取视频编号（如：JUL-721-zh-CN.srt → JUL-721）
+  // 仅当未处于更新模式且输入框为空时自动填充
+  if (!isUpdate.value && !form.videoId) {
+    const matchedId = extractVideoId(file.name)
+    if (matchedId) {
+      form.videoId = matchedId.toUpperCase()
+      if (formRef.value) {
+        formRef.value.clearValidate('videoId')
+      }
+    }
+  }
+
   // 清除验证错误
   if (formRef.value) {
     formRef.value.clearValidate('file')
@@ -183,9 +203,10 @@ const handleSubmit = async () => {
       await subtitleAPI.upload(form.videoId, currentFile.value)
       ElMessage.success('字幕文件上传成功')
     }
-    
+
+    // 通知父组件刷新数据，但不立即关闭；切换为“关闭/完成”按钮
     emit('success')
-    handleClose()
+    uploadSuccess.value = true
     
   } catch (error) {
     console.error('操作失败:', error)
@@ -210,6 +231,7 @@ const resetForm = () => {
   form.videoId = props.videoId || ''
   form.file = null
   uploading.value = false
+  uploadSuccess.value = false
 }
 
 const formatFileSize = (bytes) => {
@@ -227,6 +249,13 @@ const getFileType = (filename) => {
     'vtt': 'WebVTT 字幕文件'
   }
   return types[ext] || '未知格式'
+}
+
+// 复用批量上传的提取规则：匹配第一个“字母-数字”片段
+// 例如：JUL-721-zh-CN.srt → jul-721（再在调用处统一转为大写展示）
+const extractVideoId = (fileName) => {
+  const match = (fileName || '').match(/([a-z0-9]+-[0-9]+)/i)
+  return match ? match[1] : null
 }
 </script>
 
