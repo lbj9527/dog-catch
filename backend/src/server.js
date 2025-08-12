@@ -10,6 +10,10 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 
+// 新增：为上游请求启用 Keep-Alive，以减少频繁建连的开销
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 128, keepAliveMsecs: 15000 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 128, keepAliveMsecs: 15000 });
+
 const app = express();
 const PORT = process.env.PORT || 8000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
@@ -112,11 +116,44 @@ app.get('/api/hls', async (req, res) => {
         return res.status(400).json({ error: '缺少url参数' });
     }
 
+    // 统一的“仅发送一次”守护
+    let responded = false;
+    const safeStatus = (code) => {
+        if (responded || res.headersSent) return false;
+        res.status(code);
+        return true;
+    };
+    const safeSet = (key, val) => {
+        if (responded || res.headersSent) return;
+        res.set(key, val);
+    };
+    const safeJson = (code, payload) => {
+        if (responded || res.headersSent) return;
+        responded = true;
+        res.status(code).json(payload);
+    };
+    const safeSend = (payload) => {
+        if (responded || res.headersSent) return;
+        responded = true;
+        res.send(payload);
+    };
+
+    // 处理可能的“嵌套代理”：url=http://<self>/api/hls?url=<real>
+    let rawUrl = url;
+    try {
+        const maybeLocal = new URL(rawUrl);
+        const selfHost = req.get('host');
+        if (maybeLocal.host === selfHost && maybeLocal.pathname === '/api/hls') {
+            const inner = new URLSearchParams(maybeLocal.search).get('url');
+            if (inner) rawUrl = inner;
+        }
+    } catch { /* ignore */ }
+
     let targetUrl;
     try {
-        targetUrl = new URL(url);
+        targetUrl = new URL(rawUrl);
     } catch (error) {
-        return res.status(400).json({ error: '无效的URL参数' });
+        return safeJson(400, { error: '无效的URL参数' });
     }
 
     const isHttps = targetUrl.protocol === 'https:';
@@ -149,17 +186,16 @@ app.get('/api/hls', async (req, res) => {
         port: targetUrl.port || (isHttps ? 443 : 80),
         path: targetUrl.pathname + targetUrl.search,
         method: req.method || 'GET',
-        headers
+        headers,
+        agent: isHttps ? httpsAgent : httpAgent
     };
 
     const proxyReq = requestModule.request(options, (proxyRes) => {
         // 统一设置CORS
-        res.set({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range',
-            'Cache-Control': proxyRes.headers['cache-control'] || 'no-cache'
-        });
+        safeSet('Access-Control-Allow-Origin', '*');
+        safeSet('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+        safeSet('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range');
+        safeSet('Cache-Control', proxyRes.headers['cache-control'] || 'no-cache');
 
         const contentType = (proxyRes.headers['content-type'] || '').toLowerCase();
         const isPlaylistByHeader = contentType.includes('application/vnd.apple.mpegurl') ||
@@ -170,33 +206,23 @@ app.get('/api/hls', async (req, res) => {
 
         if (!shouldRewrite) {
             // 非playlist：二进制流式转发，尽可能透传相关头
-            if (proxyRes.headers['content-type']) {
-                res.set('Content-Type', proxyRes.headers['content-type']);
-            }
-            if (proxyRes.headers['content-length']) {
-                res.set('Content-Length', proxyRes.headers['content-length']);
-            }
-            if (proxyRes.headers['content-encoding']) {
-                res.set('Content-Encoding', proxyRes.headers['content-encoding']);
-            }
-            if (proxyRes.headers['accept-ranges']) {
-                res.set('Accept-Ranges', proxyRes.headers['accept-ranges']);
-            }
-            if (proxyRes.headers['etag']) {
-                res.set('ETag', proxyRes.headers['etag']);
-            }
-            if (proxyRes.headers['last-modified']) {
-                res.set('Last-Modified', proxyRes.headers['last-modified']);
-            }
+            if (proxyRes.headers['content-type']) safeSet('Content-Type', proxyRes.headers['content-type']);
+            if (proxyRes.headers['content-length']) safeSet('Content-Length', proxyRes.headers['content-length']);
+            if (proxyRes.headers['content-encoding']) safeSet('Content-Encoding', proxyRes.headers['content-encoding']);
+            if (proxyRes.headers['accept-ranges']) safeSet('Accept-Ranges', proxyRes.headers['accept-ranges']);
+            if (proxyRes.headers['etag']) safeSet('ETag', proxyRes.headers['etag']);
+            if (proxyRes.headers['last-modified']) safeSet('Last-Modified', proxyRes.headers['last-modified']);
 
-            res.status(proxyRes.statusCode || 200);
+            if (safeStatus(proxyRes.statusCode || 200)) {
+                responded = true; // piping 将开始输出
+            }
             proxyRes.pipe(res);
             return;
         }
 
         // playlist：读取文本，改写所有URI后返回
-        res.set('Content-Type', 'application/vnd.apple.mpegurl');
-        res.status(proxyRes.statusCode || 200);
+        safeSet('Content-Type', 'application/vnd.apple.mpegurl');
+        safeStatus(proxyRes.statusCode || 200);
 
         const chunks = [];
         proxyRes.on('data', (c) => chunks.push(c));
@@ -205,23 +231,22 @@ app.get('/api/hls', async (req, res) => {
                 // 强制按utf-8解析文本m3u8
                 const raw = Buffer.concat(chunks).toString('utf8');
                 const rewritten = rewriteM3U8(raw, targetUrl, `${req.protocol}://${req.get('host')}`);
-                res.send(rewritten);
+                safeSend(rewritten);
             } catch (e) {
                 console.error('改写m3u8失败:', e);
-                // 失败时回退原始内容
-                res.send(Buffer.concat(chunks));
+                safeSend(Buffer.concat(chunks));
             }
         });
     });
 
     proxyReq.on('error', (error) => {
         console.error('代理请求错误:', error);
-        res.status(502).json({ error: '代理请求失败' });
+        safeJson(502, { error: '代理请求失败' });
     });
 
     proxyReq.setTimeout(30000, () => {
         proxyReq.destroy();
-        res.status(408).json({ error: '请求超时' });
+        safeJson(408, { error: '请求超时' });
     });
 
     proxyReq.end();
@@ -247,8 +272,8 @@ function rewriteM3U8(content, baseUrl, proxyOrigin) {
         }
 
         if (trimmed.startsWith('#')) {
-            // 处理ATTR-LIST中的URI，例如#EXT-X-KEY、#EXT-X-MEDIA、#EXT-X-MAP等
-            if (/^#EXT-X-(KEY|MEDIA|MAP)/.test(trimmed)) {
+            // 统一改写所有包含 URI="..." 的ATTR-LIST（覆盖 KEY/MEDIA/MAP/PART/PRELOAD-HINT/I-FRAME-STREAM-INF 等）
+            if (/^#EXT-X-/.test(trimmed) && /URI="[^"]+"/i.test(trimmed)) {
                 line = line.replace(/URI="([^"]+)"/gi, (m, g1) => {
                     try {
                         const abs = new URL(g1, baseUrl).href;
@@ -505,6 +530,7 @@ app.get('/api/subtitles', authenticateToken, (req, res) => {
         });
     });
 });
+
 
 // 错误处理中间件
 app.use((err, req, res, next) => {

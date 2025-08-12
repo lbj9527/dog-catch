@@ -14,6 +14,8 @@
 // @homepage     https://tools.thatwind.com/tool/m3u8downloader
 // @match        *://*/*
 // @exclude      *://www.diancigaoshou.com/*
+// @exclude      http://localhost:3000/*
+// @exclude      https://localhost:3000/*
 // @require      https://cdn.jsdelivr.net/npm/m3u8-parser@4.7.1/dist/m3u8-parser.min.js
 // @connect      *
 // @grant        unsafeWindow
@@ -143,9 +145,9 @@
     };
  
  
-    if (location.host === "tools.thatwind.com" || location.host === "localhost:3000") {
+        if (location.host === "tools.thatwind.com") {
         mgmapi.addStyle("#userscript-tip{display:none !important;}");
- 
+
         // 对请求做代理
         const _fetch = unsafeWindow.fetch;
         unsafeWindow.fetch = async function (...args) {
