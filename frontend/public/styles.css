@@ -49,6 +49,11 @@ body {
     background: #555;
 }
 
+.controls button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .controls select:focus,
 .controls button:focus {
     outline: 2px solid #007cba;

@@ -66,7 +66,11 @@ class VideoPlayer {
         };
         
         // 字幕开关
-        document.getElementById('subtitleToggle').onclick = () => {
+        const subtitleBtn = document.getElementById('subtitleToggle');
+        subtitleBtn.disabled = true; // 初始禁用，等字幕加载成功后启用
+        subtitleBtn.textContent = '显示字幕';
+        subtitleBtn.onclick = () => {
+            if (subtitleBtn.disabled) return;
             this.toggleSubtitle();
         };
         
@@ -332,6 +336,10 @@ class VideoPlayer {
 
                 // 确保字幕轨道被附加（并在后续源切换中保持）
                 this.addSubtitleTrack();
+                // 启用按钮并设置文案为“隐藏字幕”（默认显示状态）
+                const subtitleBtn = document.getElementById('subtitleToggle');
+                subtitleBtn.disabled = false;
+                subtitleBtn.textContent = '隐藏字幕';
 
                 this.showMessage('字幕加载成功', 'success');
                 setTimeout(() => this.clearMessage(), 2000);
@@ -440,8 +448,10 @@ class VideoPlayer {
             }
         }
         
-        this.showMessage('未找到字幕文件', 'info');
-        setTimeout(() => this.clearMessage(), 1500);
+        // 无字幕可用：禁用按钮并保持“显示字幕”文案
+        const subtitleBtn = document.getElementById('subtitleToggle');
+        subtitleBtn.disabled = true;
+        subtitleBtn.textContent = '显示字幕';
     }
     
     // 复制到剪贴板
