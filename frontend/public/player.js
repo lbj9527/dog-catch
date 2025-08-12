@@ -199,6 +199,11 @@ class VideoPlayer {
         
         this.player.src(source);
         this.currentVideoUrl = url;
+
+        // 源切换后，确保字幕轨道被重新附加
+        this.player.one('loadedmetadata', () => {
+            this.addSubtitleTrack();
+        });
     }
     
     // 检查是否为master playlist
@@ -300,6 +305,8 @@ class VideoPlayer {
             if (wasPlaying) {
                 this.player.play();
             }
+            // 清晰度切换后再次确保字幕附加并显示
+            this.addSubtitleTrack();
         });
         
         this.showMessage('正在切换清晰度...', 'info');
@@ -322,22 +329,60 @@ class VideoPlayer {
                 // 创建blob URL
                 const blob = new Blob([vttContent], { type: 'text/vtt' });
                 this.subtitleUrl = URL.createObjectURL(blob);
-                
-                // 添加字幕轨道
-                this.player.addRemoteTextTrack({
-                    src: this.subtitleUrl,
-                    kind: 'subtitles',
-                    srclang: 'zh-CN',
-                    label: '中文字幕',
-                    default: true
-                }, false);
-                
+
+                // 确保字幕轨道被附加（并在后续源切换中保持）
+                this.addSubtitleTrack();
+
                 this.showMessage('字幕加载成功', 'success');
                 setTimeout(() => this.clearMessage(), 2000);
             }
         } catch (error) {
             console.error('字幕加载失败:', error);
             // 不显示错误，因为字幕是可选的
+        }
+    }
+
+    // 确保字幕轨道已附加并处于显示状态
+    addSubtitleTrack() {
+        if (!this.player || !this.subtitleUrl) return;
+
+        // 如果已经存在指向相同 src 的字幕轨道，则直接显示
+        const tracks = this.player.textTracks();
+        for (let i = 0; i < tracks.length; i++) {
+            const track = tracks[i];
+            if (track.kind === 'subtitles') {
+                // 无法直接读取 remote track 的 src，这里通过标签名匹配并统一开启显示
+                track.mode = 'showing';
+            }
+        }
+
+        // 为避免重复添加：检查是否已有一个标签为“中文字幕”的轨道处于可用状态
+        let hasChineseSubtitle = false;
+        for (let i = 0; i < tracks.length; i++) {
+            const track = tracks[i];
+            if (track.kind === 'subtitles' && (track.label === '中文字幕' || track.srclang === 'zh-CN')) {
+                hasChineseSubtitle = true;
+                track.mode = 'showing';
+            }
+        }
+        if (hasChineseSubtitle) return;
+
+        // 添加远程字幕轨道
+        this.player.addRemoteTextTrack({
+            src: this.subtitleUrl,
+            kind: 'subtitles',
+            srclang: 'zh-CN',
+            label: '中文字幕',
+            default: true
+        }, false);
+
+        // 确保显示
+        const newlyAdded = this.player.textTracks();
+        for (let i = 0; i < newlyAdded.length; i++) {
+            const track = newlyAdded[i];
+            if (track.kind === 'subtitles') {
+                track.mode = 'showing';
+            }
         }
     }
     
