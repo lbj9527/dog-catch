@@ -108,69 +108,174 @@ app.get('/health', (req, res) => {
 // HLS代理接口 - 解决CORS和防盗链问题
 app.get('/api/hls', async (req, res) => {
     const { url } = req.query;
-    
     if (!url) {
         return res.status(400).json({ error: '缺少url参数' });
     }
-    
+
+    let targetUrl;
     try {
-        const targetUrl = new URL(url);
-        const isHttps = targetUrl.protocol === 'https:';
-        const requestModule = isHttps ? https : http;
-        
-        // 设置请求选项，包含必要的headers
-        const options = {
-            hostname: targetUrl.hostname,
-            port: targetUrl.port || (isHttps ? 443 : 80),
-            path: targetUrl.pathname + targetUrl.search,
-            method: 'GET',
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Referer': 'https://missav.live/',
-                'Accept': '*/*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Sec-Fetch-Dest': 'empty',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'cross-site'
-            }
-        };
-        
-        const proxyReq = requestModule.request(options, (proxyRes) => {
-            // 设置CORS头
-            res.set({
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-                'Content-Type': proxyRes.headers['content-type'] || 'application/vnd.apple.mpegurl',
-                'Cache-Control': 'no-cache'
-            });
-            
-            // 设置状态码
-            res.status(proxyRes.statusCode);
-            
-            // 管道传输响应数据
-            proxyRes.pipe(res);
-        });
-        
-        proxyReq.on('error', (error) => {
-            console.error('代理请求错误:', error);
-            res.status(500).json({ error: '代理请求失败' });
-        });
-        
-        proxyReq.setTimeout(30000, () => {
-            proxyReq.destroy();
-            res.status(408).json({ error: '请求超时' });
-        });
-        
-        proxyReq.end();
-        
+        targetUrl = new URL(url);
     } catch (error) {
-        console.error('HLS代理错误:', error);
-        res.status(400).json({ error: '无效的URL参数' });
+        return res.status(400).json({ error: '无效的URL参数' });
     }
+
+    const isHttps = targetUrl.protocol === 'https:';
+    const requestModule = isHttps ? https : http;
+
+    // 判断是否为playlist（基于扩展名，后续也会基于content-type兜底判断）
+    const isPlaylistByExt = /\.(m3u8|m3u)(?:$|\?)/i.test(targetUrl.pathname);
+
+    // 组装请求头
+    // 对playlist强制identity避免压缩，便于服务端改写
+    const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0 Safari/537.36',
+        'Referer': 'https://missav.live/',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+    };
+
+    if (isPlaylistByExt) {
+        headers['Accept-Encoding'] = 'identity';
+    } else {
+        // 分片/密钥等二进制资源转发时，透传 Range 以支持断点/分段请求
+        if (req.headers['range']) {
+            headers['Range'] = req.headers['range'];
+        }
+    }
+
+    const options = {
+        hostname: targetUrl.hostname,
+        port: targetUrl.port || (isHttps ? 443 : 80),
+        path: targetUrl.pathname + targetUrl.search,
+        method: req.method || 'GET',
+        headers
+    };
+
+    const proxyReq = requestModule.request(options, (proxyRes) => {
+        // 统一设置CORS
+        res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range',
+            'Cache-Control': proxyRes.headers['cache-control'] || 'no-cache'
+        });
+
+        const contentType = (proxyRes.headers['content-type'] || '').toLowerCase();
+        const isPlaylistByHeader = contentType.includes('application/vnd.apple.mpegurl') ||
+                                   contentType.includes('application/x-mpegurl') ||
+                                   contentType.includes('audio/mpegurl');
+
+        const shouldRewrite = isPlaylistByExt || isPlaylistByHeader;
+
+        if (!shouldRewrite) {
+            // 非playlist：二进制流式转发，尽可能透传相关头
+            if (proxyRes.headers['content-type']) {
+                res.set('Content-Type', proxyRes.headers['content-type']);
+            }
+            if (proxyRes.headers['content-length']) {
+                res.set('Content-Length', proxyRes.headers['content-length']);
+            }
+            if (proxyRes.headers['content-encoding']) {
+                res.set('Content-Encoding', proxyRes.headers['content-encoding']);
+            }
+            if (proxyRes.headers['accept-ranges']) {
+                res.set('Accept-Ranges', proxyRes.headers['accept-ranges']);
+            }
+            if (proxyRes.headers['etag']) {
+                res.set('ETag', proxyRes.headers['etag']);
+            }
+            if (proxyRes.headers['last-modified']) {
+                res.set('Last-Modified', proxyRes.headers['last-modified']);
+            }
+
+            res.status(proxyRes.statusCode || 200);
+            proxyRes.pipe(res);
+            return;
+        }
+
+        // playlist：读取文本，改写所有URI后返回
+        res.set('Content-Type', 'application/vnd.apple.mpegurl');
+        res.status(proxyRes.statusCode || 200);
+
+        const chunks = [];
+        proxyRes.on('data', (c) => chunks.push(c));
+        proxyRes.on('end', () => {
+            try {
+                // 强制按utf-8解析文本m3u8
+                const raw = Buffer.concat(chunks).toString('utf8');
+                const rewritten = rewriteM3U8(raw, targetUrl, `${req.protocol}://${req.get('host')}`);
+                res.send(rewritten);
+            } catch (e) {
+                console.error('改写m3u8失败:', e);
+                // 失败时回退原始内容
+                res.send(Buffer.concat(chunks));
+            }
+        });
+    });
+
+    proxyReq.on('error', (error) => {
+        console.error('代理请求错误:', error);
+        res.status(502).json({ error: '代理请求失败' });
+    });
+
+    proxyReq.setTimeout(30000, () => {
+        proxyReq.destroy();
+        res.status(408).json({ error: '请求超时' });
+    });
+
+    proxyReq.end();
 });
+
+/**
+ * 重写m3u8内容中的所有URI为当前代理地址
+ * 处理：
+ *  - 非注释行（分片、子清单）
+ *  - #EXT-X-KEY / #EXT-X-MEDIA 等ATTR-LIST中的 URI="..."
+ */
+function rewriteM3U8(content, baseUrl, proxyOrigin) {
+    const lines = content.split(/\r?\n/);
+    const out = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+        const trimmed = line.trim();
+
+        if (trimmed.length === 0) {
+            out.push(line);
+            continue;
+        }
+
+        if (trimmed.startsWith('#')) {
+            // 处理ATTR-LIST中的URI，例如#EXT-X-KEY、#EXT-X-MEDIA、#EXT-X-MAP等
+            if (/^#EXT-X-(KEY|MEDIA|MAP)/.test(trimmed)) {
+                line = line.replace(/URI="([^"]+)"/gi, (m, g1) => {
+                    try {
+                        const abs = new URL(g1, baseUrl).href;
+                        const proxied = `${proxyOrigin}/api/hls?url=${encodeURIComponent(abs)}`;
+                        return `URI="${proxied}"`;
+                    } catch {
+                        return m;
+                    }
+                });
+            }
+            out.push(line);
+            continue;
+        }
+
+        // 非注释：资源URI（分片或子清单）
+        try {
+            const absolute = new URL(trimmed, baseUrl).href;
+            const proxied = `${proxyOrigin}/api/hls?url=${encodeURIComponent(absolute)}`;
+            out.push(proxied);
+        } catch {
+            // 保底：无法解析则原样输出
+            out.push(line);
+        }
+    }
+
+    return out.join('\n');
+}
 
 // 用户认证
 app.post('/api/auth/login', (req, res) => {
