@@ -357,7 +357,8 @@ app.get('/api/subtitle/:video_id', (req, res) => {
         }
         
         if (!subtitle) {
-            // 后备：uploads 目录中按 <video_id>.vtt 或 <video_id>.srt 直接查找
+            // 已禁用：目录直读回退逻辑（用于验证数据库工作是否正常）
+            /*
             try {
                 const lowerId = (videoId || '').toLowerCase();
                 const uploadsDir = path.join(__dirname, '../uploads');
@@ -365,14 +366,24 @@ app.get('/api/subtitle/:video_id', (req, res) => {
                 for (const fileName of candidates) {
                     try {
                         const filePath = path.join(uploadsDir, fileName);
+                        const stat = await fs.stat(filePath);
                         const content = await fs.readFile(filePath, 'utf-8');
                         const ext = path.extname(fileName).toLowerCase();
                         const contentType = ext === '.vtt' ? 'text/vtt' : 'text/plain';
+
+                        db.run(
+                            `INSERT OR REPLACE INTO subtitles (video_id, filename, file_path, file_size, updated_at)
+                             VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+                            [lowerId, fileName, fileName, stat.size],
+                            (err2) => { if (err2) console.error('回填字幕记录失败:', err2); }
+                        );
+
                         res.set('Content-Type', contentType);
                         return res.send(content);
                     } catch {}
                 }
             } catch {}
+            */
             return res.status(404).json({ error: '字幕文件不存在' });
         }
         
