@@ -62,7 +62,7 @@ const storage = multer.diskStorage({
         cb(null, './uploads/');
     },
     filename: (req, file, cb) => {
-        const videoId = req.params.video_id;
+        const videoId = (req.params.video_id || '').toLowerCase();
         const ext = path.extname(file.originalname);
         cb(null, `${videoId}${ext}`);
     }
@@ -351,12 +351,28 @@ app.get('/api/auth/verify', authenticateToken, (req, res) => {
 app.get('/api/subtitle/:video_id', (req, res) => {
     const videoId = req.params.video_id;
     
-    db.get('SELECT * FROM subtitles WHERE video_id = ?', [videoId], async (err, subtitle) => {
+    db.get('SELECT * FROM subtitles WHERE lower(video_id) = lower(?)', [videoId], async (err, subtitle) => {
         if (err) {
             return res.status(500).json({ error: '数据库错误' });
         }
         
         if (!subtitle) {
+            // 后备：uploads 目录中按 <video_id>.vtt 或 <video_id>.srt 直接查找
+            try {
+                const lowerId = (videoId || '').toLowerCase();
+                const uploadsDir = path.join(__dirname, '../uploads');
+                const candidates = [`${lowerId}.vtt`, `${lowerId}.srt`];
+                for (const fileName of candidates) {
+                    try {
+                        const filePath = path.join(uploadsDir, fileName);
+                        const content = await fs.readFile(filePath, 'utf-8');
+                        const ext = path.extname(fileName).toLowerCase();
+                        const contentType = ext === '.vtt' ? 'text/vtt' : 'text/plain';
+                        res.set('Content-Type', contentType);
+                        return res.send(content);
+                    } catch {}
+                }
+            } catch {}
             return res.status(404).json({ error: '字幕文件不存在' });
         }
         
@@ -378,7 +394,7 @@ app.get('/api/subtitle/:video_id', (req, res) => {
 
 // 上传字幕文件 (需要认证)
 app.post('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'), (req, res) => {
-    const videoId = req.params.video_id;
+    const videoId = (req.params.video_id || '').toLowerCase();
     const file = req.file;
     
     if (!file) {
@@ -412,7 +428,7 @@ app.post('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle')
 
 // 更新字幕文件 (需要认证)
 app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'), (req, res) => {
-    const videoId = req.params.video_id;
+    const videoId = (req.params.video_id || '').toLowerCase();
     const file = req.file;
     
     if (!file) {
@@ -420,7 +436,7 @@ app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'),
     }
     
     // 先检查是否存在
-    db.get('SELECT * FROM subtitles WHERE video_id = ?', [videoId], (err, existing) => {
+    db.get('SELECT * FROM subtitles WHERE lower(video_id) = lower(?)', [videoId], (err, existing) => {
         if (err) {
             return res.status(500).json({ error: '数据库错误' });
         }
@@ -432,7 +448,7 @@ app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'),
         // 更新记录
         db.run(`UPDATE subtitles SET 
             filename = ?, file_path = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP 
-            WHERE video_id = ?`, 
+            WHERE lower(video_id) = lower(?)`, 
             [file.originalname, file.filename, file.size, videoId], 
             function(err) {
                 if (err) {
@@ -454,10 +470,10 @@ app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'),
 
 // 删除字幕文件 (需要认证)
 app.delete('/api/subtitle/:video_id', authenticateToken, (req, res) => {
-    const videoId = req.params.video_id;
+    const videoId = (req.params.video_id || '').toLowerCase();
     
     // 先获取文件信息
-    db.get('SELECT * FROM subtitles WHERE video_id = ?', [videoId], async (err, subtitle) => {
+    db.get('SELECT * FROM subtitles WHERE lower(video_id) = lower(?)', [videoId], async (err, subtitle) => {
         if (err) {
             return res.status(500).json({ error: '数据库错误' });
         }
@@ -476,7 +492,7 @@ app.delete('/api/subtitle/:video_id', authenticateToken, (req, res) => {
         }
         
         // 删除数据库记录
-        db.run('DELETE FROM subtitles WHERE video_id = ?', [videoId], function(err) {
+        db.run('DELETE FROM subtitles WHERE lower(video_id) = lower(?)', [videoId], function(err) {
             if (err) {
                 return res.status(500).json({ error: '数据库删除失败' });
             }
