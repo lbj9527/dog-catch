@@ -244,14 +244,26 @@ class VideoPlayer {
     // 显示清晰度选择器
     showQualitySelector() {
         const select = document.getElementById('qualitySelect');
-        select.innerHTML = '<option value="">选择清晰度</option>';
+        // 不再显示占位项“选择清晰度”，而是直接展示并选中默认清晰度
+        select.innerHTML = '';
+
+        const defaultQuality = this.selectDefaultQuality();
+        const defaultUrl = defaultQuality ? defaultQuality.url : '';
         
         this.qualities.forEach(quality => {
             const option = document.createElement('option');
             option.value = quality.url;
             option.textContent = quality.resolution;
+            if (quality.url === defaultUrl) {
+                option.selected = true;
+            }
             select.appendChild(option);
         });
+
+        if (defaultUrl) {
+            // 确保下拉框当前显示为默认清晰度
+            select.value = defaultUrl;
+        }
         
         select.style.display = 'inline-block';
     }
