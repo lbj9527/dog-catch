@@ -75,11 +75,15 @@ body {
 
 .player-box {
     position: relative;
-    width: 100%;
+    width: min(100%, calc((100vh - 84px) * (16 / 9))); /* 方案B：按视口高度反推宽度 */
+    height: auto;
     aspect-ratio: 16 / 9;
     background: #000;
     border-radius: 8px;
     overflow: hidden;
+    margin-left: auto;
+    margin-right: auto;
+    max-height: calc(100vh - 84px); /* 头部(~64px) + 外边距/内边距(~20px) */
 }
 
 .player-box .video-js {
@@ -177,6 +181,10 @@ body {
         font-size: 12px;
     }
 }
+
+/* 当视口高度较小（如 900p 或浏览器高度很矮）时，优先保证视频完整可见。
+   通过限制播放器最大高度，并使用 clamp 在宽度上做自适应收缩。 */
+/* 方案B启用后，按视口高度-头部固定空间自适应，无需额外高度媒体查询 */
 
 /* 加载状态 */
 .loading {
