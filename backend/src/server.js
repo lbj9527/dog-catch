@@ -10,6 +10,8 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 const { SocksProxyAgent } = require('socks-proxy-agent');
+const assToVtt = require('ass-to-vtt');
+const { Readable } = require('stream');
 
 // 新增：为上游请求启用 Keep-Alive，以减少频繁建连的开销
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 128, keepAliveMsecs: 15000 });
@@ -87,12 +89,12 @@ const storage = multer.diskStorage({
 const upload = multer({ 
     storage: storage,
     fileFilter: (req, file, cb) => {
-        const allowedTypes = ['.srt', '.vtt'];
+        const allowedTypes = ['.srt', '.vtt', '.ass', '.ssa'];
         const ext = path.extname(file.originalname).toLowerCase();
         if (allowedTypes.includes(ext)) {
             cb(null, true);
         } else {
-            cb(new Error('只允许上传 .srt 和 .vtt 格式的字幕文件'));
+            cb(new Error('只允许上传 .srt、.vtt、.ass、.ssa 格式的字幕文件'));
         }
     },
     limits: {
@@ -318,6 +320,18 @@ function rewriteM3U8(content, baseUrl, proxyOrigin) {
     return out.join('\n');
 }
 
+async function convertAssToVttString(assText) {
+    return new Promise((resolve, reject) => {
+        const input = Readable.from([assText]);
+        const transformer = assToVtt();
+        const chunks = [];
+        transformer.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+        transformer.on('error', reject);
+        transformer.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        input.pipe(transformer);
+    });
+}
+
 // 用户认证
 app.post('/api/auth/login', (req, res) => {
     const { username, password } = req.body;
@@ -420,12 +434,34 @@ app.get('/api/subtitle/:video_id', (req, res) => {
 });
 
 // 上传字幕文件 (需要认证)
-app.post('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'), (req, res) => {
+app.post('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'), async (req, res) => {
     const videoId = (req.params.video_id || '').toLowerCase();
     const file = req.file;
     
     if (!file) {
         return res.status(400).json({ error: '请选择字幕文件' });
+    }
+
+    // 处理 .ass/.ssa → .vtt 转码
+    let saveFilename = file.filename; // 物理文件名
+    let saveSize = file.size;
+    try {
+        const originalExt = path.extname(file.originalname).toLowerCase();
+        if (originalExt === '.ass' || originalExt === '.ssa') {
+            const inputPath = path.join(__dirname, '../uploads', file.filename);
+            const raw = await fs.readFile(inputPath, 'utf-8');
+            const vtt = await convertAssToVttString(raw);
+            const outputFilename = `${videoId}.vtt`;
+            const outputPath = path.join(__dirname, '../uploads', outputFilename);
+            await fs.writeFile(outputPath, vtt, 'utf-8');
+            // 删除原始文件
+            try { await fs.unlink(inputPath); } catch {}
+            const stat = await fs.stat(outputPath);
+            saveFilename = outputFilename;
+            saveSize = stat.size;
+        }
+    } catch (e) {
+        return res.status(500).json({ error: '字幕转码失败（ASS/SSA→VTT）' });
     }
     
     const insertOrUpdate = `INSERT OR REPLACE INTO subtitles 
@@ -434,9 +470,9 @@ app.post('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle')
     
     db.run(insertOrUpdate, [
         videoId,
-        file.originalname,
-        file.filename,
-        file.size
+        saveFilename, // 展示与类型判断使用统一的.vtt或原始扩展
+        saveFilename,
+        saveSize
     ], function(err) {
         if (err) {
             return res.status(500).json({ error: '数据库保存失败' });
@@ -446,15 +482,15 @@ app.post('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle')
             message: '字幕文件上传成功',
             subtitle: {
                 video_id: videoId,
-                filename: file.originalname,
-                size: file.size
+                filename: saveFilename,
+                size: saveSize
             }
         });
     });
 });
 
 // 更新字幕文件 (需要认证)
-app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'), (req, res) => {
+app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'), async (req, res) => {
     const videoId = (req.params.video_id || '').toLowerCase();
     const file = req.file;
     
@@ -463,7 +499,7 @@ app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'),
     }
     
     // 先检查是否存在
-    db.get('SELECT * FROM subtitles WHERE lower(video_id) = lower(?)', [videoId], (err, existing) => {
+    db.get('SELECT * FROM subtitles WHERE lower(video_id) = lower(?)', [videoId], async (err, existing) => {
         if (err) {
             return res.status(500).json({ error: '数据库错误' });
         }
@@ -472,11 +508,32 @@ app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'),
             return res.status(404).json({ error: '字幕文件不存在，请先上传' });
         }
         
+        // 处理 .ass/.ssa → .vtt 转码
+        let saveFilename = file.filename;
+        let saveSize = file.size;
+        try {
+            const originalExt = path.extname(file.originalname).toLowerCase();
+            if (originalExt === '.ass' || originalExt === '.ssa') {
+                const inputPath = path.join(__dirname, '../uploads', file.filename);
+                const raw = await fs.readFile(inputPath, 'utf-8');
+                const vtt = await convertAssToVttString(raw);
+                const outputFilename = `${videoId}.vtt`;
+                const outputPath = path.join(__dirname, '../uploads', outputFilename);
+                await fs.writeFile(outputPath, vtt, 'utf-8');
+                try { await fs.unlink(inputPath); } catch {}
+                const stat = await fs.stat(outputPath);
+                saveFilename = outputFilename;
+                saveSize = stat.size;
+            }
+        } catch (e) {
+            return res.status(500).json({ error: '字幕转码失败（ASS/SSA→VTT）' });
+        }
+        
         // 更新记录
         db.run(`UPDATE subtitles SET 
             filename = ?, file_path = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP 
             WHERE lower(video_id) = lower(?)`, 
-            [file.originalname, file.filename, file.size, videoId], 
+            [saveFilename, saveFilename, saveSize, videoId], 
             function(err) {
                 if (err) {
                     return res.status(500).json({ error: '数据库更新失败' });
@@ -486,8 +543,8 @@ app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'),
                     message: '字幕文件更新成功',
                     subtitle: {
                         video_id: videoId,
-                        filename: file.originalname,
-                        size: file.size
+                        filename: saveFilename,
+                        size: saveSize
                     }
                 });
             }

@@ -20,7 +20,8 @@
     "sqlite3": "^5.1.6",
     "path": "^0.12.7",
     "fs": "^0.0.1-security",
-    "socks-proxy-agent": "^8.0.2"
+    "socks-proxy-agent": "^8.0.2",
+    "ass-to-vtt": "^1.2.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

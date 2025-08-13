@@ -12,7 +12,7 @@
         :closable="false"
         style="margin-bottom: 20px"
       >
-        <p>1. 选择一个文件夹后，将自动递归扫描其中的 .srt 与 .vtt 字幕文件</p>
+        <p>1. 选择一个文件夹后，将自动递归扫描其中的 .srt、.vtt、.ass、.ssa 字幕文件</p>
         <p>2. 文件名应包含视频编号，如：hmn-387.srt</p>
         <p>3. 系统会自动从文件名中提取视频编号</p>
         <p>4. 单个文件大小不超过 1MB</p>
@@ -23,7 +23,7 @@
         <el-button type="primary" @click="triggerSelectFolder">
           选择文件夹
         </el-button>
-        <span class="folder-tip">将自动递归扫描子文件夹；仅导入 .srt/.vtt，单文件 ≤ 1MB</span>
+        <span class="folder-tip">将自动递归扫描子文件夹；仅导入 .srt/.vtt/.ass/.ssa，单文件 ≤ 1MB</span>
         <input
           ref="dirInput"
           type="file"
@@ -31,6 +31,7 @@
           webkitdirectory
           directory
           multiple
+          accept=".srt,.vtt,.ass,.ssa"
           @change="handleDirectoryChange"
         />
       </div>
@@ -232,7 +233,7 @@ const handleDirectoryChange = (e) => {
     parsedFiles.value = []
     return
   }
-  const allowedTypes = ['.srt', '.vtt']
+  const allowedTypes = ['.srt', '.vtt', '.ass', '.ssa']
   const filtered = []
   for (const f of files) {
     const ext = '.' + f.name.split('.').pop().toLowerCase()
@@ -259,13 +260,13 @@ const handleDirectoryChange = (e) => {
 }
 
 const validateFile = (file) => {
-  const allowedTypes = ['.srt', '.vtt']
+  const allowedTypes = ['.srt', '.vtt', '.ass', '.ssa']
   const fileExt = '.' + file.name.split('.').pop().toLowerCase()
   
   if (!allowedTypes.includes(fileExt)) {
     return {
       valid: false,
-      message: `文件 "${file.name}" 格式不支持，只支持 .srt 和 .vtt 格式`
+      message: `文件 "${file.name}" 格式不支持，只支持 .srt、.vtt、.ass、.ssa 格式`
     }
   }
   

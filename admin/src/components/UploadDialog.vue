@@ -19,7 +19,7 @@
           ref="uploadRef"
           :auto-upload="false"
           :limit="1"
-          :accept="'.srt,.vtt'"
+          :accept="'.srt,.vtt,.ass,.ssa'"
           :on-change="handleFileChange"
           :on-remove="handleFileRemove"
           :file-list="fileList"
@@ -31,7 +31,7 @@
           </div>
           <template #tip>
             <div class="el-upload__tip">
-              只能上传 .srt 或 .vtt 格式文件，且不超过 1MB
+              只能上传 .srt、.vtt、.ass、.ssa 格式文件，且不超过 1MB
             </div>
           </template>
         </el-upload>
@@ -141,11 +141,11 @@ watch(() => props.modelValue, (newVal) => {
 // 方法
 const handleFileChange = (file) => {
   // 验证文件类型
-  const allowedTypes = ['.srt', '.vtt']
+  const allowedTypes = ['.srt', '.vtt', '.ass', '.ssa']
   const fileExt = '.' + file.name.split('.').pop().toLowerCase()
   
   if (!allowedTypes.includes(fileExt)) {
-    ElMessage.error('只支持 .srt 和 .vtt 格式的字幕文件')
+    ElMessage.error('只支持 .srt、.vtt、.ass、.ssa 格式的字幕文件')
     return false
   }
   
@@ -159,7 +159,6 @@ const handleFileChange = (file) => {
   form.file = file.raw
   
   // 从文件名自动提取视频编号（如：JUL-721-zh-CN.srt → JUL-721）
-  // 仅当未处于更新模式且输入框为空时自动填充
   if (!isUpdate.value && !form.videoId) {
     const matchedId = extractVideoId(file.name)
     if (matchedId) {
@@ -170,7 +169,6 @@ const handleFileChange = (file) => {
     }
   }
 
-  // 清除验证错误
   if (formRef.value) {
     formRef.value.clearValidate('file')
   }
@@ -195,7 +193,6 @@ const handleSubmit = async () => {
     
     uploading.value = true
     
-    // 根据是否有videoId判断是上传还是更新
     if (isUpdate.value) {
       await subtitleAPI.update(form.videoId, currentFile.value)
       ElMessage.success('字幕文件更新成功')
@@ -204,7 +201,6 @@ const handleSubmit = async () => {
       ElMessage.success('字幕文件上传成功')
     }
 
-    // 通知父组件刷新数据，但不立即关闭；切换为“关闭/完成”按钮
     emit('success')
     uploadSuccess.value = true
     
@@ -246,13 +242,13 @@ const getFileType = (filename) => {
   const ext = filename.split('.').pop().toLowerCase()
   const types = {
     'srt': 'SubRip 字幕文件',
-    'vtt': 'WebVTT 字幕文件'
+    'vtt': 'WebVTT 字幕文件',
+    'ass': 'Advanced SubStation Alpha 字幕文件',
+    'ssa': 'SubStation Alpha 字幕文件'
   }
   return types[ext] || '未知格式'
 }
 
-// 复用批量上传的提取规则：匹配第一个“字母-数字”片段
-// 例如：JUL-721-zh-CN.srt → jul-721（再在调用处统一转为大写展示）
 const extractVideoId = (fileName) => {
   const match = (fileName || '').match(/([a-z0-9]+-[0-9]+)/i)
   return match ? match[1] : null
