@@ -12,33 +12,28 @@
         :closable="false"
         style="margin-bottom: 20px"
       >
-        <p>1. 支持同时选择多个 .srt 或 .vtt 格式的字幕文件</p>
+        <p>1. 选择一个文件夹后，将自动递归扫描其中的 .srt 与 .vtt 字幕文件</p>
         <p>2. 文件名应包含视频编号，如：hmn-387.srt</p>
         <p>3. 系统会自动从文件名中提取视频编号</p>
         <p>4. 单个文件大小不超过 1MB</p>
       </el-alert>
       
-      <el-upload
-        ref="uploadRef"
-        :auto-upload="false"
-        :multiple="true"
-        :accept="'.srt,.vtt'"
-        :on-change="handleFileChange"
-        :on-remove="handleFileRemove"
-        :file-list="fileList"
-        drag
-        class="batch-upload"
-      >
-        <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-        <div class="el-upload__text">
-          将多个字幕文件拖到此处，或<em>点击选择文件</em>
-        </div>
-        <template #tip>
-          <div class="el-upload__tip">
-            支持 .srt 和 .vtt 格式，单个文件不超过 1MB
-          </div>
-        </template>
-      </el-upload>
+      <!-- 改为选择文件夹并递归扫描 -->
+      <div class="folder-select">
+        <el-button type="primary" @click="triggerSelectFolder">
+          选择文件夹
+        </el-button>
+        <span class="folder-tip">将自动递归扫描子文件夹；仅导入 .srt/.vtt，单文件 ≤ 1MB</span>
+        <input
+          ref="dirInput"
+          type="file"
+          style="display:none"
+          webkitdirectory
+          directory
+          multiple
+          @change="handleDirectoryChange"
+        />
+      </div>
       
       <!-- 文件列表 -->
       <div v-if="parsedFiles.length > 0" class="file-list">
@@ -165,6 +160,8 @@ const uploadResults = ref([])
 const uploadedCount = ref(0)
 const totalCount = ref(0)
 const uploadStatusText = ref('')
+// 新增：目录选择 input 引用
+const dirInput = ref()
 
 // 计算属性
 const visible = computed({
@@ -206,19 +203,16 @@ watch(() => props.modelValue, (newVal) => {
 
 // 方法
 const handleFileChange = (file, files) => {
-  // 验证文件
+  // 兼容保留：若有拖入文件（非目录），仍按原逻辑解析
   const validation = validateFile(file)
   if (!validation.valid) {
     ElMessage.error(validation.message)
-    // 从文件列表中移除无效文件
     const index = files.findIndex(f => f.uid === file.uid)
     if (index > -1) {
       files.splice(index, 1)
     }
     return
   }
-  
-  // 解析文件信息
   parseFiles(files)
 }
 
@@ -226,8 +220,45 @@ const handleFileRemove = (file, files) => {
   parseFiles(files)
 }
 
+// 新增：触发选择文件夹
+const triggerSelectFolder = () => {
+  if (dirInput.value) dirInput.value.click()
+}
+
+// 新增：处理目录选择结果（递归文件由浏览器提供 files 列表）
+const handleDirectoryChange = (e) => {
+  const files = Array.from(e.target.files || [])
+  if (files.length === 0) {
+    parsedFiles.value = []
+    return
+  }
+  const allowedTypes = ['.srt', '.vtt']
+  const filtered = []
+  for (const f of files) {
+    const ext = '.' + f.name.split('.').pop().toLowerCase()
+    if (!allowedTypes.includes(ext)) continue
+    if (f.size > 1024 * 1024) continue
+    filtered.push(f)
+  }
+  parsedFiles.value = filtered.map((file, idx) => {
+    const videoId = extractVideoId(file.name)
+    return {
+      uid: `${Date.now()}_${idx}`,
+      fileName: file.name,
+      videoId: videoId,
+      size: file.size,
+      file: file,
+      status: videoId ? 'valid' : 'invalid'
+    }
+  })
+  // 重置进度/结果
+  uploadResults.value = []
+  uploadedCount.value = 0
+  totalCount.value = 0
+  uploadStatusText.value = ''
+}
+
 const validateFile = (file) => {
-  // 验证文件类型
   const allowedTypes = ['.srt', '.vtt']
   const fileExt = '.' + file.name.split('.').pop().toLowerCase()
   
@@ -238,7 +269,6 @@ const validateFile = (file) => {
     }
   }
   
-  // 验证文件大小 (1MB)
   if (file.size > 1024 * 1024) {
     return {
       valid: false,
@@ -264,8 +294,6 @@ const parseFiles = (files) => {
 }
 
 const extractVideoId = (fileName) => {
-  // 从文件名中提取视频编号
-  // 支持格式：hmn-387.srt, jufd-924.vtt, abc-123-uncensored.srt 等
   const match = fileName.match(/([a-z0-9]+-[0-9]+)/i)
   return match ? match[1] : null
 }
@@ -365,6 +393,22 @@ const getStatusText = (status) => {
 .batch-upload-container {
   max-height: 70vh;
   overflow-y: auto;
+}
+
+/* 新增：文件夹选择区域样式 */
+.folder-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed #dcdfe6;
+  border-radius: 6px;
+  background-color: #fafafa;
+}
+
+.folder-tip {
+  color: #909399;
+  font-size: 12px;
 }
 
 .batch-upload :deep(.el-upload-dragger) {
