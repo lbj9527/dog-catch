@@ -252,6 +252,21 @@ const handleDirectoryChange = (e) => {
       status: videoId ? 'valid' : 'invalid'
     }
   })
+  // 对相同视频编号的文件，按扩展名优先级排序：.srt → .vtt → .ass/.ssa
+  parsedFiles.value.sort((a, b) => {
+    const byId = (a.videoId || '').localeCompare(b.videoId || '')
+    if (byId !== 0) return byId
+    const prio = (name) => {
+      const ext = (name.split('.').pop() || '').toLowerCase()
+      if (ext === 'srt') return 0
+      if (ext === 'vtt') return 1
+      if (ext === 'ass' || ext === 'ssa') return 2
+      return 9
+    }
+    const byExt = prio(a.fileName) - prio(b.fileName)
+    if (byExt !== 0) return byExt
+    return (a.fileName || '').localeCompare(b.fileName || '')
+  })
   // 重置进度/结果
   uploadResults.value = []
   uploadedCount.value = 0
@@ -291,6 +306,21 @@ const parseFiles = (files) => {
       file: file.raw,
       status: videoId ? 'valid' : 'invalid'
     }
+  })
+  // 同一编号优先上传 .srt，再 .vtt，最后 .ass/.ssa，确保基础号尽量落在 .srt 上
+  parsedFiles.value.sort((a, b) => {
+    const byId = (a.videoId || '').localeCompare(b.videoId || '')
+    if (byId !== 0) return byId
+    const prio = (name) => {
+      const ext = (name.split('.').pop() || '').toLowerCase()
+      if (ext === 'srt') return 0
+      if (ext === 'vtt') return 1
+      if (ext === 'ass' || ext === 'ssa') return 2
+      return 9
+    }
+    const byExt = prio(a.fileName) - prio(b.fileName)
+    if (byExt !== 0) return byExt
+    return (a.fileName || '').localeCompare(b.fileName || '')
   })
 }
 

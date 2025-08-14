@@ -163,9 +163,14 @@ const storage = multer.diskStorage({
         cb(null, './uploads/');
     },
     filename: (req, file, cb) => {
-        const videoId = (req.params.video_id || '').toLowerCase();
-        const ext = path.extname(file.originalname);
-        cb(null, `${videoId}${ext}`);
+        // 为避免批量上传同一基础编号时的临时文件相互覆盖，这里统一采用唯一临时名
+        try {
+            const ext = (path.extname(file.originalname || '') || '.srt').toLowerCase();
+            const unique = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+            cb(null, `${unique}${ext}`);
+        } catch (e) {
+            cb(null, `tmp_${Date.now()}.srt`);
+        }
     }
 });
 
@@ -184,6 +189,23 @@ const upload = multer({
         fileSize: 1024 * 1024 // 1MB 限制
     }
 });
+
+// 可靠移动文件（重命名失败时退化为复制+删除）
+async function moveFileSafe(src, dest) {
+    try {
+        await fs.rename(src, dest);
+        return;
+    } catch (e) {
+        try {
+            const data = await fs.readFile(src);
+            await fs.writeFile(dest, data);
+            try { await fs.unlink(src); } catch {}
+            return;
+        } catch (e2) {
+            throw e2;
+        }
+    }
+}
 
 // JWT 验证中间件
 const authenticateToken = (req, res, next) => {
@@ -526,33 +548,35 @@ app.post('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle')
     }
 
     // 处理编码与转码：ASS/SSA 转 VTT，其它字幕统一存为 UTF-8
-    let saveFilename = file.filename; // 物理文件名
+    // 现上传阶段生成的是临时名，把它解析/转码到目标文件名之前，先保留原始路径
+    const uploadsDir = path.join(__dirname, '../uploads');
+    const tempInputPath = path.join(uploadsDir, file.filename);
+    let saveFilename = file.filename; // 将被置为最终文件名
     let saveSize = file.size;
     try {
         const originalExt = path.extname(file.originalname).toLowerCase();
-        const inputPath = path.join(__dirname, '../uploads', file.filename);
         if (originalExt === '.ass' || originalExt === '.ssa') {
-            const rawBuf = await fs.readFile(inputPath);
+            const rawBuf = await fs.readFile(tempInputPath);
             const rawText = await detectAndDecodeToUtf8(rawBuf);
             const vtt = await convertAssToVttString(rawText);
             const outputFilename = `${videoId}.vtt`;
-            const outputPath = path.join(__dirname, '../uploads', outputFilename);
+            const outputPath = path.join(uploadsDir, outputFilename);
             await fs.writeFile(outputPath, vtt, 'utf-8');
             // 删除原始文件
-            try { await fs.unlink(inputPath); } catch {}
+            try { await fs.unlink(tempInputPath); } catch {}
             const stat = await fs.stat(outputPath);
             saveFilename = outputFilename;
             saveSize = stat.size;
         } else {
             // 对 .srt/.vtt：仅在非 UTF-8 时转为 UTF-8 保存
-            const rawBuf = await fs.readFile(inputPath);
+            const rawBuf = await fs.readFile(tempInputPath);
             const detected = chardet.detect(rawBuf) || 'UTF-8';
             const enc = (Array.isArray(detected) ? detected[0] : detected) || 'UTF-8';
             if (!/utf-8/i.test(enc)) {
                 const decoded = iconv.encodingExists(enc) ? iconv.decode(rawBuf, enc) : rawBuf.toString('utf8');
-                await fs.writeFile(inputPath, decoded, 'utf-8');
+                await fs.writeFile(tempInputPath, decoded, 'utf-8');
             }
-            const stat = await fs.stat(inputPath);
+            const stat = await fs.stat(tempInputPath);
             saveSize = stat.size;
         }
     } catch (e) {
@@ -583,14 +607,20 @@ app.post('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle')
     // 文件名与编号对齐：重命名为 finalVideoId + 原扩展名
     const extOut = path.extname(saveFilename).toLowerCase();
     const desiredName = `${finalVideoId}${extOut}`;
-    const desiredPath = path.join(__dirname, '../uploads', desiredName);
-    if (path.basename(filePathFinal) !== desiredName) {
-        try {
-            await fs.rename(filePathFinal, desiredPath);
-            const stat = await fs.stat(desiredPath);
-            saveFilename = desiredName;
-            saveSize = stat.size;
-        } catch (e) {}
+    const desiredPath = path.join(uploadsDir, desiredName);
+
+    try {
+        // 若当前还是临时名（ASS/SSA 已写入目标名时 saveFilename 已变更），移动到最终名
+        if (path.basename(filePathFinal) !== desiredName) {
+            await moveFileSafe(filePathFinal, desiredPath);
+        }
+        const stat = await fs.stat(desiredPath);
+        saveFilename = desiredName;
+        saveSize = stat.size;
+    } catch (e) {
+        // 文件未能写入最终路径，视为失败，确保不落数据库
+        try { await fs.unlink(filePathFinal); } catch {}
+        return res.status(500).json({ error: '保存字幕文件失败' });
     }
 
     const originalFilename = file.originalname || saveFilename;
@@ -648,32 +678,33 @@ app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'),
         }
         
         // 处理编码与转码：ASS/SSA 转 VTT，其它字幕统一存为 UTF-8
+        const uploadsDir = path.join(__dirname, '../uploads');
+        const tempInputPath = path.join(uploadsDir, file.filename);
         let saveFilename = file.filename;
         let saveSize = file.size;
         try {
             const originalExt = path.extname(file.originalname).toLowerCase();
-            const inputPath = path.join(__dirname, '../uploads', file.filename);
             if (originalExt === '.ass' || originalExt === '.ssa') {
-                const rawBuf = await fs.readFile(inputPath);
+                const rawBuf = await fs.readFile(tempInputPath);
                 const rawText = await detectAndDecodeToUtf8(rawBuf);
                 const vtt = await convertAssToVttString(rawText);
                 const outputFilename = `${videoId}.vtt`;
-                const outputPath = path.join(__dirname, '../uploads', outputFilename);
+                const outputPath = path.join(uploadsDir, outputFilename);
                 await fs.writeFile(outputPath, vtt, 'utf-8');
-                try { await fs.unlink(inputPath); } catch {}
+                try { await fs.unlink(tempInputPath); } catch {}
                 const stat = await fs.stat(outputPath);
                 saveFilename = outputFilename;
                 saveSize = stat.size;
             } else {
                 // 对 .srt/.vtt：仅在非 UTF-8 时转为 UTF-8 保存
-                const rawBuf = await fs.readFile(inputPath);
+                const rawBuf = await fs.readFile(tempInputPath);
                 const detected = chardet.detect(rawBuf) || 'UTF-8';
                 const enc = (Array.isArray(detected) ? detected[0] : detected) || 'UTF-8';
                 if (!/utf-8/i.test(enc)) {
                     const decoded = iconv.encodingExists(enc) ? iconv.decode(rawBuf, enc) : rawBuf.toString('utf8');
-                    await fs.writeFile(inputPath, decoded, 'utf-8');
+                    await fs.writeFile(tempInputPath, decoded, 'utf-8');
                 }
-                const stat = await fs.stat(inputPath);
+                const stat = await fs.stat(tempInputPath);
                 saveSize = stat.size;
             }
         } catch (e) {
