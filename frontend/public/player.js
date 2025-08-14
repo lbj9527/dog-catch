@@ -100,6 +100,17 @@ class VideoPlayer {
     
     // 初始化Video.js播放器
     initVideoJs() {
+        // 若同 id 的实例已存在（脚本重复注入或热更），先销毁旧实例
+        try {
+            const old = (window.videojs && window.videojs.players && window.videojs.players['videoPlayer']) || null;
+            if (old && typeof old.dispose === 'function') {
+                old.dispose();
+            }
+            if (this.player && typeof this.player.dispose === 'function') {
+                this.player.dispose();
+            }
+        } catch {}
+
         this.player = videojs('videoPlayer', {
             controls: true,
             fluid: true,
@@ -422,28 +433,17 @@ class VideoPlayer {
     addSubtitleTrack() {
         if (!this.player || !this.subtitleUrl) return;
 
-        // 如果已经存在指向相同 src 的字幕轨道，则直接显示
-        const tracks = this.player.textTracks();
-        for (let i = 0; i < tracks.length; i++) {
-            const track = tracks[i];
-            if (track.kind === 'subtitles') {
-                // 无法直接读取 remote track 的 src，这里通过标签名匹配并统一开启显示
-                track.mode = 'showing';
-            }
-        }
+        // 先移除所有已有字幕轨道，避免重复和旧源残留
+        try {
+            const existing = Array.from(this.player.textTracks());
+            existing.forEach(t => {
+                if (t.kind === 'subtitles') {
+                    try { this.player.removeRemoteTextTrack(t); } catch {}
+                }
+            });
+        } catch {}
 
-        // 为避免重复添加：检查是否已有一个标签为“中文字幕”的轨道处于可用状态
-        let hasChineseSubtitle = false;
-        for (let i = 0; i < tracks.length; i++) {
-            const track = tracks[i];
-            if (track.kind === 'subtitles' && (track.label === '中文字幕' || track.srclang === 'zh-CN')) {
-                hasChineseSubtitle = true;
-                track.mode = 'showing';
-            }
-        }
-        if (hasChineseSubtitle) return;
-
-        // 添加远程字幕轨道
+        // 添加新的字幕轨道
         this.player.addRemoteTextTrack({
             src: this.subtitleUrl,
             kind: 'subtitles',
@@ -452,14 +452,32 @@ class VideoPlayer {
             default: true
         }, false);
 
-        // 确保显示
-        const newlyAdded = this.player.textTracks();
-        for (let i = 0; i < newlyAdded.length; i++) {
-            const track = newlyAdded[i];
-            if (track.kind === 'subtitles') {
-                track.mode = 'showing';
+        // 显示字幕
+        try {
+            const tracks = this.player.textTracks();
+            for (let i = 0; i < tracks.length; i++) {
+                const track = tracks[i];
+                if (track.kind === 'subtitles') {
+                    track.mode = 'showing';
+                }
             }
-        }
+        } catch {}
+    }
+
+    // 释放资源，防止重复实例与内存泄漏
+    destroy() {
+        try {
+            if (this.subtitleUrl) {
+                URL.revokeObjectURL(this.subtitleUrl);
+                this.subtitleUrl = '';
+            }
+        } catch {}
+        try {
+            if (this.player && typeof this.player.dispose === 'function') {
+                this.player.dispose();
+                this.player = null;
+            }
+        } catch {}
     }
     
     // 转换SRT为WebVTT格式
@@ -561,12 +579,17 @@ class VideoPlayer {
 
 // 页面加载完成后初始化播放器
 document.addEventListener('DOMContentLoaded', () => {
-    new VideoPlayer();
+    // 单例守卫：若已存在实例则先销毁
+    if (window.videoPlayerInstance && typeof window.videoPlayerInstance.destroy === 'function') {
+        try { window.videoPlayerInstance.destroy(); } catch {}
+    }
+    window.videoPlayerInstance = new VideoPlayer();
 });
 
 // 页面卸载时清理资源
 window.addEventListener('beforeunload', () => {
-    if (window.videoPlayerInstance?.subtitleUrl) {
-        URL.revokeObjectURL(window.videoPlayerInstance.subtitleUrl);
+    if (window.videoPlayerInstance && typeof window.videoPlayerInstance.destroy === 'function') {
+        try { window.videoPlayerInstance.destroy(); } catch {}
+        window.videoPlayerInstance = null;
     }
-}); 
+});
