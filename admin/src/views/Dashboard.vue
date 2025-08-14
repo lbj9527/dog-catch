@@ -125,7 +125,7 @@
         
         <el-table-column prop="filename" label="文件名" min-width="200">
           <template #default="scope">
-            <span v-if="scope.row.filename">{{ scope.row.filename }}</span>
+            <span v-if="scope.row.filename">{{ scope.row.original_filename || scope.row.filename }}</span>
             <span v-else style="color: #ccc;">-</span>
           </template>
         </el-table-column>
@@ -455,7 +455,7 @@ const generateCSV = () => {
   const rows = tableData.value.map(row => [
     row.video_id,
     row.filename ? '已上传' : '缺失',
-    row.filename || '',
+    (row.original_filename || row.filename || ''),
     row.file_size ? formatFileSize(row.file_size) : '',
     row.updated_at ? formatDate(row.updated_at) : ''
   ])

@@ -6,6 +6,8 @@ class VideoPlayer {
         this.currentVideoId = '';
         this.qualities = [];
         this.subtitleUrl = '';
+        this.subtitleVariants = [];
+        this.currentSubtitleId = '';
         
         this.init();
     }
@@ -40,9 +42,9 @@ class VideoPlayer {
             this.handleMP4Video();
         }
         
-        // 加载字幕
+        // 加载字幕（包含变体）
         if (this.currentVideoId) {
-            this.loadSubtitle();
+            this.loadSubtitleVariants();
         }
     }
     
@@ -80,6 +82,17 @@ class VideoPlayer {
                 this.switchQuality(e.target.value);
             }
         };
+        
+        // 字幕选择（样式与清晰度一致）
+        const subtitleSelectEl = document.getElementById('subtitleSelect');
+        if (subtitleSelectEl) {
+            subtitleSelectEl.onchange = (e) => {
+                const videoId = e.target.value;
+                if (videoId) {
+                    this.switchSubtitleVariant(videoId);
+                }
+            };
+        }
         
         // 设置fallback链接
         document.getElementById('fallbackLink').href = this.currentVideoUrl;
@@ -316,37 +329,92 @@ class VideoPlayer {
         this.showMessage('正在切换清晰度...', 'info');
     }
     
-    // 加载字幕
-    async loadSubtitle() {
-        if (!this.currentVideoId) return;
-        
+    // 加载字幕变体
+    async loadSubtitleVariants() {
         try {
-            // 这里需要替换为实际的API地址
-            const response = await fetch(`http://localhost:8000/api/subtitle/${this.currentVideoId}`);
+            const baseId = this.extractBaseId(this.currentVideoId);
+            const resp = await fetch(`http://localhost:8000/api/subtitles/variants/${encodeURIComponent(baseId)}`);
+            if (!resp.ok) {
+                // 回退为按当前 videoId 加载单一字幕
+                await this.loadSubtitleByVideoId(this.currentVideoId);
+                return;
+            }
+            const data = await resp.json();
+            this.subtitleVariants = Array.isArray(data.variants) ? data.variants : [];
             
+            if (this.subtitleVariants.length === 0) {
+                await this.loadSubtitleByVideoId(this.currentVideoId);
+                return;
+            }
+            
+            // 选择默认字幕：最近更新项
+            const defaultVariant = this.subtitleVariants.reduce((best, cur) => {
+                const bu = new Date(best.updated_at || 0).getTime();
+                const cu = new Date(cur.updated_at || 0).getTime();
+                return cu > bu ? cur : best;
+            }, this.subtitleVariants[0]);
+            await this.loadSubtitleByVideoId(defaultVariant.video_id);
+            this.buildSubtitleSelector(defaultVariant.video_id);
+        } catch (e) {
+            console.error(e);
+            await this.loadSubtitleByVideoId(this.currentVideoId);
+        }
+    }
+
+    extractBaseId(videoId) {
+        const id = String(videoId || '').toUpperCase().trim();
+        const m = id.match(/^([A-Z]+-\d{2,5})(?:-(\d+))?$/);
+        if (m) return m[1];
+        const m2 = id.match(/([A-Z]+-\d{2,5})/);
+        return m2 ? m2[1] : id;
+    }
+
+    buildSubtitleSelector(activeVideoId) {
+        const select = document.getElementById('subtitleSelect');
+        if (!select) return;
+        select.innerHTML = '';
+        this.subtitleVariants.forEach(v => {
+            const option = document.createElement('option');
+            option.value = v.video_id;
+            const label = (Number(v.variant) || 1) === 1 ? '字幕(默认)' : `字幕(版本${v.variant})`;
+            option.textContent = label;
+            if (v.video_id === activeVideoId) option.selected = true;
+            select.appendChild(option);
+        });
+        select.style.display = 'inline-block';
+    }
+
+    async switchSubtitleVariant(videoId) {
+        if (!videoId) return;
+        const currentTime = this.player ? this.player.currentTime() : 0;
+        const wasPlaying = this.player && !this.player.paused();
+        await this.loadSubtitleByVideoId(videoId);
+        // 恢复播放位置与状态（确保无缝）
+        this.player.one('canplay', () => {
+            this.player.currentTime(currentTime);
+            if (wasPlaying) this.player.play();
+        });
+    }
+
+    // 按 videoId 加载并附加字幕
+    async loadSubtitleByVideoId(videoId) {
+        try {
+            const response = await fetch(`http://localhost:8000/api/subtitle/${encodeURIComponent(videoId)}`);
             if (response.ok) {
                 const subtitleText = await response.text();
-                
-                // 转换SRT为WebVTT（如果需要）
                 const vttContent = this.convertSRTtoVTT(subtitleText);
-                
-                // 创建blob URL
                 const blob = new Blob([vttContent], { type: 'text/vtt' });
+                if (this.subtitleUrl) URL.revokeObjectURL(this.subtitleUrl);
                 this.subtitleUrl = URL.createObjectURL(blob);
-
-                // 确保字幕轨道被附加（并在后续源切换中保持）
+                this.currentSubtitleId = videoId;
                 this.addSubtitleTrack();
-                // 启用按钮并设置文案为“隐藏字幕”（默认显示状态）
+                // 启用开关按钮
                 const subtitleBtn = document.getElementById('subtitleToggle');
                 subtitleBtn.disabled = false;
                 subtitleBtn.textContent = '隐藏字幕';
-
-                this.showMessage('字幕加载成功', 'success');
-                setTimeout(() => this.clearMessage(), 2000);
             }
-        } catch (error) {
-            console.error('字幕加载失败:', error);
-            // 不显示错误，因为字幕是可选的
+        } catch (e) {
+            console.error('加载字幕失败', e);
         }
     }
 

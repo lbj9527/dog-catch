@@ -194,18 +194,28 @@ const handleSubmit = async () => {
     uploading.value = true
     
     if (isUpdate.value) {
-      await subtitleAPI.update(form.videoId, currentFile.value)
-      ElMessage.success('字幕文件更新成功')
+      const res = await subtitleAPI.update(form.videoId, currentFile.value)
+      ElMessage.success(`字幕文件更新成功${res?.subtitle?.video_id ? `（编号：${res.subtitle.video_id}）` : ''}`)
     } else {
-      await subtitleAPI.upload(form.videoId, currentFile.value)
-      ElMessage.success('字幕文件上传成功')
+      const res = await subtitleAPI.upload(form.videoId, currentFile.value)
+      if (res?.subtitle?.video_id && res.subtitle.video_id.toUpperCase() !== form.videoId.toUpperCase()) {
+        ElMessage.success(`上传成功，已分配为：${res.subtitle.video_id}`)
+      } else {
+        ElMessage.success('字幕文件上传成功')
+      }
     }
 
     emit('success')
     uploadSuccess.value = true
     
   } catch (error) {
-    console.error('操作失败:', error)
+    if (error?.response?.status === 409) {
+      const exists = error.response.data?.exists_video_id
+      ElMessage.warning(`内容重复，已存在：${exists || '已存在字幕'}`)
+    } else {
+      console.error('操作失败:', error)
+      ElMessage.error('操作失败')
+    }
   } finally {
     uploading.value = false
   }

@@ -323,18 +323,22 @@ const handleBatchUpload = async () => {
     uploadStatusText.value = `正在上传: ${fileInfo.fileName}`
     
     try {
-      await subtitleAPI.upload(fileInfo.videoId, fileInfo.file)
+      const res = await subtitleAPI.upload(fileInfo.videoId, fileInfo.file)
+      const finalId = res?.subtitle?.video_id || fileInfo.videoId
       
       uploadResults.value.push({
         fileName: fileInfo.fileName,
-        videoId: fileInfo.videoId,
+        videoId: finalId,
         success: true,
         message: '上传成功'
       })
       
     } catch (error) {
       let errorMessage = '上传失败'
-      if (error.response?.data?.error) {
+      if (error.response?.status === 409) {
+        const exists = error.response.data?.exists_video_id
+        errorMessage = `内容重复，已存在：${exists || '已存在字幕'}`
+      } else if (error.response?.data?.error) {
         errorMessage = error.response.data.error
       } else if (error.message) {
         errorMessage = error.message

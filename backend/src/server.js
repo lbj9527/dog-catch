@@ -60,6 +60,60 @@ async function detectAndDecodeToUtf8(buffer) {
     }
 }
 
+const crypto = require('crypto');
+function normalizeTextForHash(input) {
+    if (typeof input !== 'string') return '';
+    // 去 BOM → 统一换行 → 去除行尾空白
+    return input
+        .replace(/^\uFEFF/, '')
+        .replace(/\r\n?/g, '\n')
+        .split('\n')
+        .map(l => l.replace(/\s+$/, ''))
+        .join('\n');
+}
+function computeContentHash(text) {
+    const normalized = normalizeTextForHash(text);
+    return crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
+}
+
+function extractBaseVideoId(videoId) {
+    const id = String(videoId || '').toUpperCase().trim();
+    const m = id.match(/^([A-Z]+-\d{2,5})(?:-(\d+))?$/);
+    if (m) return m[1];
+    // 兜底：从任意位置提取第一个形如 ABC-123 的片段
+    const m2 = id.match(/([A-Z]+-\d{2,5})/);
+    return m2 ? m2[1] : id;
+}
+
+function getAllAsync(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows || [])));
+    });
+}
+function getAsync(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row || null)));
+    });
+}
+function runAsync(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.run(sql, params, function(err){ if (err) reject(err); else resolve(this); });
+    });
+}
+
+async function allocateVariantForBase(baseVideoId) {
+    const rows = await getAllAsync('SELECT video_id, variant FROM subtitles WHERE lower(base_video_id) = lower(?)', [baseVideoId]);
+    const used = new Set();
+    for (const r of rows) {
+        const v = Number(r.variant) || 1;
+        used.add(v);
+    }
+    let variant = 1;
+    while (used.has(variant)) variant += 1;
+    const finalVideoId = variant === 1 ? baseVideoId : `${baseVideoId}-${variant}`;
+    return { finalVideoId, variant };
+}
+
 // 初始化数据库表
 db.serialize(() => {
     // 字幕表
@@ -80,6 +134,14 @@ db.serialize(() => {
         password_hash TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
+    
+    // 模式演进：为 subtitles 表补充新列（若存在则忽略错误）
+    db.run('ALTER TABLE subtitles ADD COLUMN content_hash TEXT', () => {});
+    db.run('ALTER TABLE subtitles ADD COLUMN base_video_id TEXT', () => {});
+    db.run('ALTER TABLE subtitles ADD COLUMN variant INTEGER', () => {});
+    db.run('ALTER TABLE subtitles ADD COLUMN original_filename TEXT', () => {});
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_subtitles_content_hash ON subtitles(content_hash)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_subtitles_base ON subtitles(base_video_id)', () => {});
     
     // 创建默认管理员账号 (用户名: admin, 密码: admin123)
     const defaultPassword = bcrypt.hashSync('admin123', 10);
@@ -497,28 +559,72 @@ app.post('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle')
         return res.status(500).json({ error: '字幕转码失败（ASS/SSA→VTT）' });
     }
     
+    // 计算内容哈希并去重
+    const filePathFinal = path.join(__dirname, '../uploads', saveFilename);
+    let fileTextForHash = '';
+    try {
+        const buf = await fs.readFile(filePathFinal);
+        const enc = chardet.detect(buf) || 'UTF-8';
+        fileTextForHash = /utf-8/i.test(enc) ? buf.toString('utf8') : iconv.decode(buf, enc);
+    } catch (e) {}
+    const contentHash = computeContentHash(fileTextForHash);
+
+    // 冲突：若内容哈希已存在则拒绝（并清理已落盘文件）
+    const dup = await getAsync('SELECT video_id FROM subtitles WHERE content_hash = ?', [contentHash]);
+    if (dup) {
+        try { await fs.unlink(filePathFinal); } catch {}
+        return res.status(409).json({ error: '内容重复，已存在字幕', exists_video_id: dup.video_id });
+    }
+
+    // 分配基础编号与变体
+    const baseVideoId = extractBaseVideoId(videoId.toUpperCase());
+    const { finalVideoId, variant } = await allocateVariantForBase(baseVideoId);
+
+    // 文件名与编号对齐：重命名为 finalVideoId + 原扩展名
+    const extOut = path.extname(saveFilename).toLowerCase();
+    const desiredName = `${finalVideoId}${extOut}`;
+    const desiredPath = path.join(__dirname, '../uploads', desiredName);
+    if (path.basename(filePathFinal) !== desiredName) {
+        try {
+            await fs.rename(filePathFinal, desiredPath);
+            const stat = await fs.stat(desiredPath);
+            saveFilename = desiredName;
+            saveSize = stat.size;
+        } catch (e) {}
+    }
+
+    const originalFilename = file.originalname || saveFilename;
+
     const insertOrUpdate = `INSERT OR REPLACE INTO subtitles 
-        (video_id, filename, file_path, file_size, updated_at) 
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`;
+        (video_id, base_video_id, variant, filename, file_path, file_size, original_filename, content_hash, updated_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`;
     
     db.run(insertOrUpdate, [
-        videoId,
-        saveFilename, // 展示与类型判断使用统一的.vtt或原始扩展
+        finalVideoId,
+        baseVideoId,
+        variant,
         saveFilename,
-        saveSize
+        saveFilename,
+        saveSize,
+        originalFilename,
+        contentHash
     ], function(err) {
         if (err) {
             return res.status(500).json({ error: '数据库保存失败' });
         }
         
-        res.json({
-            message: '字幕文件上传成功',
-            subtitle: {
-                video_id: videoId,
-                filename: saveFilename,
-                size: saveSize
-            }
-        });
+                        res.json({
+                    message: '字幕文件上传成功',
+                    subtitle: {
+                        video_id: finalVideoId,
+                        base_video_id: baseVideoId,
+                        variant: variant,
+                        filename: saveFilename,
+                        size: saveSize,
+                        content_hash: contentHash,
+                        original_filename: originalFilename
+                    }
+                });
     });
 });
 
@@ -574,11 +680,28 @@ app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'),
             return res.status(500).json({ error: '字幕转码失败（ASS/SSA→VTT）' });
         }
         
+        // 计算内容哈希并去重
+        const filePathFinal = path.join(__dirname, '../uploads', saveFilename);
+        let fileTextForHash = '';
+        try {
+            const buf = await fs.readFile(filePathFinal);
+            const enc = chardet.detect(buf) || 'UTF-8';
+            fileTextForHash = /utf-8/i.test(enc) ? buf.toString('utf8') : iconv.decode(buf, enc);
+        } catch (e) {}
+        const contentHash = computeContentHash(fileTextForHash);
+        const dup = await getAsync('SELECT video_id FROM subtitles WHERE content_hash = ? AND lower(video_id) <> lower(?)', [contentHash, videoId]);
+        if (dup) {
+            try { await fs.unlink(filePathFinal); } catch {}
+            return res.status(409).json({ error: '内容重复，已存在字幕', exists_video_id: dup.video_id });
+        }
+
+        const originalFilename = file.originalname || saveFilename;
+
         // 更新记录
         db.run(`UPDATE subtitles SET 
-            filename = ?, file_path = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP 
+            filename = ?, file_path = ?, file_size = ?, content_hash = ?, original_filename = ?, updated_at = CURRENT_TIMESTAMP 
             WHERE lower(video_id) = lower(?)`, 
-            [saveFilename, saveFilename, saveSize, videoId], 
+            [saveFilename, saveFilename, saveSize, contentHash, originalFilename, videoId], 
             function(err) {
                 if (err) {
                     return res.status(500).json({ error: '数据库更新失败' });
@@ -589,7 +712,9 @@ app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'),
                     subtitle: {
                         video_id: videoId,
                         filename: saveFilename,
-                        size: saveSize
+                        size: saveSize,
+                        content_hash: contentHash,
+                        original_filename: originalFilename
                     }
                 });
             }
@@ -766,6 +891,20 @@ app.get('/api/subtitles/stats', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error('获取字幕文件统计失败:', err);
         res.status(500).json({ error: '获取字幕文件统计失败' });
+    }
+});
+
+// 获取某基础视频编号下的所有字幕变体（公开接口）
+app.get('/api/subtitles/variants/:base_video_id', async (req, res) => {
+    const baseId = (req.params.base_video_id || '').toUpperCase();
+    try {
+        const rows = await getAllAsync(
+            'SELECT video_id, base_video_id, variant, filename, file_size, updated_at FROM subtitles WHERE lower(base_video_id) = lower(?) ORDER BY COALESCE(variant,1) ASC, updated_at DESC',
+            [baseId]
+        );
+        res.json({ base: extractBaseVideoId(baseId), variants: rows });
+    } catch (e) {
+        res.status(500).json({ error: '获取字幕变体失败' });
     }
 });
 
