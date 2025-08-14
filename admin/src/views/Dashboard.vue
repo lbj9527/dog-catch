@@ -30,6 +30,20 @@
           <el-icon><Download /></el-icon>
           导出数据
         </el-button>
+        <el-divider direction="vertical" />
+        <el-button @click="selectAllCurrentPage" :disabled="loading || tableData.length === 0">
+          全选当前页
+        </el-button>
+        <el-button @click="invertSelection" :disabled="loading || tableData.length === 0">
+          反选当前页
+        </el-button>
+        <el-button @click="clearSelection" :disabled="selectedIds.size === 0">
+          取消选择
+        </el-button>
+        <el-button type="danger" @click="bulkDelete" :loading="deleting" :disabled="selectedIds.size === 0">
+          <el-icon><Delete /></el-icon>
+          批量删除
+        </el-button>
       </div>
       <div class="toolbar-right">
         <el-input
@@ -47,7 +61,7 @@
     <div class="stats-cards">
       <el-card class="stat-card">
         <div class="stat-content">
-          <div class="stat-number">{{ stats.total }}</div>
+          <div class="stat-number">{{ allStats.total }}</div>
           <div class="stat-label">总视频数</div>
         </div>
         <div class="stat-icon">
@@ -56,7 +70,7 @@
       </el-card>
       <el-card class="stat-card">
         <div class="stat-content">
-          <div class="stat-number">{{ stats.hasSubtitle }}</div>
+          <div class="stat-number">{{ allStats.hasSubtitle }}</div>
           <div class="stat-label">已有字幕</div>
         </div>
         <div class="stat-icon">
@@ -65,7 +79,7 @@
       </el-card>
       <el-card class="stat-card">
         <div class="stat-content">
-          <div class="stat-number">{{ stats.missing }}</div>
+          <div class="stat-number">{{ allStats.missing }}</div>
           <div class="stat-label">缺失字幕</div>
         </div>
         <div class="stat-icon">
@@ -74,7 +88,7 @@
       </el-card>
       <el-card class="stat-card">
         <div class="stat-content">
-          <div class="stat-number">{{ stats.completion }}%</div>
+          <div class="stat-number">{{ allStats.completion }}%</div>
           <div class="stat-label">完成度</div>
         </div>
         <div class="stat-icon">
@@ -86,12 +100,15 @@
     <!-- 数据表格 -->
     <el-card class="table-card">
       <el-table
+        ref="tableRef"
         :data="tableData"
         v-loading="loading"
         style="width: 100%"
         height="400"
         stripe
+        @selection-change="onSelectionChange"
       >
+        <el-table-column type="selection" width="48" />
         <el-table-column prop="video_id" label="视频编号" width="200" sortable>
           <template #default="scope">
             <el-tag>{{ scope.row.video_id }}</el-tag>
@@ -222,8 +239,11 @@ const router = useRouter()
 // 响应式数据
 const loading = ref(false)
 const exporting = ref(false)
+const deleting = ref(false)
 const searchQuery = ref('')
 const tableData = ref([])
+const tableRef = ref()
+const selectedIds = ref(new Set())
 const showUploadDialog = ref(false)
 const showBatchUploadDialog = ref(false)
 const showPreviewDialog = ref(false)
@@ -242,15 +262,20 @@ const currentUser = computed(() => {
   return user ? JSON.parse(user) : { username: 'Admin' }
 })
 
-// 统计数据
-const stats = computed(() => {
-  const total = tableData.value.length
-  const hasSubtitle = tableData.value.filter(item => item.filename).length
-  const missing = total - hasSubtitle
-  const completion = total > 0 ? Math.round((hasSubtitle / total) * 100) : 0
-  
-  return { total, hasSubtitle, missing, completion }
-})
+// 顶部统计（全量）
+const allStats = reactive({ total: 0, hasSubtitle: 0, missing: 0, completion: 0 })
+
+const fetchStats = async () => {
+  try {
+    const res = await subtitleAPI.getStats({ search: searchQuery.value })
+    allStats.total = res.total
+    allStats.hasSubtitle = res.hasSubtitle
+    allStats.missing = res.missing
+    allStats.completion = res.completion
+  } catch (e) {
+    // 忽略统计失败
+  }
+}
 
 // 方法
 const loadData = async () => {
@@ -265,7 +290,7 @@ const loadData = async () => {
     const response = await subtitleAPI.getList(params)
     tableData.value = response.data
     pagination.total = response.pagination.total
-    
+    await fetchStats()
   } catch (error) {
     console.error('加载数据失败:', error)
   } finally {
@@ -275,17 +300,20 @@ const loadData = async () => {
 
 const handleSearch = () => {
   pagination.page = 1
+  clearSelection()
   loadData()
 }
 
 const handleSizeChange = (size) => {
   pagination.limit = size
   pagination.page = 1
+  clearSelection()
   loadData()
 }
 
 const handleCurrentChange = (page) => {
   pagination.page = page
+  clearSelection()
   loadData()
 }
 
@@ -335,12 +363,74 @@ const deleteSubtitle = async (row) => {
     
     await subtitleAPI.delete(row.video_id)
     ElMessage.success('删除成功')
-    loadData()
-    
+    await loadData()
   } catch (error) {
     if (error !== 'cancel') {
       console.error('删除失败:', error)
     }
+  }
+}
+
+// 选择相关
+const onSelectionChange = (rows) => {
+  const ids = new Set(rows.map(r => r.video_id))
+  selectedIds.value = ids
+}
+
+const clearSelection = () => {
+  selectedIds.value = new Set()
+  if (tableRef.value) tableRef.value.clearSelection()
+}
+
+const selectAllCurrentPage = () => {
+  if (!tableRef.value) return
+  tableRef.value.clearSelection()
+  tableData.value.forEach(row => tableRef.value.toggleRowSelection(row, true))
+}
+
+const invertSelection = () => {
+  if (!tableRef.value) return
+  const currentSelected = new Set([...selectedIds.value])
+  tableRef.value.clearSelection()
+  tableData.value.forEach(row => {
+    const willSelect = !currentSelected.has(row.video_id)
+    if (willSelect) tableRef.value.toggleRowSelection(row, true)
+  })
+}
+
+const bulkDelete = async () => {
+  if (!selectedIds.value.size) return
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedIds.value.size} 条字幕记录吗？`,
+      '批量删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    deleting.value = true
+    const ids = [...selectedIds.value]
+    const res = await subtitleAPI.bulkDelete(ids)
+    const successCount = res.deleted || 0
+    const failedCount = res.failed ? Object.keys(res.failed).length : 0
+
+    if (failedCount === 0) {
+      ElMessage.success(`已删除 ${successCount} 条`)
+    } else {
+      ElMessage.warning(`成功 ${successCount} 条，失败 ${failedCount} 条`)
+    }
+
+    clearSelection()
+    await loadData()
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error(e)
+    }
+  } finally {
+    deleting.value = false
   }
 }
 

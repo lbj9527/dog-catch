@@ -111,6 +111,20 @@ export const subtitleAPI = {
   // 删除字幕
   delete(videoId) {
     return api.delete(`/api/subtitle/${videoId}`)
+  },
+
+  // 批量删除字幕
+  bulkDelete(videoIds) {
+    return api.request({
+      method: 'delete',
+      url: '/api/subtitles',
+      data: { video_ids: videoIds }
+    })
+  },
+
+  // 获取统计
+  getStats(params = {}) {
+    return api.get('/api/subtitles/stats', { params })
   }
 }
 

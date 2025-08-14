@@ -631,6 +631,99 @@ app.get('/api/subtitles', authenticateToken, (req, res) => {
     });
 });
 
+// 批量删除字幕文件 (需要认证)
+app.delete('/api/subtitles', authenticateToken, async (req, res) => {
+    const videoIds = req.body && req.body.video_ids;
+    if (!Array.isArray(videoIds) || videoIds.length === 0) {
+        return res.status(400).json({ error: '请提供要删除的字幕文件的video_id列表' });
+    }
+    if (videoIds.length > 200) {
+        return res.status(400).json({ error: '单次最多允许删除200条' });
+    }
+
+    const normalizedIds = Array.from(new Set(videoIds.map(id => String(id || '').toLowerCase().trim()))).filter(Boolean);
+
+    const failed = {};
+    let deleted = 0;
+
+    const selectById = (vid) => new Promise((resolve, reject) => {
+        db.get('SELECT * FROM subtitles WHERE lower(video_id) = lower(?)', [vid], (err, row) => {
+            if (err) return reject(err);
+            resolve(row || null);
+        });
+    });
+
+    const deleteById = (vid) => new Promise((resolve, reject) => {
+        db.run('DELETE FROM subtitles WHERE lower(video_id) = lower(?)', [vid], function(err) {
+            if (err) return reject(err);
+            resolve(this && this.changes > 0);
+        });
+    });
+
+    for (const vid of normalizedIds) {
+        try {
+            const row = await selectById(vid);
+            if (!row) {
+                failed[vid] = '字幕文件不存在';
+                continue;
+            }
+
+            try {
+                const filePath = path.join(__dirname, '../uploads', path.basename(row.file_path));
+                await fs.unlink(filePath);
+            } catch (e) {
+                if (!e || e.code !== 'ENOENT') {
+                    failed[vid] = '删除物理文件失败';
+                }
+            }
+
+            const ok = await deleteById(vid);
+            if (ok) {
+                deleted += 1;
+            } else {
+                failed[vid] = failed[vid] || '删除数据库记录失败';
+            }
+        } catch (e) {
+            failed[vid] = e && e.message ? e.message : '删除失败';
+        }
+    }
+
+    return res.json({ deleted, failed });
+});
+
+// 获取字幕文件统计 (需要认证)
+app.get('/api/subtitles/stats', authenticateToken, async (req, res) => {
+    const search = (req.query.search || '').trim();
+    try {
+        const where = search ? ' WHERE video_id LIKE ?' : '';
+        const params = search ? [`%${search}%`] : [];
+
+        const row = await new Promise((resolve, reject) => {
+            db.get(
+                `SELECT 
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN filename IS NOT NULL AND filename <> '' THEN 1 ELSE 0 END) AS hasSubtitle
+                 FROM subtitles${where}`,
+                params,
+                (err, r) => {
+                    if (err) return reject(err);
+                    resolve(r || { total: 0, hasSubtitle: 0 });
+                }
+            );
+        });
+
+        const total = row.total || 0;
+        const hasSubtitle = row.hasSubtitle || 0;
+        const missing = Math.max(0, total - hasSubtitle);
+        const completion = total > 0 ? Math.round((hasSubtitle / total) * 100) : 0;
+
+        res.json({ total, hasSubtitle, missing, completion });
+    } catch (err) {
+        console.error('获取字幕文件统计失败:', err);
+        res.status(500).json({ error: '获取字幕文件统计失败' });
+    }
+});
+
 
 // 错误处理中间件
 app.use((err, req, res, next) => {
