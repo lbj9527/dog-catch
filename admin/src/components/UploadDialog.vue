@@ -250,8 +250,17 @@ const getFileType = (filename) => {
 }
 
 const extractVideoId = (fileName) => {
-  const match = (fileName || '').match(/([a-z0-9]+-[0-9]+)/i)
-  return match ? match[1] : null
+  const base = (fileName || '').replace(/\.[^/.]+$/, '')
+  // 优先：已有连字符，如 JUL-721
+  let m = base.match(/([a-z]+)-(\d{2,5})/i)
+  if (m) return `${m[1]}-${m[2]}`.toUpperCase()
+  // 其次：无连字符的字母+数字，如 NAKA008 -> NAKA-008
+  m = base.match(/([a-z]+)(\d{2,5})/i)
+  if (m) return `${m[1]}-${m[2]}`.toUpperCase()
+  // 新增：字母+空格+数字，如 ABP 744 -> ABP-744
+  m = base.match(/([a-z]+)\s+(\d{2,5})/i)
+  if (m) return `${m[1]}-${m[2]}`.toUpperCase()
+  return null
 }
 </script>
 

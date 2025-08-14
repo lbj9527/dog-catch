@@ -12,6 +12,8 @@ const { URL } = require('url');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const assToVtt = require('ass-to-vtt');
 const { Readable } = require('stream');
+const chardet = require('chardet');
+const iconv = require('iconv-lite');
 
 // 新增：为上游请求启用 Keep-Alive，以减少频繁建连的开销
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 128, keepAliveMsecs: 15000 });
@@ -38,6 +40,25 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-producti
 
 // 数据库初始化
 const db = new sqlite3.Database('./database/subtitles.db');
+
+async function detectAndDecodeToUtf8(buffer) {
+    try {
+        // chardet 返回可能的编码列表，取置信度最高的一项
+        const detected = chardet.detect(buffer) || 'UTF-8';
+        const enc = (Array.isArray(detected) ? detected[0] : detected) || 'UTF-8';
+        if (/utf-8/i.test(enc)) {
+            return buffer.toString('utf8');
+        }
+        // 常见东亚编码转 UTF-8
+        if (iconv.encodingExists(enc)) {
+            return iconv.decode(buffer, enc);
+        }
+        // 兜底
+        return buffer.toString('utf8');
+    } catch {
+        return buffer.toString('utf8');
+    }
+}
 
 // 初始化数据库表
 db.serialize(() => {
@@ -421,9 +442,9 @@ app.get('/api/subtitle/:video_id', (req, res) => {
             const filePath = path.join(__dirname, '../uploads', path.basename(subtitle.file_path));
             const content = await fs.readFile(filePath, 'utf-8');
             
-            // 设置正确的内容类型
+            // 设置正确的内容类型与编码（统一按 UTF-8 返回）
             const ext = path.extname(subtitle.filename).toLowerCase();
-            const contentType = ext === '.vtt' ? 'text/vtt' : 'text/plain';
+            const contentType = ext === '.vtt' ? 'text/vtt; charset=utf-8' : 'text/plain; charset=utf-8';
             
             res.set('Content-Type', contentType);
             res.send(content);
@@ -442,15 +463,16 @@ app.post('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle')
         return res.status(400).json({ error: '请选择字幕文件' });
     }
 
-    // 处理 .ass/.ssa → .vtt 转码
+    // 处理编码与转码：ASS/SSA 转 VTT，其它字幕统一存为 UTF-8
     let saveFilename = file.filename; // 物理文件名
     let saveSize = file.size;
     try {
         const originalExt = path.extname(file.originalname).toLowerCase();
+        const inputPath = path.join(__dirname, '../uploads', file.filename);
         if (originalExt === '.ass' || originalExt === '.ssa') {
-            const inputPath = path.join(__dirname, '../uploads', file.filename);
-            const raw = await fs.readFile(inputPath, 'utf-8');
-            const vtt = await convertAssToVttString(raw);
+            const rawBuf = await fs.readFile(inputPath);
+            const rawText = await detectAndDecodeToUtf8(rawBuf);
+            const vtt = await convertAssToVttString(rawText);
             const outputFilename = `${videoId}.vtt`;
             const outputPath = path.join(__dirname, '../uploads', outputFilename);
             await fs.writeFile(outputPath, vtt, 'utf-8');
@@ -458,6 +480,17 @@ app.post('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle')
             try { await fs.unlink(inputPath); } catch {}
             const stat = await fs.stat(outputPath);
             saveFilename = outputFilename;
+            saveSize = stat.size;
+        } else {
+            // 对 .srt/.vtt：仅在非 UTF-8 时转为 UTF-8 保存
+            const rawBuf = await fs.readFile(inputPath);
+            const detected = chardet.detect(rawBuf) || 'UTF-8';
+            const enc = (Array.isArray(detected) ? detected[0] : detected) || 'UTF-8';
+            if (!/utf-8/i.test(enc)) {
+                const decoded = iconv.encodingExists(enc) ? iconv.decode(rawBuf, enc) : rawBuf.toString('utf8');
+                await fs.writeFile(inputPath, decoded, 'utf-8');
+            }
+            const stat = await fs.stat(inputPath);
             saveSize = stat.size;
         }
     } catch (e) {
@@ -508,21 +541,33 @@ app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'),
             return res.status(404).json({ error: '字幕文件不存在，请先上传' });
         }
         
-        // 处理 .ass/.ssa → .vtt 转码
+        // 处理编码与转码：ASS/SSA 转 VTT，其它字幕统一存为 UTF-8
         let saveFilename = file.filename;
         let saveSize = file.size;
         try {
             const originalExt = path.extname(file.originalname).toLowerCase();
+            const inputPath = path.join(__dirname, '../uploads', file.filename);
             if (originalExt === '.ass' || originalExt === '.ssa') {
-                const inputPath = path.join(__dirname, '../uploads', file.filename);
-                const raw = await fs.readFile(inputPath, 'utf-8');
-                const vtt = await convertAssToVttString(raw);
+                const rawBuf = await fs.readFile(inputPath);
+                const rawText = await detectAndDecodeToUtf8(rawBuf);
+                const vtt = await convertAssToVttString(rawText);
                 const outputFilename = `${videoId}.vtt`;
                 const outputPath = path.join(__dirname, '../uploads', outputFilename);
                 await fs.writeFile(outputPath, vtt, 'utf-8');
                 try { await fs.unlink(inputPath); } catch {}
                 const stat = await fs.stat(outputPath);
                 saveFilename = outputFilename;
+                saveSize = stat.size;
+            } else {
+                // 对 .srt/.vtt：仅在非 UTF-8 时转为 UTF-8 保存
+                const rawBuf = await fs.readFile(inputPath);
+                const detected = chardet.detect(rawBuf) || 'UTF-8';
+                const enc = (Array.isArray(detected) ? detected[0] : detected) || 'UTF-8';
+                if (!/utf-8/i.test(enc)) {
+                    const decoded = iconv.encodingExists(enc) ? iconv.decode(rawBuf, enc) : rawBuf.toString('utf8');
+                    await fs.writeFile(inputPath, decoded, 'utf-8');
+                }
+                const stat = await fs.stat(inputPath);
                 saveSize = stat.size;
             }
         } catch (e) {
