@@ -1,5 +1,7 @@
 // 播放器主逻辑
 const API_BASE_URL = new URLSearchParams(location.search).get('api') || (window.PLAYER_CONFIG && window.PLAYER_CONFIG.API_BASE_URL) || 'http://localhost:8000';
+const REQUIRE_SUBTITLE_LOGIN = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.SUBTITLE_NEED_LOGIN) !== false;
+const ALLOW_PLAY_WITHOUT_LOGIN = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.ALLOW_PLAY_WITHOUT_LOGIN) !== false;
 class VideoPlayer {
     constructor() {
         this.player = null;
@@ -9,6 +11,7 @@ class VideoPlayer {
         this.subtitleUrl = '';
         this.subtitleVariants = [];
         this.currentSubtitleId = '';
+        this.userToken = localStorage.getItem('user_token') || '';
         
         this.init();
     }
@@ -32,23 +35,31 @@ class VideoPlayer {
         
         // 设置按钮事件
         this.setupControls();
+        this.setupAuthUi();
+        this.refreshAuthUi();
         
         // 初始化Video.js播放器
         this.initVideoJs();
         
-        // 处理视频源
+        // 处理视频源（播放不需要登录）
         if (params.type === 'hls' || this.currentVideoUrl.includes('.m3u8')) {
             this.handleHLSVideo();
         } else {
             this.handleMP4Video();
         }
         
-        // 加载字幕（包含变体）
+        // 加载字幕（仅登录后尝试）
         if (this.currentVideoId) {
-            this.loadSubtitleVariants();
+            if (!REQUIRE_SUBTITLE_LOGIN || this.isLoggedIn()) {
+                this.loadSubtitleVariants();
+            } else {
+                this.disableSubtitleUi('登录后可用');
+            }
         }
     }
     
+    isLoggedIn() { return !!this.userToken; }
+
     // 解析URL参数
     parseUrlParams() {
         const urlParams = new URLSearchParams(window.location.search);
@@ -98,7 +109,200 @@ class VideoPlayer {
         // 设置fallback链接
         document.getElementById('fallbackLink').href = this.currentVideoUrl;
     }
-    
+
+    setupAuthUi() {
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const deleteAccountBtn = document.getElementById('deleteAccountBtn');
+
+        const whoModal = document.getElementById('whoModal');
+        const whoClose = document.getElementById('whoClose');
+        const whoIdentifier = document.getElementById('whoIdentifier');
+        const whoNext = document.getElementById('whoNext');
+
+        const loginModal = document.getElementById('loginModal');
+        const loginClose = document.getElementById('loginClose');
+        const loginMethod = document.getElementById('loginMethod');
+        const loginByPassword = document.getElementById('loginByPassword');
+        const loginByEmail = document.getElementById('loginByEmail');
+        const loginUsername = document.getElementById('loginUsername');
+        const loginPassword = document.getElementById('loginPassword');
+        const loginEmail = document.getElementById('loginEmail');
+        const loginCode = document.getElementById('loginCode');
+        const btnSendLoginCode = document.getElementById('btnSendLoginCode');
+        const btnDoLogin = document.getElementById('btnDoLogin');
+        const gotoRegister = document.getElementById('gotoRegister');
+
+        const regModal = document.getElementById('registerModal');
+        const regClose = document.getElementById('regClose');
+        const regUsername = document.getElementById('regUsername');
+        const regEmail = document.getElementById('regEmail');
+        const regPassword = document.getElementById('regPassword');
+        const regCode = document.getElementById('regCode');
+        const btnSendRegCode = document.getElementById('btnSendRegCode');
+        const btnDoRegister = document.getElementById('btnDoRegister');
+        const gotoLogin = document.getElementById('gotoLogin');
+
+        // 主按钮
+        loginBtn.onclick = () => { if (!this.isLoggedIn()) { whoIdentifier.value=''; whoModal.style.display='flex'; } };
+        logoutBtn.onclick = () => { this.doLogout(); this.refreshAuthUi(); };
+        deleteAccountBtn.onclick = async () => {
+            if (!this.isLoggedIn()) return;
+            if (!confirm('确定要注销当前账号吗？此操作不可恢复')) return;
+            try {
+                const r = await fetch(`${API_BASE_URL}/api/user/me`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${this.userToken}` } });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || '注销失败');
+                this.doLogout();
+                this.showMessage('账号已注销');
+            } catch (e) { this.showMessage(e.message || '注销失败', 'error'); }
+        };
+
+        // who 弹窗
+        whoClose.onclick = () => { whoModal.style.display='none'; };
+        whoNext.onclick = async () => {
+            const idf = (whoIdentifier.value || '').trim();
+            if (!idf) { this.showMessage('请输入用户名或邮箱', 'error'); return; }
+            try {
+                const r = await fetch(`${API_BASE_URL}/api/user/exist`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ identifier: idf }) });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || '检查失败');
+                whoModal.style.display='none';
+                if (j.exists) {
+                    // 去登录
+                    loginModal.style.display='flex';
+                    if (j.type === 'email') {
+                        loginEmail.value = idf; loginMethod.value='email'; loginByPassword.style.display='none'; loginByEmail.style.display='';
+                    } else {
+                        loginUsername.value = idf; loginMethod.value='password'; loginByPassword.style.display=''; loginByEmail.style.display='none';
+                    }
+                } else {
+                    // 去注册
+                    regModal.style.display='flex';
+                    if (/@/.test(idf)) { regEmail.value = idf; }
+                    else { regUsername.value = idf; }
+                }
+            } catch (e) { this.showMessage(e.message || '检查失败', 'error'); }
+        };
+
+        // 登录弹窗
+        loginClose.onclick = () => { loginModal.style.display='none'; };
+        loginMethod.onchange = () => {
+            const mode = loginMethod.value;
+            if (mode === 'email') { loginByPassword.style.display='none'; loginByEmail.style.display=''; }
+            else { loginByPassword.style.display=''; loginByEmail.style.display='none'; }
+        };
+        btnSendLoginCode.onclick = async () => {
+            const email = (loginEmail.value || '').trim();
+            if (!email) return this.showMessage('请输入邮箱', 'error');
+            try {
+                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, purpose:'login' }) });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || '发送失败');
+                this.showMessage('验证码已发送');
+            } catch (e) { this.showMessage(e.message || '发送失败', 'error'); }
+        };
+        btnDoLogin.onclick = async () => {
+            try {
+                const mode = loginMethod.value;
+                let r, j;
+                if (mode === 'password') {
+                    const username = (loginUsername.value || '').trim();
+                    const password = loginPassword.value;
+                    if (!username || !password) throw new Error('请输入用户名和密码');
+                    r = await fetch(`${API_BASE_URL}/api/user/login/password`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, password }) });
+                    j = await r.json();
+                } else {
+                    const email = (loginEmail.value || '').trim();
+                    const code = (loginCode.value || '').trim();
+                    if (!email || !code) throw new Error('请输入邮箱与验证码');
+                    r = await fetch(`${API_BASE_URL}/api/user/login/email`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, code }) });
+                    j = await r.json();
+                }
+                if (!r.ok) throw new Error(j.error || '登录失败');
+                this.userToken = j.token || '';
+                if (this.userToken) localStorage.setItem('user_token', this.userToken);
+                this.showMessage('登录成功');
+                loginModal.style.display='none';
+                this.refreshAuthUi();
+                if (this.currentVideoId) this.loadSubtitleVariants();
+            } catch (e) { this.showMessage(e.message || '登录失败', 'error'); }
+        };
+        gotoRegister.onclick = () => { loginModal.style.display='none'; regModal.style.display='flex'; };
+
+        // 注册弹窗
+        regClose.onclick = () => { regModal.style.display='none'; };
+        btnSendRegCode.onclick = async () => {
+            const email = (regEmail.value || '').trim();
+            if (!email) return this.showMessage('请输入邮箱', 'error');
+            try {
+                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, purpose:'register' }) });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || '发送失败');
+                this.showMessage('验证码已发送');
+            } catch (e) { this.showMessage(e.message || '发送失败', 'error'); }
+        };
+        btnDoRegister.onclick = async () => {
+            const username = (regUsername.value || '').trim();
+            const email = (regEmail.value || '').trim();
+            const password = regPassword.value;
+            const code = (regCode.value || '').trim();
+            if (!username || !email || !password || !code) return this.showMessage('请完整填写注册信息', 'error');
+            try {
+                const r = await fetch(`${API_BASE_URL}/api/user/register`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, email, password, code }) });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || '注册失败');
+                this.userToken = j.token || '';
+                if (this.userToken) localStorage.setItem('user_token', this.userToken);
+                this.showMessage('注册并已登录');
+                regModal.style.display='none';
+                this.refreshAuthUi();
+                if (this.currentVideoId) this.loadSubtitleVariants();
+            } catch (e) { this.showMessage(e.message || '注册失败', 'error'); }
+        };
+        gotoLogin.onclick = () => { regModal.style.display='none'; loginModal.style.display='flex'; };
+    }
+
+    refreshAuthUi() {
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const deleteAccountBtn = document.getElementById('deleteAccountBtn');
+        const subtitleSelectEl = document.getElementById('subtitleSelect');
+        const subtitleBtn = document.getElementById('subtitleToggle');
+        const logged = this.isLoggedIn();
+        loginBtn.style.display = logged ? 'none' : '';
+        logoutBtn.style.display = logged ? '' : 'none';
+        if (deleteAccountBtn) deleteAccountBtn.style.display = logged ? '' : 'none';
+        if (!logged && REQUIRE_SUBTITLE_LOGIN) {
+            this.disableSubtitleUi('登录后可用');
+        }
+    }
+
+    disableSubtitleUi(tip) {
+        const subtitleSelectEl = document.getElementById('subtitleSelect');
+        const subtitleBtn = document.getElementById('subtitleToggle');
+        if (subtitleSelectEl) {
+            subtitleSelectEl.style.display = 'inline-block';
+            subtitleSelectEl.innerHTML = '';
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = tip || '登录后可用';
+            subtitleSelectEl.appendChild(opt);
+            subtitleSelectEl.disabled = true;
+        }
+        if (subtitleBtn) {
+            subtitleBtn.disabled = true;
+            subtitleBtn.textContent = '显示字幕';
+        }
+    }
+
+    doLogout() {
+        localStorage.removeItem('user_token');
+        this.userToken = '';
+        this.disableSubtitleUi('登录后可用');
+        this.showMessage('已退出登录');
+    }
+
     // 初始化Video.js播放器
     initVideoJs() {
         // 若同 id 的实例已存在（脚本重复注入或热更），先销毁旧实例
@@ -188,7 +392,7 @@ class VideoPlayer {
     // 处理HLS视频
     async handleHLSVideo() {
         try {
-            // 通过代理检查是否为master playlist
+            // 通过代理检查是否为master playlist（播放无需登录）
             const proxyUrl = `${API_BASE_URL}/api/hls?url=${encodeURIComponent(this.currentVideoUrl)}`;
             const response = await fetch(proxyUrl);
             const content = await response.text();
@@ -345,7 +549,8 @@ class VideoPlayer {
     async loadSubtitleVariants() {
         try {
             const baseId = this.extractBaseId(this.currentVideoId);
-            const resp = await fetch(`${API_BASE_URL}/api/subtitles/variants/${encodeURIComponent(baseId)}`);
+            const headers = this.isLoggedIn() ? { Authorization: `Bearer ${this.userToken}` } : undefined;
+            const resp = await fetch(`${API_BASE_URL}/api/subtitles/variants/${encodeURIComponent(baseId)}`, { headers });
             if (!resp.ok) {
                 // 回退为按当前 videoId 加载单一字幕
                 await this.loadSubtitleByVideoId(this.currentVideoId);
@@ -411,7 +616,8 @@ class VideoPlayer {
     // 按 videoId 加载并附加字幕
     async loadSubtitleByVideoId(videoId) {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/subtitle/${encodeURIComponent(videoId)}`);
+            const headers = this.isLoggedIn() ? { Authorization: `Bearer ${this.userToken}` } : undefined;
+            const response = await fetch(`${API_BASE_URL}/api/subtitle/${encodeURIComponent(videoId)}`, { headers });
             if (response.ok) {
                 const subtitleText = await response.text();
                 const vttContent = this.convertSRTtoVTT(subtitleText);

@@ -20,6 +20,9 @@
             </select>
             <button id="copyLink">复制链接</button>
             <button id="subtitleToggle">显示字幕</button>
+            <button id="loginBtn">登录/注册</button>
+            <button id="logoutBtn" style="display:none;">退出</button>
+            <button id="deleteAccountBtn" style="display:none;">注销账号</button>
         </div>
         <span id="message"></span>
     </div>
@@ -43,7 +46,113 @@
         </div>
     </div>
 
-        <script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
+    <!-- 账号判断弹层（先输入账号） -->
+    <div id="whoModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span id="whoClose" class="close">×</span>
+                <h3>登录 / 注册</h3>
+            </div>
+            <div class="modal-body">
+                <div class="form">
+                    <div class="form-row">
+                        <label>用户名或邮箱</label>
+                        <input id="whoIdentifier" type="text" placeholder="请输入用户名或邮箱">
+                    </div>
+                    <div class="form-row">
+                        <button id="whoNext">继续</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 登录弹层 -->
+    <div id="loginModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span id="loginClose" class="close">×</span>
+                <h3>登录</h3>
+            </div>
+            <div class="modal-body">
+                <div class="form">
+                    <div class="form-row">
+                        <label>登录方式</label>
+                        <select id="loginMethod">
+                            <option value="password">用户名 + 密码</option>
+                            <option value="email">邮箱 + 验证码</option>
+                        </select>
+                    </div>
+                    <div id="loginByPassword">
+                        <div class="form-row">
+                            <label>用户名</label>
+                            <input id="loginUsername" type="text" placeholder="用户名">
+                        </div>
+                        <div class="form-row">
+                            <label>密码</label>
+                            <input id="loginPassword" type="password" placeholder="密码">
+                        </div>
+                    </div>
+                    <div id="loginByEmail" style="display:none;">
+                        <div class="form-row">
+                            <label>邮箱</label>
+                            <input id="loginEmail" type="email" placeholder="邮箱">
+                        </div>
+                        <div class="form-row">
+                            <label>验证码</label>
+                            <div class="inline">
+                                <input id="loginCode" type="text" placeholder="6位验证码">
+                                <button id="btnSendLoginCode">获取验证码</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <button id="btnDoLogin">登录</button>
+                        <button id="gotoRegister" class="link" type="button">去注册</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 注册弹层 -->
+    <div id="registerModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span id="regClose" class="close">×</span>
+                <h3>注册</h3>
+            </div>
+            <div class="modal-body">
+                <div class="form">
+                    <div class="form-row">
+                        <label>用户名</label>
+                        <input id="regUsername" type="text" placeholder="用户名">
+                    </div>
+                    <div class="form-row">
+                        <label>邮箱</label>
+                        <input id="regEmail" type="email" placeholder="邮箱">
+                    </div>
+                    <div class="form-row">
+                        <label>密码</label>
+                        <input id="regPassword" type="password" placeholder="密码">
+                    </div>
+                    <div class="form-row">
+                        <label>验证码</label>
+                        <div class="inline">
+                            <input id="regCode" type="text" placeholder="6位验证码">
+                            <button id="btnSendRegCode">获取验证码</button>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <button id="btnDoRegister">注册并登录</button>
+                        <button id="gotoLogin" class="link" type="button">去登录</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
     <script src="./config.js"></script>
     <script src="./player.js"></script>
   </body>

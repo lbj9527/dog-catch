@@ -76,6 +76,40 @@ function computeContentHash(text) {
     return crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
 }
 
+// 用户/管理员鉴权中间件
+function verifyJwtFromHeader(req) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return { error: '需要访问令牌' };
+    try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        return { payload };
+    } catch (e) {
+        return { error: '无效的访问令牌' };
+    }
+}
+
+function authenticateAdminToken(req, res, next) {
+    const { payload, error } = verifyJwtFromHeader(req);
+    if (error) return res.status(401).json({ error });
+    if (payload && payload.role === 'admin') { req.user = payload; return next(); }
+    return res.status(403).json({ error: '没有管理员权限' });
+}
+
+function authenticateUserToken(req, res, next) {
+    const { payload, error } = verifyJwtFromHeader(req);
+    if (error) return res.status(401).json({ error });
+    if (payload && payload.role === 'user') { req.user = payload; return next(); }
+    return res.status(403).json({ error: '没有用户权限' });
+}
+
+function authenticateAnyToken(req, res, next) {
+    const { payload, error } = verifyJwtFromHeader(req);
+    if (error) return res.status(401).json({ error });
+    if (payload && (payload.role === 'user' || payload.role === 'admin')) { req.user = payload; return next(); }
+    return res.status(403).json({ error: '无权限' });
+}
+
 function extractBaseVideoId(videoId) {
     const id = String(videoId || '').toUpperCase().trim();
     const m = id.match(/^([A-Z]+-\d{2,5})(?:-(\d+))?$/);
@@ -134,6 +168,32 @@ db.serialize(() => {
         password_hash TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
+
+    // 用户表
+    db.run(`CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT,
+        last_login_at DATETIME,
+        status TEXT DEFAULT 'active',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    // 邮箱验证码表
+    db.run(`CREATE TABLE IF NOT EXISTS email_verification_codes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        code TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        expires_at DATETIME NOT NULL,
+        consumed_at DATETIME,
+        request_ip TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+    db.run('CREATE INDEX IF NOT EXISTS idx_email_codes_email ON email_verification_codes(email)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_email_codes_purpose ON email_verification_codes(purpose)');
     
     // 模式演进：为 subtitles 表补充新列（若存在则忽略错误）
     db.run('ALTER TABLE subtitles ADD COLUMN content_hash TEXT', () => {});
@@ -227,12 +287,133 @@ const authenticateToken = (req, res, next) => {
 
 // 路由
 
+// 用户邮件验证码（开发环境可返回dev_code）
+app.post('/api/user/email-code', async (req, res) => {
+    try {
+        const DEV_RETURN_CODE = process.env.NODE_ENV !== 'production';
+        const { email, purpose } = req.body || {};
+        if (!email || !purpose || !['register','login'].includes(purpose)) return res.status(400).json({ error: '参数错误' });
+        const now = new Date();
+        const recent = await getAllAsync(`SELECT created_at FROM email_verification_codes WHERE email = ? AND purpose = ? AND DATETIME(created_at) > DATETIME(?,'-1 hour') ORDER BY created_at DESC`, [email, purpose, now.toISOString()]);
+        if (recent.length > 0) {
+            const last = new Date(recent[0].created_at);
+            if ((now - last) < 60000) return res.status(429).json({ error: '请求过于频繁，请稍后再试' });
+            if (recent.length >= 5) return res.status(429).json({ error: '请求次数过多，请稍后再试' });
+        }
+        const code = Math.floor(100000 + Math.random()*900000).toString();
+        const expiresAt = new Date(Date.now()+5*60000).toISOString();
+        await runAsync(`INSERT INTO email_verification_codes (email, code, purpose, expires_at, request_ip) VALUES (?,?,?,?,?)`, [email, code, purpose, expiresAt, req.ip || '']);
+        console.log(`[EmailCode] purpose=${purpose} email=${email} code=${code}`);
+        return res.json({ message:'验证码已发送', ...(DEV_RETURN_CODE ? { dev_code: code } : {}) });
+    } catch (e) { console.error(e); return res.status(500).json({ error: '发送验证码失败' }); }
+});
+
+async function consumeValidCode(email, purpose, code) {
+    const row = await getAsync(`SELECT * FROM email_verification_codes WHERE email=? AND purpose=? AND code=? AND consumed_at IS NULL AND DATETIME(expires_at) > DATETIME('now') ORDER BY created_at DESC`, [email, purpose, code]);
+    if (!row) return false;
+    await runAsync(`UPDATE email_verification_codes SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?`, [row.id]);
+    return true;
+}
+
+// 用户注册（自动登录）
+app.post('/api/user/register', async (req, res) => {
+    try {
+        const { username, email, password, code } = req.body || {};
+        if (!username || !email || !password || !code) return res.status(400).json({ error: '缺少必要参数' });
+        const u = await getAsync('SELECT id FROM users WHERE lower(username)=lower(?)', [username]);
+        if (u) return res.status(409).json({ error: '用户名已被占用' });
+        const e = await getAsync('SELECT id FROM users WHERE lower(email)=lower(?)', [email]);
+        if (e) return res.status(409).json({ error: '邮箱已被占用' });
+        const ok = await consumeValidCode(email, 'register', code);
+        if (!ok) return res.status(400).json({ error: '验证码无效或已过期' });
+        const hash = bcrypt.hashSync(password, 10);
+        await runAsync('INSERT INTO users (username, email, password_hash, last_login_at) VALUES (?,?,?, CURRENT_TIMESTAMP)', [username, email, hash]);
+        const user = await getAsync('SELECT id, username, email FROM users WHERE username=?', [username]);
+        const token = jwt.sign({ id: user.id, username: user.username, role: 'user' }, JWT_SECRET, { expiresIn: '7d' });
+        return res.json({ message:'注册成功', token, user });
+    } catch (e) { console.error(e); return res.status(500).json({ error: '注册失败' }); }
+});
+
+// 用户名+密码登录
+app.post('/api/user/login/password', async (req, res) => {
+    try {
+        const { username, password } = req.body || {};
+        if (!username || !password) return res.status(400).json({ error: '缺少必要参数' });
+        const user = await getAsync('SELECT * FROM users WHERE lower(username)=lower(?)', [username]);
+        if (!user || !user.password_hash || !bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: '用户名或密码错误' });
+        await runAsync('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
+        const token = jwt.sign({ id: user.id, username: user.username, role: 'user' }, JWT_SECRET, { expiresIn: '7d' });
+        return res.json({ message:'登录成功', token, user: { id:user.id, username:user.username, email:user.email } });
+    } catch (e) { console.error(e); return res.status(500).json({ error: '登录失败' }); }
+});
+
+// 邮箱+验证码登录
+app.post('/api/user/login/email', async (req, res) => {
+    try {
+        const { email, code } = req.body || {};
+        if (!email || !code) return res.status(400).json({ error: '缺少必要参数' });
+        const user = await getAsync('SELECT * FROM users WHERE lower(email)=lower(?)', [email]);
+        if (!user) return res.status(401).json({ error: '账号不存在' });
+        const ok = await consumeValidCode(email, 'login', code);
+        if (!ok) return res.status(400).json({ error: '验证码无效或已过期' });
+        await runAsync('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
+        const token = jwt.sign({ id: user.id, username: user.username, role: 'user' }, JWT_SECRET, { expiresIn: '7d' });
+        return res.json({ message:'登录成功', token, user: { id:user.id, username:user.username, email:user.email } });
+    } catch (e) { console.error(e); return res.status(500).json({ error: '登录失败' }); }
+});
+
+// 用户 token 校验
+app.get('/api/user/verify', authenticateUserToken, (req, res) => {
+    res.json({ valid: true, user: { id: req.user.id, username: req.user.username } });
+});
+
+// 新增：账号存在性检查（identifier 可为用户名或邮箱）
+app.post('/api/user/exist', async (req, res) => {
+    try {
+        const { identifier } = req.body || {};
+        if (!identifier || typeof identifier !== 'string') {
+            return res.status(400).json({ error: '参数错误' });
+        }
+        const val = identifier.trim();
+        let exists = false;
+        let type = '';
+        if (/@/.test(val)) {
+            const row = await getAsync('SELECT id FROM users WHERE lower(email)=lower(?)', [val]);
+            exists = !!row; type = 'email';
+        } else {
+            const row = await getAsync('SELECT id FROM users WHERE lower(username)=lower(?)', [val]);
+            exists = !!row; type = 'username';
+        }
+        return res.json({ exists, type });
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: '检查失败' });
+    }
+});
+
+// 新增：用户自助注销（删除账号）
+app.delete('/api/user/me', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        // 获取邮箱以清理验证码记录
+        const u = await getAsync('SELECT email FROM users WHERE id = ?', [userId]);
+        await runAsync('DELETE FROM users WHERE id = ?', [userId]);
+        if (u && u.email) {
+            try { await runAsync('DELETE FROM email_verification_codes WHERE email = ?', [u.email]); } catch {}
+        }
+        return res.json({ message: '账号已注销' });
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: '注销失败' });
+    }
+});
+
 // 健康检查
 app.get('/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// HLS代理接口 - 解决CORS和防盗链问题
+// HLS代理接口 - 解决CORS和防盗链问题（公开接口，无需登录）
 app.get('/api/hls', async (req, res) => {
     const { url } = req.query;
     if (!url) {
@@ -455,7 +636,7 @@ app.post('/api/auth/login', (req, res) => {
         }
         
         const token = jwt.sign(
-            { id: user.id, username: user.username },
+            { id: user.id, username: user.username, role: 'admin' },
             JWT_SECRET,
             { expiresIn: '24h' }
         );
@@ -471,8 +652,8 @@ app.post('/api/auth/login', (req, res) => {
     });
 });
 
-// 验证token
-app.get('/api/auth/verify', authenticateToken, (req, res) => {
+// 验证token（管理员）
+app.get('/api/auth/verify', authenticateAdminToken, (req, res) => {
     res.json({ 
         valid: true, 
         user: {
@@ -482,8 +663,8 @@ app.get('/api/auth/verify', authenticateToken, (req, res) => {
     });
 });
 
-// 获取字幕文件 (公开接口)
-app.get('/api/subtitle/:video_id', (req, res) => {
+// 获取字幕文件（登录可见：用户或管理员）
+app.get('/api/subtitle/:video_id', authenticateAnyToken, (req, res) => {
     const videoId = req.params.video_id;
     
     db.get('SELECT * FROM subtitles WHERE lower(video_id) = lower(?)', [videoId], async (err, subtitle) => {
@@ -512,7 +693,7 @@ app.get('/api/subtitle/:video_id', (req, res) => {
 });
 
 // 上传字幕文件 (需要认证)
-app.post('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'), async (req, res) => {
+app.post('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subtitle'), async (req, res) => {
     const videoId = (req.params.video_id || '').toLowerCase();
     const file = req.file;
     
@@ -632,7 +813,7 @@ app.post('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle')
 });
 
 // 更新字幕文件 (需要认证)
-app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'), async (req, res) => {
+app.put('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subtitle'), async (req, res) => {
     const videoId = (req.params.video_id || '').toLowerCase();
     const file = req.file;
     
@@ -727,7 +908,7 @@ app.put('/api/subtitle/:video_id', authenticateToken, upload.single('subtitle'),
 });
 
 // 删除字幕文件 (需要认证)
-app.delete('/api/subtitle/:video_id', authenticateToken, (req, res) => {
+app.delete('/api/subtitle/:video_id', authenticateAdminToken, (req, res) => {
     const videoId = (req.params.video_id || '').toLowerCase();
     
     // 先获取文件信息
@@ -761,7 +942,7 @@ app.delete('/api/subtitle/:video_id', authenticateToken, (req, res) => {
 });
 
 // 获取所有字幕列表 (需要认证)
-app.get('/api/subtitles', authenticateToken, (req, res) => {
+app.get('/api/subtitles', authenticateAdminToken, (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
     const search = req.query.search || '';
@@ -806,7 +987,7 @@ app.get('/api/subtitles', authenticateToken, (req, res) => {
 });
 
 // 批量删除字幕文件 (需要认证)
-app.delete('/api/subtitles', authenticateToken, async (req, res) => {
+app.delete('/api/subtitles', authenticateAdminToken, async (req, res) => {
     const videoIds = req.body && req.body.video_ids;
     if (!Array.isArray(videoIds) || videoIds.length === 0) {
         return res.status(400).json({ error: '请提供要删除的字幕文件的video_id列表' });
@@ -866,7 +1047,7 @@ app.delete('/api/subtitles', authenticateToken, async (req, res) => {
 });
 
 // 获取字幕文件统计 (需要认证)
-app.get('/api/subtitles/stats', authenticateToken, async (req, res) => {
+app.get('/api/subtitles/stats', authenticateAdminToken, async (req, res) => {
     const search = (req.query.search || '').trim();
     try {
         const where = search ? ' WHERE video_id LIKE ?' : '';
@@ -898,8 +1079,8 @@ app.get('/api/subtitles/stats', authenticateToken, async (req, res) => {
     }
 });
 
-// 获取某基础视频编号下的所有字幕变体（公开接口）
-app.get('/api/subtitles/variants/:base_video_id', async (req, res) => {
+// 获取某基础视频编号下的所有字幕变体（登录可见：用户或管理员）
+app.get('/api/subtitles/variants/:base_video_id', authenticateAnyToken, async (req, res) => {
     const baseId = (req.params.base_video_id || '').toUpperCase();
     try {
         const rows = await getAllAsync(
@@ -909,6 +1090,46 @@ app.get('/api/subtitles/variants/:base_video_id', async (req, res) => {
         res.json({ base: extractBaseVideoId(baseId), variants: rows });
     } catch (e) {
         res.status(500).json({ error: '获取字幕变体失败' });
+    }
+});
+
+// 管理员用户管理
+app.get('/api/admin/users/stats', authenticateAdminToken, async (req, res) => {
+    try {
+        const row = await getAsync('SELECT COUNT(*) AS total FROM users', []);
+        res.json({ total: row?.total || 0 });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: '获取用户统计失败' });
+    }
+});
+
+app.get('/api/admin/users', authenticateAdminToken, async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 50;
+        const search = (req.query.search || '').trim();
+        const offset = (page - 1) * limit;
+        const where = search ? 'WHERE username LIKE ? OR email LIKE ?' : '';
+        const params = search ? [`%${search}%`, `%${search}%`] : [];
+        const count = await getAsync(`SELECT COUNT(*) AS total FROM users ${where}`, params);
+        const list = await getAllAsync(`SELECT id, username, email, created_at, last_login_at, status FROM users ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
+        res.json({ data: list, pagination: { page, limit, total: count?.total || 0, totalPages: Math.ceil((count?.total||0)/limit) } });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: '获取用户列表失败' });
+    }
+});
+
+app.delete('/api/admin/users/:id', authenticateAdminToken, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        if (!id) return res.status(400).json({ error: '参数错误' });
+        await runAsync('DELETE FROM users WHERE id = ?', [id]);
+        res.json({ message: '删除成功' });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: '删除用户失败' });
     }
 });
 
