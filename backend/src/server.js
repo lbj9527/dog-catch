@@ -315,7 +315,7 @@ async function consumeValidCode(email, purpose, code) {
     return true;
 }
 
-// 用户注册（自动登录）
+// 用户注册（返回token，但前端不自动登录）
 app.post('/api/user/register', async (req, res) => {
     try {
         const { username, email, password, code } = req.body || {};
@@ -334,33 +334,20 @@ app.post('/api/user/register', async (req, res) => {
     } catch (e) { console.error(e); return res.status(500).json({ error: '注册失败' }); }
 });
 
-// 用户名+密码登录
+// 邮箱 + 密码登录
 app.post('/api/user/login/password', async (req, res) => {
     try {
-        const { username, password } = req.body || {};
-        if (!username || !password) return res.status(400).json({ error: '缺少必要参数' });
-        const user = await getAsync('SELECT * FROM users WHERE lower(username)=lower(?)', [username]);
-        if (!user || !user.password_hash || !bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: '用户名或密码错误' });
+        const { email, password } = req.body || {};
+        if (!email || !password) return res.status(400).json({ error: '缺少必要参数' });
+        const user = await getAsync('SELECT * FROM users WHERE lower(email)=lower(?)', [email]);
+        if (!user || !user.password_hash || !bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: '邮箱或密码错误' });
         await runAsync('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
         const token = jwt.sign({ id: user.id, username: user.username, role: 'user' }, JWT_SECRET, { expiresIn: '7d' });
         return res.json({ message:'登录成功', token, user: { id:user.id, username:user.username, email:user.email } });
     } catch (e) { console.error(e); return res.status(500).json({ error: '登录失败' }); }
 });
 
-// 邮箱+验证码登录
-app.post('/api/user/login/email', async (req, res) => {
-    try {
-        const { email, code } = req.body || {};
-        if (!email || !code) return res.status(400).json({ error: '缺少必要参数' });
-        const user = await getAsync('SELECT * FROM users WHERE lower(email)=lower(?)', [email]);
-        if (!user) return res.status(401).json({ error: '账号不存在' });
-        const ok = await consumeValidCode(email, 'login', code);
-        if (!ok) return res.status(400).json({ error: '验证码无效或已过期' });
-        await runAsync('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
-        const token = jwt.sign({ id: user.id, username: user.username, role: 'user' }, JWT_SECRET, { expiresIn: '7d' });
-        return res.json({ message:'登录成功', token, user: { id:user.id, username:user.username, email:user.email } });
-    } catch (e) { console.error(e); return res.status(500).json({ error: '登录失败' }); }
-});
+// 邮箱+验证码登录接口保留（前端不再使用）
 
 // 用户 token 校验
 app.get('/api/user/verify', authenticateUserToken, (req, res) => {

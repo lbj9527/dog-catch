@@ -115,23 +115,15 @@ class VideoPlayer {
         const logoutBtn = document.getElementById('logoutBtn');
         const deleteAccountBtn = document.getElementById('deleteAccountBtn');
 
-        const whoModal = document.getElementById('whoModal');
-        const whoClose = document.getElementById('whoClose');
-        const whoIdentifier = document.getElementById('whoIdentifier');
-        const whoNext = document.getElementById('whoNext');
+        // whoModal 已移除
 
         const loginModal = document.getElementById('loginModal');
         const loginClose = document.getElementById('loginClose');
-        const loginMethod = document.getElementById('loginMethod');
-        const loginByPassword = document.getElementById('loginByPassword');
-        const loginByEmail = document.getElementById('loginByEmail');
-        const loginUsername = document.getElementById('loginUsername');
         const loginPassword = document.getElementById('loginPassword');
         const loginEmail = document.getElementById('loginEmail');
-        const loginCode = document.getElementById('loginCode');
-        const btnSendLoginCode = document.getElementById('btnSendLoginCode');
         const btnDoLogin = document.getElementById('btnDoLogin');
         const gotoRegister = document.getElementById('gotoRegister');
+        const loginError = document.getElementById('loginError');
 
         const regModal = document.getElementById('registerModal');
         const regClose = document.getElementById('regClose');
@@ -140,11 +132,17 @@ class VideoPlayer {
         const regPassword = document.getElementById('regPassword');
         const regCode = document.getElementById('regCode');
         const btnSendRegCode = document.getElementById('btnSendRegCode');
-        const btnDoRegister = document.getElementById('btnDoRegister');
         const gotoLogin = document.getElementById('gotoLogin');
+        const gotoLogin2 = document.getElementById('gotoLogin2');
+        const btnStartRegister = document.getElementById('btnStartRegister');
+        const btnConfirmRegister = document.getElementById('btnConfirmRegister');
+        const regError = document.getElementById('regError');
+        const regCodeRow = document.getElementById('regCodeRow');
+        const regStep1Buttons = document.getElementById('regStep1Buttons');
+        const regStep2Buttons = document.getElementById('regStep2Buttons');
 
-        // 主按钮
-        loginBtn.onclick = () => { if (!this.isLoggedIn()) { whoIdentifier.value=''; whoModal.style.display='flex'; } };
+        // 主按钮：直接打开登录
+        loginBtn.onclick = () => { if (!this.isLoggedIn()) { loginModal.style.display='flex'; if (loginError) loginError.textContent=''; } };
         logoutBtn.onclick = () => { this.doLogout(); this.refreshAuthUi(); };
         deleteAccountBtn.onclick = async () => {
             if (!this.isLoggedIn()) return;
@@ -158,77 +156,32 @@ class VideoPlayer {
             } catch (e) { this.showMessage(e.message || '注销失败', 'error'); }
         };
 
-        // who 弹窗
-        whoClose.onclick = () => { whoModal.style.display='none'; };
-        whoNext.onclick = async () => {
-            const idf = (whoIdentifier.value || '').trim();
-            if (!idf) { this.showMessage('请输入用户名或邮箱', 'error'); return; }
-            try {
-                const r = await fetch(`${API_BASE_URL}/api/user/exist`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ identifier: idf }) });
-                const j = await r.json();
-                if (!r.ok) throw new Error(j.error || '检查失败');
-                whoModal.style.display='none';
-                if (j.exists) {
-                    // 去登录
-                    loginModal.style.display='flex';
-                    if (j.type === 'email') {
-                        loginEmail.value = idf; loginMethod.value='email'; loginByPassword.style.display='none'; loginByEmail.style.display='';
-                    } else {
-                        loginUsername.value = idf; loginMethod.value='password'; loginByPassword.style.display=''; loginByEmail.style.display='none';
-                    }
-                } else {
-                    // 去注册
-                    regModal.style.display='flex';
-                    if (/@/.test(idf)) { regEmail.value = idf; }
-                    else { regUsername.value = idf; }
-                }
-            } catch (e) { this.showMessage(e.message || '检查失败', 'error'); }
-        };
+        // who 流程已移除
 
         // 登录弹窗
-        loginClose.onclick = () => { loginModal.style.display='none'; };
-        loginMethod.onchange = () => {
-            const mode = loginMethod.value;
-            if (mode === 'email') { loginByPassword.style.display='none'; loginByEmail.style.display=''; }
-            else { loginByPassword.style.display=''; loginByEmail.style.display='none'; }
-        };
-        btnSendLoginCode.onclick = async () => {
-            const email = (loginEmail.value || '').trim();
-            if (!email) return this.showMessage('请输入邮箱', 'error');
-            try {
-                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, purpose:'login' }) });
-                const j = await r.json();
-                if (!r.ok) throw new Error(j.error || '发送失败');
-                this.showMessage('验证码已发送');
-            } catch (e) { this.showMessage(e.message || '发送失败', 'error'); }
-        };
+        loginClose.onclick = () => { loginModal.style.display='none'; if (loginError) loginError.textContent=''; };
         btnDoLogin.onclick = async () => {
             try {
-                const mode = loginMethod.value;
-                let r, j;
-                if (mode === 'password') {
-                    const username = (loginUsername.value || '').trim();
+                const email = (loginEmail.value || '').trim();
                     const password = loginPassword.value;
-                    if (!username || !password) throw new Error('请输入用户名和密码');
-                    r = await fetch(`${API_BASE_URL}/api/user/login/password`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, password }) });
-                    j = await r.json();
-                } else {
-                    const email = (loginEmail.value || '').trim();
-                    const code = (loginCode.value || '').trim();
-                    if (!email || !code) throw new Error('请输入邮箱与验证码');
-                    r = await fetch(`${API_BASE_URL}/api/user/login/email`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, code }) });
-                    j = await r.json();
-                }
+                if (!email || !password) throw new Error('请输入邮箱和密码');
+                const r = await fetch(`${API_BASE_URL}/api/user/login/password`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) });
+                const j = await r.json();
                 if (!r.ok) throw new Error(j.error || '登录失败');
                 this.userToken = j.token || '';
                 if (this.userToken) localStorage.setItem('user_token', this.userToken);
                 this.showMessage('登录成功');
                 loginModal.style.display='none';
+                if (loginError) loginError.textContent='';
                 this.refreshAuthUi();
                 if (this.currentVideoId) this.loadSubtitleVariants();
-            } catch (e) { this.showMessage(e.message || '登录失败', 'error'); }
+            } catch (e) {
+                const msg = e && e.message ? e.message : '登录失败';
+                if (loginError) loginError.textContent = msg;
+                this.showMessage(msg, 'error');
+            }
         };
-        gotoRegister.onclick = () => { loginModal.style.display='none'; regModal.style.display='flex'; };
+        gotoRegister.onclick = () => { loginModal.style.display='none'; if (loginError) loginError.textContent=''; regModal.style.display='flex'; };
 
         // 注册弹窗
         regClose.onclick = () => { regModal.style.display='none'; };
@@ -242,25 +195,54 @@ class VideoPlayer {
                 this.showMessage('验证码已发送');
             } catch (e) { this.showMessage(e.message || '发送失败', 'error'); }
         };
-        btnDoRegister.onclick = async () => {
+        // 注册 Step1：请求验证码并显示 Step2
+        btnStartRegister.onclick = async () => {
+            if (regError) regError.textContent = '';
+            const username = (regUsername.value || '').trim();
+            const email = (regEmail.value || '').trim();
+            const password = regPassword.value;
+            if (!username || !email || !password) { if (regError) regError.textContent = '请完整填写昵称、邮箱与密码'; return; }
+            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { if (regError) regError.textContent = '邮箱格式不正确'; return; }
+            if (password.length < 6) { if (regError) regError.textContent = '密码长度至少6位'; return; }
+            try {
+                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, purpose:'register' }) });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || '验证码发送失败');
+                this.showMessage('验证码已发送');
+                // 显示 Step2
+                regCodeRow.style.display = '';
+                regStep1Buttons.style.display = 'none';
+                regStep2Buttons.style.display = '';
+            } catch (e) {
+                if (regError) regError.textContent = e && e.message ? e.message : '验证码发送失败';
+            }
+        };
+
+        // 注册 Step2：提交注册
+        btnConfirmRegister.onclick = async () => {
+            if (regError) regError.textContent = '';
             const username = (regUsername.value || '').trim();
             const email = (regEmail.value || '').trim();
             const password = regPassword.value;
             const code = (regCode.value || '').trim();
-            if (!username || !email || !password || !code) return this.showMessage('请完整填写注册信息', 'error');
+            if (!username || !email || !password || !code) { if (regError) regError.textContent = '请填写完整信息与验证码'; return; }
             try {
                 const r = await fetch(`${API_BASE_URL}/api/user/register`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, email, password, code }) });
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || '注册失败');
-                this.userToken = j.token || '';
-                if (this.userToken) localStorage.setItem('user_token', this.userToken);
-                this.showMessage('注册并已登录');
+                this.showMessage('注册成功，请登录');
                 regModal.style.display='none';
-                this.refreshAuthUi();
-                if (this.currentVideoId) this.loadSubtitleVariants();
-            } catch (e) { this.showMessage(e.message || '注册失败', 'error'); }
+                // 打开登录并预填邮箱
+                loginModal.style.display = 'flex';
+                if (loginError) loginError.textContent = '';
+                loginEmail.value = email;
+                try { loginPassword.value = ''; } catch {}
+            } catch (e) {
+                if (regError) regError.textContent = e && e.message ? e.message : '注册失败';
+            }
         };
-        gotoLogin.onclick = () => { regModal.style.display='none'; loginModal.style.display='flex'; };
+        gotoLogin.onclick = () => { regModal.style.display='none'; loginModal.style.display='flex'; if (loginError) loginError.textContent=''; };
+        if (gotoLogin2) gotoLogin2.onclick = () => { regModal.style.display='none'; loginModal.style.display='flex'; if (loginError) loginError.textContent=''; };
     }
 
     refreshAuthUi() {

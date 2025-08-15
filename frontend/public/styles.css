@@ -291,3 +291,42 @@ video::cue {
 .link { background: transparent; color: #76a0ff; border: none; margin-left: 8px; text-decoration: underline; cursor: pointer; }
 
 /* Modal 复用已有样式，无需新增 */
+
+/* ===== Auth 卡片风格（参考图布局，保持当前配色） ===== */
+.auth-panel {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 24px 24px 20px;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+}
+.auth-header { margin-bottom: 14px; }
+.auth-title { font-size: 20px; font-weight: 600; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+.auth-subtitle { font-size: 13px; color: #bbb; margin: 0; }
+
+.form .form-row label { font-size: 13px; color: #ccc; }
+.form .form-row input[type="text"],
+.form .form-row input[type="email"],
+.form .form-row input[type="password"] {
+    height: 42px;
+    border-radius: 8px;
+    background: #111;
+    border: 1px solid #333;
+    color: #fff;
+}
+.form .form-row input:focus { border-color: #2f77ff; box-shadow: 0 0 0 2px rgba(47,119,255,0.25); }
+
+.inline-end { display: flex; justify-content: space-between; align-items: center; }
+.inline-end a { font-size: 12px; color: #aaccff; text-decoration: none; opacity: 0.9; }
+.inline-end a:hover { text-decoration: underline; }
+
+.remember-row { display: flex; align-items: center; gap: 8px; }
+.btn-primary-full { width: 100%; height: 44px; border-radius: 8px; }
+
+.form-foot { text-align: center; font-size: 12px; color: #bbb; margin-top: 6px; }
+.form-foot a { color: #aaccff; text-decoration: none; }
+.form-foot a:hover { text-decoration: underline; }
+
+.code-btn { height: 42px; border-radius: 8px; }

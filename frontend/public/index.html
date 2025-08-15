@@ -46,28 +46,9 @@
         </div>
     </div>
 
-    <!-- 账号判断弹层（先输入账号） -->
-    <div id="whoModal" class="modal" style="display:none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <span id="whoClose" class="close">×</span>
-                <h3>登录 / 注册</h3>
-            </div>
-            <div class="modal-body">
-                <div class="form">
-                    <div class="form-row">
-                        <label>用户名或邮箱</label>
-                        <input id="whoIdentifier" type="text" placeholder="请输入用户名或邮箱">
-                    </div>
-                    <div class="form-row">
-                        <button id="whoNext">继续</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+    
 
-    <!-- 登录弹层 -->
+    <!-- 登录弹层：邮箱 + 密码 -->
     <div id="loginModal" class="modal" style="display:none;">
         <div class="modal-content">
             <div class="modal-header">
@@ -75,47 +56,44 @@
                 <h3>登录</h3>
             </div>
             <div class="modal-body">
-                <div class="form">
-                    <div class="form-row">
-                        <label>登录方式</label>
-                        <select id="loginMethod">
-                            <option value="password">用户名 + 密码</option>
-                            <option value="email">邮箱 + 验证码</option>
-                        </select>
+                <div class="auth-panel">
+                    <div class="auth-header">
+                        <h3 class="auth-title">Welcome to WgetCloud! 👋</h3>
+                        <p class="auth-subtitle">请登录您的账号开始体验！</p>
                     </div>
-                    <div id="loginByPassword">
+                    <div class="form">
                         <div class="form-row">
-                            <label>用户名</label>
-                            <input id="loginUsername" type="text" placeholder="用户名">
+                            <label>邮箱</label>
+                            <input id="loginEmail" type="email" placeholder="输入您的邮箱地址">
                         </div>
                         <div class="form-row">
                             <label>密码</label>
-                            <input id="loginPassword" type="password" placeholder="密码">
+                            <input id="loginPassword" type="password" placeholder="请输入密码">
                         </div>
-                    </div>
-                    <div id="loginByEmail" style="display:none;">
+                        <div class="form-row inline-end">
+                            <span></span>
+                            <a href="javascript:void(0)">忘记密码？</a>
+                        </div>
+                        <div class="form-row remember-row">
+                            <input id="loginRemember" type="checkbox">
+                            <label for="loginRemember" style="margin:0;">记住我</label>
+                        </div>
                         <div class="form-row">
-                            <label>邮箱</label>
-                            <input id="loginEmail" type="email" placeholder="邮箱">
+                            <button id="btnDoLogin" class="btn-primary-full">登录</button>
                         </div>
                         <div class="form-row">
-                            <label>验证码</label>
-                            <div class="inline">
-                                <input id="loginCode" type="text" placeholder="6位验证码">
-                                <button id="btnSendLoginCode">获取验证码</button>
-                            </div>
+                            <div id="loginError" style="color:#e53935; font-size:12px; min-height:16px;"></div>
                         </div>
-                    </div>
-                    <div class="form-row">
-                        <button id="btnDoLogin">登录</button>
-                        <button id="gotoRegister" class="link" type="button">去注册</button>
+                        <div class="form-foot">
+                            还没有账号？ <a id="gotoRegister" href="javascript:void(0)">点击注册</a>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 注册弹层 -->
+    <!-- 注册弹层：两步式（Step1: 昵称/邮箱/密码；Step2: 验证码） -->
     <div id="registerModal" class="modal" style="display:none;">
         <div class="modal-content">
             <div class="modal-header">
@@ -123,29 +101,45 @@
                 <h3>注册</h3>
             </div>
             <div class="modal-body">
-                <div class="form">
-                    <div class="form-row">
-                        <label>用户名</label>
-                        <input id="regUsername" type="text" placeholder="用户名">
+                <div class="auth-panel">
+                    <div class="auth-header">
+                        <h3 class="auth-title">创建新账号 👋</h3>
+                        <p class="auth-subtitle">填写信息并完成邮箱验证码验证。</p>
                     </div>
-                    <div class="form-row">
-                        <label>邮箱</label>
-                        <input id="regEmail" type="email" placeholder="邮箱">
-                    </div>
-                    <div class="form-row">
-                        <label>密码</label>
-                        <input id="regPassword" type="password" placeholder="密码">
-                    </div>
-                    <div class="form-row">
-                        <label>验证码</label>
-                        <div class="inline">
-                            <input id="regCode" type="text" placeholder="6位验证码">
-                            <button id="btnSendRegCode">获取验证码</button>
+                    <div class="form">
+                        <div class="form-row">
+                            <label>昵称</label>
+                            <input id="regUsername" type="text" placeholder="请输入昵称">
                         </div>
-                    </div>
-                    <div class="form-row">
-                        <button id="btnDoRegister">注册并登录</button>
-                        <button id="gotoLogin" class="link" type="button">去登录</button>
+                        <div class="form-row">
+                            <label>邮箱</label>
+                            <input id="regEmail" type="email" placeholder="请输入邮箱">
+                        </div>
+                        <div class="form-row">
+                            <label>密码</label>
+                            <input id="regPassword" type="password" placeholder="至少6位密码">
+                        </div>
+                        <!-- Step2：验证码区域（默认隐藏） -->
+                        <div class="form-row" id="regCodeRow" style="display:none;">
+                            <label>验证码</label>
+                            <div class="inline" style="display:flex; gap:8px;">
+                                <input id="regCode" class="code-input" type="text" placeholder="6位验证码">
+                                <button id="btnSendRegCode" class="code-btn" type="button">获取验证码</button>
+                            </div>
+                        </div>
+                        <!-- 操作按钮：Step1 显示“注册”；Step2 显示“提交注册” -->
+                        <div class="form-row" id="regStep1Buttons">
+                            <button id="btnStartRegister" class="btn-primary-full" type="button">注册</button>
+                        </div>
+                        <div class="form-row" id="regStep2Buttons" style="display:none;">
+                            <button id="btnConfirmRegister" class="btn-primary-full" type="button">提交注册</button>
+                        </div>
+                        <div class="form-row">
+                            <div id="regError" style="color:#e53935; font-size:12px; min-height:16px;"></div>
+                        </div>
+                        <div class="form-foot">
+                            已有账号？ <a id="gotoLogin" href="javascript:void(0)">去登录</a>
+                        </div>
                     </div>
                 </div>
             </div>
