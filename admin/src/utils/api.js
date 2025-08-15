@@ -1,9 +1,12 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
+// 新增：从环境变量读取后端 API 基地址（开发/生产可切换）
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+
 // 创建axios实例
 const api = axios.create({
-  baseURL: 'http://localhost:8000', // 后端API地址
+  baseURL: API_BASE_URL, // 后端API地址
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json'

@@ -1,4 +1,5 @@
 // 播放器主逻辑
+const API_BASE_URL = new URLSearchParams(location.search).get('api') || (window.PLAYER_CONFIG && window.PLAYER_CONFIG.API_BASE_URL) || 'http://localhost:8000';
 class VideoPlayer {
     constructor() {
         this.player = null;
@@ -188,7 +189,7 @@ class VideoPlayer {
     async handleHLSVideo() {
         try {
             // 通过代理检查是否为master playlist
-            const proxyUrl = `http://localhost:8000/api/hls?url=${encodeURIComponent(this.currentVideoUrl)}`;
+            const proxyUrl = `${API_BASE_URL}/api/hls?url=${encodeURIComponent(this.currentVideoUrl)}`;
             const response = await fetch(proxyUrl);
             const content = await response.text();
             
@@ -202,13 +203,13 @@ class VideoPlayer {
                 this.playVideo(defaultQuality.url, 'hls');
             } else {
                 // 直接播放，也通过代理
-                const proxyUrl = `http://localhost:8000/api/hls?url=${encodeURIComponent(this.currentVideoUrl)}`;
+                const proxyUrl = `${API_BASE_URL}/api/hls?url=${encodeURIComponent(this.currentVideoUrl)}`;
                 this.playVideo(proxyUrl, 'hls');
             }
         } catch (error) {
             console.error('HLS处理错误:', error);
             // 尝试通过代理直接播放
-            const proxyUrl = `http://localhost:8000/api/hls?url=${encodeURIComponent(this.currentVideoUrl)}`;
+            const proxyUrl = `${API_BASE_URL}/api/hls?url=${encodeURIComponent(this.currentVideoUrl)}`;
             this.playVideo(proxyUrl, 'hls');
         }
     }
@@ -253,7 +254,7 @@ class VideoPlayer {
                     const bandwidth = this.extractBandwidth(line);
                     
                     const originalUrl = new URL(nextLine, this.currentVideoUrl).href;
-                    const proxyUrl = `http://localhost:8000/api/hls?url=${encodeURIComponent(originalUrl)}`;
+                    const proxyUrl = `${API_BASE_URL}/api/hls?url=${encodeURIComponent(originalUrl)}`;
                     
                     qualities.push({
                         resolution: resolution || `${Math.round(bandwidth / 1000)}k`,
@@ -344,7 +345,7 @@ class VideoPlayer {
     async loadSubtitleVariants() {
         try {
             const baseId = this.extractBaseId(this.currentVideoId);
-            const resp = await fetch(`http://localhost:8000/api/subtitles/variants/${encodeURIComponent(baseId)}`);
+            const resp = await fetch(`${API_BASE_URL}/api/subtitles/variants/${encodeURIComponent(baseId)}`);
             if (!resp.ok) {
                 // 回退为按当前 videoId 加载单一字幕
                 await this.loadSubtitleByVideoId(this.currentVideoId);
@@ -410,7 +411,7 @@ class VideoPlayer {
     // 按 videoId 加载并附加字幕
     async loadSubtitleByVideoId(videoId) {
         try {
-            const response = await fetch(`http://localhost:8000/api/subtitle/${encodeURIComponent(videoId)}`);
+            const response = await fetch(`${API_BASE_URL}/api/subtitle/${encodeURIComponent(videoId)}`);
             if (response.ok) {
                 const subtitleText = await response.text();
                 const vttContent = this.convertSRTtoVTT(subtitleText);
