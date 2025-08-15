@@ -14,6 +14,7 @@ const assToVtt = require('ass-to-vtt');
 const { Readable } = require('stream');
 const chardet = require('chardet');
 const iconv = require('iconv-lite');
+const nodemailer = require('nodemailer');
 
 // 新增：为上游请求启用 Keep-Alive，以减少频繁建连的开销
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 128, keepAliveMsecs: 15000 });
@@ -37,6 +38,19 @@ if (SOCKS_PROXY_URL) {
 const app = express();
 const PORT = process.env.PORT || 8000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+
+// 邮件发送器
+let mailTransporter = null;
+try {
+    mailTransporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT || 465),
+        secure: String(process.env.SMTP_SECURE || 'true') === 'true',
+        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+    });
+} catch (e) {
+    console.warn('Init mail transporter failed:', e && e.message);
+}
 
 // 数据库初始化
 const db = new sqlite3.Database('./database/subtitles.db');
@@ -290,9 +304,9 @@ const authenticateToken = (req, res, next) => {
 // 用户邮件验证码（开发环境可返回dev_code）
 app.post('/api/user/email-code', async (req, res) => {
     try {
-        const DEV_RETURN_CODE = process.env.NODE_ENV !== 'production';
+        const DEV_RETURN_CODE = false; // 开发环境也走真实邮箱
         const { email, purpose } = req.body || {};
-        if (!email || !purpose || !['register','login'].includes(purpose)) return res.status(400).json({ error: '参数错误' });
+        if (!email || !purpose || !['register','login','reset'].includes(purpose)) return res.status(400).json({ error: '参数错误' });
         const now = new Date();
         const recent = await getAllAsync(`SELECT created_at FROM email_verification_codes WHERE email = ? AND purpose = ? AND DATETIME(created_at) > DATETIME(?,'-1 hour') ORDER BY created_at DESC`, [email, purpose, now.toISOString()]);
         if (recent.length > 0) {
@@ -304,7 +318,21 @@ app.post('/api/user/email-code', async (req, res) => {
         const expiresAt = new Date(Date.now()+5*60000).toISOString();
         await runAsync(`INSERT INTO email_verification_codes (email, code, purpose, expires_at, request_ip) VALUES (?,?,?,?,?)`, [email, code, purpose, expiresAt, req.ip || '']);
         console.log(`[EmailCode] purpose=${purpose} email=${email} code=${code}`);
-        return res.json({ message:'验证码已发送', ...(DEV_RETURN_CODE ? { dev_code: code } : {}) });
+        try {
+            if (!mailTransporter) throw new Error('mail transporter not configured');
+            const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@example.com';
+            await mailTransporter.sendMail({
+                from,
+                to: email,
+                subject: `[Subtitle Dog] ${purpose==='register'?'注册':'找回密码'} 验证码`,
+                text: `您的验证码为：${code}（5分钟内有效）。如果非本人操作请忽略本邮件。`,
+                html: `<p>您的验证码为：<b style="font-size:18px;">${code}</b></p><p>5分钟内有效。如非本人操作请忽略。</p>`
+            });
+        } catch (e) {
+            console.error('发送邮件失败:', e && e.message);
+            // 不泄露过多细节
+        }
+        return res.json({ message:'验证码已发送' });
     } catch (e) { console.error(e); return res.status(500).json({ error: '发送验证码失败' }); }
 });
 
@@ -348,6 +376,26 @@ app.post('/api/user/login/password', async (req, res) => {
 });
 
 // 邮箱+验证码登录接口保留（前端不再使用）
+
+// 找回密码：确认重置
+app.post('/api/user/password/reset-confirm', async (req, res) => {
+    try {
+        const { email, code, new_password } = req.body || {};
+        if (!email || !code || !new_password) return res.status(400).json({ error: '缺少必要参数' });
+        if (String(new_password).length < 6) return res.status(400).json({ error: '新密码至少6位' });
+        const ok = await getAsync(`SELECT id FROM users WHERE lower(email)=lower(?)`, [email]);
+        if (!ok) return res.status(404).json({ error: '账号不存在' });
+        const valid = await getAsync(`SELECT id FROM email_verification_codes WHERE email=? AND purpose='reset' AND code=? AND consumed_at IS NULL AND DATETIME(expires_at) > DATETIME('now') ORDER BY created_at DESC`, [email, code]);
+        if (!valid) return res.status(400).json({ error: '验证码无效或已过期' });
+        const hash = bcrypt.hashSync(new_password, 10);
+        await runAsync('UPDATE users SET password_hash = ? WHERE lower(email) = lower(?)', [hash, email]);
+        await runAsync('UPDATE email_verification_codes SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?', [valid.id]);
+        return res.json({ message: '密码已重置' });
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: '重置失败' });
+    }
+});
 
 // 用户 token 校验
 app.get('/api/user/verify', authenticateUserToken, (req, res) => {

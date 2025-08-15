@@ -29,7 +29,7 @@ class VideoPlayer {
         this.currentVideoId = params.video || '';
         
         // 设置页面标题
-        const title = params.title || '视频播放';
+        const title = params.title || 'Subtitle Dog';
         document.getElementById('title').textContent = title;
         document.title = title;
         
@@ -123,6 +123,7 @@ class VideoPlayer {
         const loginEmail = document.getElementById('loginEmail');
         const btnDoLogin = document.getElementById('btnDoLogin');
         const gotoRegister = document.getElementById('gotoRegister');
+        const gotoReset = document.getElementById('gotoReset');
         const loginError = document.getElementById('loginError');
 
         const regModal = document.getElementById('registerModal');
@@ -163,13 +164,22 @@ class VideoPlayer {
         btnDoLogin.onclick = async () => {
             try {
                 const email = (loginEmail.value || '').trim();
-                    const password = loginPassword.value;
+                const password = loginPassword.value;
+                const remember = !!document.getElementById('loginRemember')?.checked;
                 if (!email || !password) throw new Error('请输入邮箱和密码');
                 const r = await fetch(`${API_BASE_URL}/api/user/login/password`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) });
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || '登录失败');
                 this.userToken = j.token || '';
-                if (this.userToken) localStorage.setItem('user_token', this.userToken);
+                if (this.userToken) {
+                    if (remember) {
+                        localStorage.setItem('user_token', this.userToken);
+                        try { sessionStorage.removeItem('user_token'); } catch {}
+                    } else {
+                        try { sessionStorage.setItem('user_token', this.userToken); } catch {}
+                        localStorage.removeItem('user_token');
+                    }
+                }
                 this.showMessage('登录成功');
                 loginModal.style.display='none';
                 if (loginError) loginError.textContent='';
@@ -182,6 +192,7 @@ class VideoPlayer {
             }
         };
         gotoRegister.onclick = () => { loginModal.style.display='none'; if (loginError) loginError.textContent=''; regModal.style.display='flex'; };
+        if (gotoReset) gotoReset.onclick = () => { loginModal.style.display='none'; document.getElementById('resetModal').style.display='flex'; };
 
         // 注册弹窗
         regClose.onclick = () => { regModal.style.display='none'; };
@@ -243,6 +254,82 @@ class VideoPlayer {
         };
         gotoLogin.onclick = () => { regModal.style.display='none'; loginModal.style.display='flex'; if (loginError) loginError.textContent=''; };
         if (gotoLogin2) gotoLogin2.onclick = () => { regModal.style.display='none'; loginModal.style.display='flex'; if (loginError) loginError.textContent=''; };
+
+        // 忘记密码弹窗绑定
+        const resetModal = document.getElementById('resetModal');
+        const resetClose = document.getElementById('resetClose');
+        const resetEmail = document.getElementById('resetEmail');
+        const resetCodeRow = document.getElementById('resetCodeRow');
+        const resetPwdRow = document.getElementById('resetPwdRow');
+        const resetSubmitRow = document.getElementById('resetSubmitRow');
+        const btnSendResetCode = document.getElementById('btnSendResetCode');
+        const btnConfirmReset = document.getElementById('btnConfirmReset');
+        const resetError = document.getElementById('resetError');
+        const resetGotoLogin = document.getElementById('resetGotoLogin');
+
+        if (resetClose) resetClose.onclick = () => { resetModal.style.display='none'; if (resetError) resetError.textContent=''; };
+        if (resetGotoLogin) resetGotoLogin.onclick = () => { resetModal.style.display='none'; loginModal.style.display='flex'; if (loginError) loginError.textContent=''; };
+
+        // 通用倒计时函数
+        const startCountdown = (buttonEl, seconds = 60) => {
+            const i18n = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.I18N) || {};
+            const renderSent = typeof i18n.sentWithCountdown === 'function' ? i18n.sentWithCountdown : (s)=>`已发送(${s}s)`;
+            const renderResend = i18n.resendAfter || '重新发送';
+            let remain = seconds;
+            buttonEl.disabled = true;
+            buttonEl.textContent = renderSent(remain);
+            const t = setInterval(() => {
+                remain -= 1;
+                if (remain <= 0) {
+                    clearInterval(t);
+                    buttonEl.disabled = false;
+                    buttonEl.textContent = renderResend;
+                    return;
+                }
+                buttonEl.textContent = renderSent(remain);
+            }, 1000);
+        };
+
+        if (btnSendRegCode) btnSendRegCode.addEventListener('click', () => startCountdown(btnSendRegCode, 60));
+
+        if (btnSendResetCode) btnSendResetCode.onclick = async () => {
+            if (resetError) resetError.textContent = '';
+            const email = (resetEmail.value || '').trim();
+            if (!email) { if (resetError) resetError.textContent = '请输入邮箱'; return; }
+            try {
+                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, purpose:'reset' }) });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || '发送验证码失败');
+                this.showMessage('验证码已发送');
+                resetCodeRow.style.display='';
+                resetPwdRow.style.display='';
+                resetSubmitRow.style.display='';
+                startCountdown(btnSendResetCode, 60);
+            } catch (e) {
+                if (resetError) resetError.textContent = e && e.message ? e.message : '发送验证码失败';
+            }
+        };
+
+        if (btnConfirmReset) btnConfirmReset.onclick = async () => {
+            if (resetError) resetError.textContent = '';
+            const email = (resetEmail.value || '').trim();
+            const code = (document.getElementById('resetCode').value || '').trim();
+            const newPassword = (document.getElementById('resetPassword').value || '');
+            if (!email || !code || !newPassword) { if (resetError) resetError.textContent = '请完整填写邮箱、验证码与新密码'; return; }
+            if (newPassword.length < 6) { if (resetError) resetError.textContent = '新密码至少6位'; return; }
+            try {
+                const r = await fetch(`${API_BASE_URL}/api/user/password/reset-confirm`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, code, new_password: newPassword }) });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || '重置失败');
+                this.showMessage('密码已重置，请登录');
+                resetModal.style.display='none';
+                loginModal.style.display='flex';
+                loginEmail.value = email;
+                try { loginPassword.value = ''; } catch {}
+            } catch (e) {
+                if (resetError) resetError.textContent = e && e.message ? e.message : '重置失败';
+            }
+        };
     }
 
     refreshAuthUi() {

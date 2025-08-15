@@ -330,3 +330,4 @@ video::cue {
 .form-foot a:hover { text-decoration: underline; }
 
 .code-btn { height: 42px; border-radius: 8px; }
+.code-btn[disabled] { opacity: 0.6; cursor: not-allowed; }
