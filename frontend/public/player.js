@@ -2,6 +2,7 @@
 const API_BASE_URL = new URLSearchParams(location.search).get('api') || (window.PLAYER_CONFIG && window.PLAYER_CONFIG.API_BASE_URL) || 'http://localhost:8000';
 const REQUIRE_SUBTITLE_LOGIN = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.SUBTITLE_NEED_LOGIN) !== false;
 const ALLOW_PLAY_WITHOUT_LOGIN = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.ALLOW_PLAY_WITHOUT_LOGIN) !== false;
+const CAPTCHA_SITE_KEY = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.CAPTCHA_SITE_KEY) || '10000000-ffff-ffff-ffff-000000000001';
 class VideoPlayer {
     constructor() {
         this.player = null;
@@ -12,8 +13,32 @@ class VideoPlayer {
         this.subtitleVariants = [];
         this.currentSubtitleId = '';
         this.userToken = (sessionStorage.getItem('user_token') || localStorage.getItem('user_token') || '');
+        this.hcaptchaWidgetId = null;
         
         this.init();
+    }
+    
+    // 初始化 hCaptcha（invisible）
+    initCaptcha() {
+        try {
+            if (!window.hcaptcha) return;
+            const container = document.getElementById('hcap') || (() => { const d=document.createElement('div'); d.id='hcap'; d.style.display='none'; document.body.appendChild(d); return d; })();
+            if (this.hcaptchaWidgetId === null) {
+                this.hcaptchaWidgetId = window.hcaptcha.render(container, { sitekey: CAPTCHA_SITE_KEY, size: 'invisible' });
+            }
+        } catch {}
+    }
+
+    async getCaptchaTokenIfAvailable() {
+        try {
+            if (!window.hcaptcha) return '';
+            if (this.hcaptchaWidgetId === null) this.initCaptcha();
+            if (typeof window.hcaptcha.execute !== 'function') return '';
+            await window.hcaptcha.execute(this.hcaptchaWidgetId);
+            const token = window.hcaptcha.getResponse(this.hcaptchaWidgetId) || '';
+            try { window.hcaptcha.reset(this.hcaptchaWidgetId); } catch {}
+            return token;
+        } catch { return ''; }
     }
     
     // 初始化播放器
@@ -36,6 +61,8 @@ class VideoPlayer {
         // 设置按钮事件
         this.setupControls();
         this.setupAuthUi();
+        // 初始化 hCaptcha（懒加载执行）
+        this.initCaptcha();
         // 先校验 token，确保 UI 与权限同步
         await this.verifyTokenAndSyncUI();
         this.refreshAuthUi();
@@ -64,10 +91,13 @@ class VideoPlayer {
 
     async accountExists(identifier) {
         try {
+            const token = await this.getCaptchaTokenIfAvailable();
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['x-captcha-token'] = token;
             const r = await fetch(`${API_BASE_URL}/api/user/exist`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ identifier })
+                headers,
+                body: JSON.stringify({ identifier, captchaToken: token })
             });
             const j = await r.json();
             if (!r.ok) throw new Error(j.error || '检查失败');
@@ -193,7 +223,10 @@ class VideoPlayer {
                 const password = loginPassword.value;
                 const remember = !!document.getElementById('loginRemember')?.checked;
                 if (!email || !password) throw new Error('请输入邮箱和密码');
-                const r = await fetch(`${API_BASE_URL}/api/user/login/password`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) });
+                const token = await this.getCaptchaTokenIfAvailable();
+                const headers = { 'Content-Type':'application/json' };
+                if (token) headers['x-captcha-token'] = token;
+                const r = await fetch(`${API_BASE_URL}/api/user/login/password`, { method:'POST', headers, body: JSON.stringify({ email, password, captchaToken: token }) });
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || '登录失败');
                 this.userToken = j.token || '';
@@ -231,7 +264,10 @@ class VideoPlayer {
                     this.showMessage('该邮箱已注册，请直接登录', 'error');
                     return;
                 }
-                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, purpose:'register' }) });
+                const token = await this.getCaptchaTokenIfAvailable();
+                const headers = { 'Content-Type':'application/json' };
+                if (token) headers['x-captcha-token'] = token;
+                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers, body: JSON.stringify({ email, purpose:'register', captchaToken: token }) });
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || '发送失败');
                 this.showMessage('验证码已发送');
@@ -247,11 +283,16 @@ class VideoPlayer {
             if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { if (regError) regError.textContent = '邮箱格式不正确'; return; }
             if (password.length < 6) { if (regError) regError.textContent = '密码长度至少6位'; return; }
             try {
-                const [emailExists, usernameExists] = await Promise.all([this.accountExists(email), this.accountExists(username)]);
+                // 串行查重（避免并发执行 invisible hCaptcha 导致 token 冲突）
+                const emailExists = await this.accountExists(email);
                 if (emailExists) { if (regError) regError.textContent = '该邮箱已注册，请直接登录'; return; }
+                const usernameExists = await this.accountExists(username);
                 if (usernameExists) { if (regError) regError.textContent = '该昵称已被占用，请更换'; return; }
 
-                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, purpose:'register' }) });
+                const token = await this.getCaptchaTokenIfAvailable();
+                const headers = { 'Content-Type':'application/json' };
+                if (token) headers['x-captcha-token'] = token;
+                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers, body: JSON.stringify({ email, purpose:'register', captchaToken: token }) });
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || '验证码发送失败');
                 this.showMessage('验证码已发送');
@@ -273,7 +314,10 @@ class VideoPlayer {
             const code = (regCode.value || '').trim();
             if (!username || !email || !password || !code) { if (regError) regError.textContent = '请填写完整信息与验证码'; return; }
             try {
-                const r = await fetch(`${API_BASE_URL}/api/user/register`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, email, password, code }) });
+                const token = await this.getCaptchaTokenIfAvailable();
+                const headers = { 'Content-Type':'application/json' };
+                if (token) headers['x-captcha-token'] = token;
+                const r = await fetch(`${API_BASE_URL}/api/user/register`, { method:'POST', headers, body: JSON.stringify({ username, email, password, code, captchaToken: token }) });
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || '注册失败');
                 this.showMessage('注册成功，请登录');
@@ -332,7 +376,10 @@ class VideoPlayer {
             const email = (resetEmail.value || '').trim();
             if (!email) { if (resetError) resetError.textContent = '请输入邮箱'; return; }
             try {
-                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, purpose:'reset' }) });
+                const token = await this.getCaptchaTokenIfAvailable();
+                const headers = { 'Content-Type':'application/json' };
+                if (token) headers['x-captcha-token'] = token;
+                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers, body: JSON.stringify({ email, purpose:'reset', captchaToken: token }) });
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || '发送验证码失败');
                 this.showMessage('验证码已发送');
@@ -353,7 +400,10 @@ class VideoPlayer {
             if (!email || !code || !newPassword) { if (resetError) resetError.textContent = '请完整填写邮箱、验证码与新密码'; return; }
             if (newPassword.length < 6) { if (resetError) resetError.textContent = '新密码至少6位'; return; }
             try {
-                const r = await fetch(`${API_BASE_URL}/api/user/password/reset-confirm`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, code, new_password: newPassword }) });
+                const token = await this.getCaptchaTokenIfAvailable();
+                const headers = { 'Content-Type':'application/json' };
+                if (token) headers['x-captcha-token'] = token;
+                const r = await fetch(`${API_BASE_URL}/api/user/password/reset-confirm`, { method:'POST', headers, body: JSON.stringify({ email, code, new_password: newPassword, captchaToken: token }) });
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || '重置失败');
                 this.showMessage('密码已重置，请登录');

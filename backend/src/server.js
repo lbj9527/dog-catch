@@ -15,6 +15,10 @@ const { Readable } = require('stream');
 const chardet = require('chardet');
 const iconv = require('iconv-lite');
 const nodemailer = require('nodemailer');
+const helmet = require('helmet');
+const crypto = require('crypto');
+const Redis = require('ioredis');
+const { RateLimiterRedis } = require('rate-limiter-flexible');
 
 // 新增：为上游请求启用 Keep-Alive，以减少频繁建连的开销
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 128, keepAliveMsecs: 15000 });
@@ -39,6 +43,204 @@ const app = express();
 const PORT = process.env.PORT || 8000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
+// 启动时强校验 JWT_SECRET
+if (!process.env.JWT_SECRET || JWT_SECRET === 'your-secret-key-change-in-production' || String(JWT_SECRET).length < 16) {
+    console.error('FATAL: JWT_SECRET 未设置或过弱。请设置强随机 JWT_SECRET 后重启。');
+    process.exit(1);
+}
+
+// 水印密钥与参数（与 JWT_SECRET 区分）
+const SUB_WM_SECRET = process.env.SUB_WM_SECRET || JWT_SECRET;
+const SUB_WATERMARK = String(process.env.SUB_WATERMARK || 'on') === 'on';
+const SUB_WM_DENSITY = String(process.env.SUB_WM_DENSITY || 'med'); // low|med|high
+
+// 限流参数（令牌桶/窗口阈值）
+const RATE = {
+    SUBTITLE_USER_5MIN: Number(process.env.SUBTITLE_RATE_USER_5MIN || 20),
+    SUBTITLE_BURST_USER: Number(process.env.SUBTITLE_BURST_USER || 40),
+    SUBTITLE_IP_1H: Number(process.env.SUBTITLE_RATE_IP_1H || 2000),
+    SUBTITLE_BURST_IP_10MIN: Number(process.env.SUBTITLE_BURST_IP_10MIN || 400),
+    VARIANTS_USER_5MIN: Number(process.env.VARIANTS_RATE_USER_5MIN || 10),
+    VARIANTS_BURST_USER: Number(process.env.VARIANTS_BURST_USER || 20),
+    VARIANTS_IP_1H: Number(process.env.VARIANTS_RATE_IP_1H || 1000),
+    VARIANTS_BURST_IP_10MIN: Number(process.env.VARIANTS_BURST_IP_10MIN || 200),
+    SCAN_UNIQUE_VIDEO_10MIN: Number(process.env.SCAN_UNIQUE_VIDEO_10MIN || 40),
+    SCAN_UNIQUE_BASE_10MIN: Number(process.env.SCAN_UNIQUE_BASE_10MIN || 30),
+    SCAN_PENALTY_WINDOW_MIN: Number(process.env.SCAN_PENALTY_WINDOW_MIN || 30)
+};
+
+// Redis 连接
+const REDIS_URL = process.env.REDIS_URL || '';
+let redis = null;
+if (REDIS_URL) {
+    redis = new Redis(REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 3 });
+    redis.on('error', (e) => console.warn('Redis error:', e && e.message));
+    redis.connect().catch(e => console.warn('Redis connect failed:', e && e.message));
+}
+
+// 标记/查询"需要验证码"
+async function markCaptchaRequired(kind, id, minutes = 5) {
+    try {
+        if (!redis) return;
+        await redis.set(`captcha:req:${kind}:${id}`, '1', 'EX', minutes*60);
+    } catch {}
+}
+async function isCaptchaRequired(kind, id) {
+    try {
+        if (!redis) return false;
+        const v = await redis.get(`captcha:req:${kind}:${id}`);
+        return v === '1';
+    } catch { return false; }
+}
+
+// Rate Limiter 工具：返回一个函数 (key) => Promise<boolean>
+function makeLimiter({ keyPrefix, points, durationSec }){
+    if (!redis) {
+        const mem = new Map();
+        return async (key) => {
+            const now = Date.now();
+            let rec = mem.get(key);
+            if (!rec || now - rec.start > durationSec*1000) { rec = { start: now, count: 0 }; mem.set(key, rec); }
+            rec.count += 1;
+            return rec.count <= points;
+        };
+    }
+    const limiter = new RateLimiterRedis({
+        storeClient: redis,
+        keyPrefix,
+        points,
+        duration: durationSec
+    });
+    return async (key) => {
+        try { await limiter.consume(key, 1); return true; } catch { return false; }
+    };
+}
+
+// 扫描阈值存储（Redis Set）
+async function addScan(userId, kind, member, windowSec, threshold){
+    if (!redis) return 0;
+    const now = Math.floor(Date.now()/1000);
+    const zKey = `scan:${userId}:${kind}`; // kind=video|base
+    await redis.zadd(zKey, now, member);
+    await redis.zremrangebyscore(zKey, 0, now - windowSec);
+    await redis.expire(zKey, windowSec + 60);
+    const cnt = await redis.zcard(zKey);
+    if (threshold && cnt >= threshold) {
+        await penalize(String(userId), RATE.SCAN_PENALTY_WINDOW_MIN);
+    }
+    return cnt;
+}
+async function isPenalized(id){
+    if (!redis) return false;
+    const until = await redis.get(`penalty:${id}`);
+    return until && Number(until) > Date.now();
+}
+async function penalize(id, minutes){
+    if (!redis) return;
+    const until = Date.now() + minutes*60*1000;
+    await redis.set(`penalty:${id}`, String(until), 'PX', minutes*60*1000);
+}
+
+// hCaptcha 校验（无全局 fetch 依赖）
+async function verifyHCaptcha(token, remoteip){
+    return new Promise((resolve) => {
+        try {
+            const provider = String(process.env.CAPTCHA_PROVIDER || 'hcaptcha');
+            if (provider !== 'hcaptcha') return resolve(false);
+            const secret = process.env.CAPTCHA_SECRET_KEY;
+            if (!secret) return resolve(false);
+            const body = new URLSearchParams({ secret, response: token });
+            if (remoteip) body.append('remoteip', remoteip);
+            const data = body.toString();
+            const opts = {
+                hostname: 'hcaptcha.com',
+                port: 443,
+                path: '/siteverify',
+                method: 'POST',
+                headers: { 'Content-Type':'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(data) }
+            };
+            const req = https.request(opts, (resp) => {
+                const chunks = [];
+                resp.on('data', d => chunks.push(d));
+                resp.on('end', () => {
+                    try {
+                        const j = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                        resolve(!!j.success);
+                    } catch { resolve(false); }
+                });
+            });
+            req.on('error', () => resolve(false));
+            req.write(data);
+            req.end();
+        } catch { resolve(false); }
+    });
+}
+
+async function requireCaptchaIfFlagged(req, res, next){
+    const explicit = String(process.env.CAPTCHA_REQUIRED || '0') === '1' || req.headers['x-require-captcha'] === '1';
+    // 识别主体：优先 email（登录/注册）、其次 userId（已登录）、否则 IP
+    const ip = req.ip || req.connection?.remoteAddress || '';
+    const email = (req.body && req.body.email && String(req.body.email).toLowerCase()) || '';
+    const userId = (req.user && req.user.id) ? String(req.user.id) : '';
+    const flagged = explicit || (email && await isCaptchaRequired('email', email)) || (userId && await isCaptchaRequired('user', userId)) || (ip && await isCaptchaRequired('ip', ip));
+    if (!flagged) return next();
+    const token = req.body && (req.body.captchaToken || req.headers['x-captcha-token']);
+    if (!token) return res.status(403).json({ error: '需要验证码', requireCaptcha: true });
+    const ok = await verifyHCaptcha(token, ip);
+    if (!ok) return res.status(403).json({ error: '验证码校验失败', requireCaptcha: true });
+    return next();
+}
+
+// 两类接口限流器
+const allowSubtitleUser = makeLimiter({ keyPrefix: 'rl:sub:u', points: RATE.SUBTITLE_BURST_USER, durationSec: 5*60 });
+const allowSubtitleIp10m = makeLimiter({ keyPrefix: 'rl:sub:ip10', points: RATE.SUBTITLE_BURST_IP_10MIN, durationSec: 10*60 });
+const allowSubtitleIp1h = makeLimiter({ keyPrefix: 'rl:sub:ip60', points: RATE.SUBTITLE_IP_1H, durationSec: 60*60 });
+
+const allowVariantsUser = makeLimiter({ keyPrefix: 'rl:var:u', points: RATE.VARIANTS_BURST_USER, durationSec: 5*60 });
+const allowVariantsIp10m = makeLimiter({ keyPrefix: 'rl:var:ip10', points: RATE.VARIANTS_BURST_IP_10MIN, durationSec: 10*60 });
+const allowVariantsIp1h = makeLimiter({ keyPrefix: 'rl:var:ip60', points: RATE.VARIANTS_IP_1H, durationSec: 60*60 });
+
+const allowLoginUser10m = makeLimiter({ keyPrefix: 'rl:login:u', points: 5, durationSec: 10*60 });
+const allowLoginIp10m = makeLimiter({ keyPrefix: 'rl:login:ip', points: 30, durationSec: 10*60 });
+const allowEmailIp1h = makeLimiter({ keyPrefix: 'rl:ecode:ip', points: 20, durationSec: 60*60 });
+
+// 新增：本地内存级验证码发送最小间隔限制（同步，避免未 await 时失效）
+const EMAIL_CODE_MIN_INTERVAL_SEC = Number(process.env.EMAIL_CODE_MIN_INTERVAL_SEC || 30); // 同邮箱最小重试间隔
+const EMAIL_CODE_IP_MIN_INTERVAL_SEC = Number(process.env.EMAIL_CODE_IP_MIN_INTERVAL_SEC || 5); // 同 IP 最小重试间隔
+const _lastEmailCodeByEmail = new Map(); // email(lower) -> timestamp(ms)
+const _lastEmailCodeByIp = new Map();    // ip -> timestamp(ms)
+
+async function checkEmailCodeLimits(emailLower, ip) {
+    try {
+        const now = Date.now();
+        const eKey = String(emailLower || '').toLowerCase();
+        const iKey = String(ip || '');
+
+        // 优先使用 Redis：基于 NX+EX 的最小间隔闸
+        if (redis) {
+            const rkEmail = `ecode:last:email:${eKey}`;
+            const rkIp = `ecode:last:ip:${iKey}`;
+            const [setE, setI] = await Promise.all([
+                redis.set(rkEmail, '1', 'EX', EMAIL_CODE_MIN_INTERVAL_SEC, 'NX'),
+                redis.set(rkIp, '1', 'EX', EMAIL_CODE_IP_MIN_INTERVAL_SEC, 'NX')
+            ]);
+            return !!setE && !!setI;
+        }
+
+        // 回退：内存间隔
+        const lastE = _lastEmailCodeByEmail.get(eKey) || 0;
+        const lastI = _lastEmailCodeByIp.get(iKey) || 0;
+        if (now - lastE < EMAIL_CODE_MIN_INTERVAL_SEC * 1000) return false;
+        if (now - lastI < EMAIL_CODE_IP_MIN_INTERVAL_SEC * 1000) return false;
+        _lastEmailCodeByEmail.set(eKey, now);
+        _lastEmailCodeByIp.set(iKey, now);
+        return true;
+    } catch {
+        // 兜底：出错时不阻断
+        return true;
+    }
+}
+
 // 邮件发送器
 let mailTransporter = null;
 try {
@@ -57,27 +259,22 @@ const db = new sqlite3.Database('./database/subtitles.db');
 
 async function detectAndDecodeToUtf8(buffer) {
     try {
-        // chardet 返回可能的编码列表，取置信度最高的一项
         const detected = chardet.detect(buffer) || 'UTF-8';
         const enc = (Array.isArray(detected) ? detected[0] : detected) || 'UTF-8';
         if (/utf-8/i.test(enc)) {
             return buffer.toString('utf8');
         }
-        // 常见东亚编码转 UTF-8
         if (iconv.encodingExists(enc)) {
             return iconv.decode(buffer, enc);
         }
-        // 兜底
         return buffer.toString('utf8');
     } catch {
         return buffer.toString('utf8');
     }
 }
 
-const crypto = require('crypto');
 function normalizeTextForHash(input) {
     if (typeof input !== 'string') return '';
-    // 去 BOM → 统一换行 → 去除行尾空白
     return input
         .replace(/^\uFEFF/, '')
         .replace(/\r\n?/g, '\n')
@@ -88,6 +285,70 @@ function normalizeTextForHash(input) {
 function computeContentHash(text) {
     const normalized = normalizeTextForHash(text);
     return crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
+}
+
+// 新增：SRT→VTT 简易转换
+function convertSrtToVttString(srt) {
+    if (!srt || /\bWEBVTT\b/.test(srt)) return srt;
+    const lines = String(srt).replace(/\r\n?/g, '\n').split('\n');
+    const out = ['WEBVTT', ''];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trimEnd();
+        if (/^\d+$/.test(line)) continue; // 跳过编号
+        const time = line.match(/^(\d{2}:\d{2}:\d{2}),(\d{3})\s+--\>\s+(\d{2}:\d{2}:\d{2}),(\d{3})/);
+        if (time) {
+            out.push(`${time[1]}.${time[2]} --> ${time[3]}.${time[4]}`);
+        } else {
+            out.push(line);
+        }
+    }
+    return out.join('\n');
+}
+
+// 新增：在 VTT 中注入水印（NOTE + 零宽字符）
+function injectVttWatermark(vttText, context) {
+    if (!SUB_WATERMARK) return vttText;
+    try {
+        const { userId, videoId } = context || {};
+        const ts = Math.floor(Date.now()/1000);
+        const sig = crypto.createHmac('sha256', SUB_WM_SECRET).update(`${userId}|${videoId}|${ts}`).digest('base64url').slice(0, 16);
+        const lines = String(vttText || '').replace(/\r\n?/g, '\n').split('\n');
+        const out = [];
+        let insertedHeader = false;
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (!insertedHeader && /\bWEBVTT\b/.test(line)) {
+                out.push(line);
+                out.push(`NOTE uid=${computeContentHash(String(userId||'' )).slice(0,8)} vid=${String(videoId||'').slice(0,24)} ts=${ts} sig=${sig}`);
+                insertedHeader = true;
+                continue;
+            }
+            out.push(line);
+        }
+        // 选择性在对白行尾注入零宽字符
+        const seed = crypto.createHmac('sha256', SUB_WM_SECRET).update(`${userId}|${videoId}|${ts}`).digest();
+        let rng = 0;
+        function rand(){
+            // 简单 LCG 基于 seed 字节
+            rng = (rng + seed[rng % seed.length] + 1) % 0x7fffffff;
+            return rng / 0x7fffffff;
+        }
+        const densityMap = { low: 20, med: 12, high: 6 };
+        const every = densityMap[SUB_WM_DENSITY] || 12;
+        for (let i = 0, seen = 0; i < out.length; i++) {
+            const l = out[i];
+            if (!l || l.startsWith('WEBVTT') || l.startsWith('NOTE') || l.startsWith('#') || /-->/.test(l)) continue;
+            // 仅对白文本行
+            seen += 1;
+            if (seen % every === 0 && rand() > 0.3) {
+                const mark = rand() > 0.5 ? '\u200B' : '\u200C'; // ZWSP 或 ZWNJ
+                out[i] = l + mark;
+            }
+        }
+        return out.join('\n');
+    } catch {
+        return vttText;
+    }
 }
 
 // 用户/管理员鉴权中间件
@@ -114,39 +375,15 @@ function authenticateUserToken(req, res, next) {
     const { payload, error } = verifyJwtFromHeader(req);
     if (error) return res.status(401).json({ error });
     if (payload && payload.role === 'user') {
-        // 严格校验：用户必须存在且处于 active 状态
-        getAsync('SELECT id, status FROM users WHERE id = ?', [payload.id])
+        getAsync('SELECT id, status, COALESCE(token_version,0) as token_version FROM users WHERE id = ?', [payload.id])
             .then(row => {
                 if (!row) return res.status(401).json({ error: '用户不存在或已被删除' });
                 if (String(row.status || '').toLowerCase() !== 'active') {
                     return res.status(403).json({ error: '用户状态不可用' });
                 }
-                req.user = payload;
-                return next();
-            })
-            .catch(err => {
-                console.error('鉴权查询用户失败:', err);
-                return res.status(500).json({ error: '鉴权失败' });
-            });
-        return; // 防止继续向下执行
-    }
-    return res.status(403).json({ error: '没有用户权限' });
-}
-
-function authenticateAnyToken(req, res, next) {
-    const { payload, error } = verifyJwtFromHeader(req);
-    if (error) return res.status(401).json({ error });
-    if (payload && (payload.role === 'user' || payload.role === 'admin')) {
-        if (payload.role === 'admin') {
-            req.user = payload;
-            return next();
-        }
-        // user 角色需严格校验用户存在性与状态
-        getAsync('SELECT id, status FROM users WHERE id = ?', [payload.id])
-            .then(row => {
-                if (!row) return res.status(401).json({ error: '用户不存在或已被删除' });
-                if (String(row.status || '').toLowerCase() !== 'active') {
-                    return res.status(403).json({ error: '用户状态不可用' });
+                // 校验 token 版本号
+                if (typeof payload.tv !== 'undefined' && Number(payload.tv) !== Number(row.token_version || 0)) {
+                    return res.status(401).json({ error: '令牌已失效，请重新登录' });
                 }
                 req.user = payload;
                 return next();
@@ -157,6 +394,28 @@ function authenticateAnyToken(req, res, next) {
             });
         return;
     }
+    return res.status(403).json({ error: '没有用户权限' });
+}
+
+function authenticateAnyToken(req, res, next) {
+    const { payload, error } = verifyJwtFromHeader(req);
+    if (error) return res.status(401).json({ error });
+    if (payload && (payload.role === 'user' || payload.role === 'admin')) {
+        if (payload.role === 'admin') { req.user = payload; return next(); }
+        getAsync('SELECT id, status, COALESCE(token_version,0) as token_version FROM users WHERE id = ?', [payload.id])
+            .then(row => {
+                if (!row) return res.status(401).json({ error: '用户不存在或已被删除' });
+                if (String(row.status || '').toLowerCase() !== 'active') {
+                    return res.status(403).json({ error: '用户状态不可用' });
+                }
+                if (typeof payload.tv !== 'undefined' && Number(payload.tv) !== Number(row.token_version || 0)) {
+                    return res.status(401).json({ error: '令牌已失效，请重新登录' });
+                }
+                req.user = payload; return next();
+            })
+            .catch(err => { console.error('鉴权查询用户失败:', err); return res.status(500).json({ error: '鉴权失败' }); });
+        return;
+    }
     return res.status(403).json({ error: '无权限' });
 }
 
@@ -164,7 +423,6 @@ function extractBaseVideoId(videoId) {
     const id = String(videoId || '').toUpperCase().trim();
     const m = id.match(/^([A-Z]+-\d{2,5})(?:-(\d+))?$/);
     if (m) return m[1];
-    // 兜底：从任意位置提取第一个形如 ABC-123 的片段
     const m2 = id.match(/([A-Z]+-\d{2,5})/);
     return m2 ? m2[1] : id;
 }
@@ -252,6 +510,9 @@ db.serialize(() => {
     db.run('ALTER TABLE subtitles ADD COLUMN original_filename TEXT', () => {});
     db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_subtitles_content_hash ON subtitles(content_hash)', () => {});
     db.run('CREATE INDEX IF NOT EXISTS idx_subtitles_base ON subtitles(base_video_id)', () => {});
+
+    // 新增：为 users 表补充 token_version 列
+    db.run('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0', () => {});
     
     // 创建默认管理员账号 (用户名: admin, 密码: admin123)
     const defaultPassword = bcrypt.hashSync('admin123', 10);
@@ -260,7 +521,21 @@ db.serialize(() => {
 });
 
 // 中间件
-app.use(cors());
+// 安全响应头
+app.use(helmet());
+// CORS 白名单（默认放行本地开发域名）
+const defaultCors = ['http://localhost:3000', 'http://localhost:3001'];
+const corsList = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+const allowedOrigins = new Set((corsList.length ? corsList : defaultCors));
+app.use(cors({
+    origin(origin, cb) {
+        if (!origin) return cb(null, true);
+        if (allowedOrigins.has(origin)) return cb(null, true);
+        return cb(new Error('Not allowed by CORS'));
+    },
+    methods: ['GET','HEAD','PUT','PATCH','POST','DELETE'],
+    allowedHeaders: ['Content-Type','Authorization','Range'],
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -273,7 +548,6 @@ const storage = multer.diskStorage({
         cb(null, './uploads/');
     },
     filename: (req, file, cb) => {
-        // 为避免批量上传同一基础编号时的临时文件相互覆盖，这里统一采用唯一临时名
         try {
             const ext = (path.extname(file.originalname || '') || '.srt').toLowerCase();
             const unique = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -338,17 +612,20 @@ const authenticateToken = (req, res, next) => {
 // 路由
 
 // 用户邮件验证码（开发环境可返回dev_code）
-app.post('/api/user/email-code', async (req, res) => {
+app.post('/api/user/email-code', requireCaptchaIfFlagged, async (req, res) => {
     try {
         const DEV_RETURN_CODE = false; // 开发环境也走真实邮箱
         const { email, purpose } = req.body || {};
         if (!email || !purpose || !['register','login','reset'].includes(purpose)) return res.status(400).json({ error: '参数错误' });
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+        const passMinInterval = await checkEmailCodeLimits(String(email).toLowerCase(), ip);
+        if (!passMinInterval) { await markCaptchaRequired('email', String(email).toLowerCase()); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁，请稍后再试', requireCaptcha: true }); }
         const now = new Date();
         const recent = await getAllAsync(`SELECT created_at FROM email_verification_codes WHERE email = ? AND purpose = ? AND DATETIME(created_at) > DATETIME(?,'-1 hour') ORDER BY created_at DESC`, [email, purpose, now.toISOString()]);
         if (recent.length > 0) {
             const last = new Date(recent[0].created_at);
-            if ((now - last) < 60000) return res.status(429).json({ error: '请求过于频繁，请稍后再试' });
-            if (recent.length >= 5) return res.status(429).json({ error: '请求次数过多，请稍后再试' });
+            if ((now - last) < 60000) { await markCaptchaRequired('email', String(email).toLowerCase()); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁，请稍后再试', requireCaptcha: true }); }
+            if (recent.length >= 5) { await markCaptchaRequired('email', String(email).toLowerCase()); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求次数过多，请稍后再试', requireCaptcha: true }); }
         }
         const code = Math.floor(100000 + Math.random()*900000).toString();
         const expiresAt = new Date(Date.now()+5*60000).toISOString();
@@ -366,7 +643,6 @@ app.post('/api/user/email-code', async (req, res) => {
             });
         } catch (e) {
             console.error('发送邮件失败:', e && e.message);
-            // 不泄露过多细节
         }
         return res.json({ message:'验证码已发送' });
     } catch (e) { console.error(e); return res.status(500).json({ error: '发送验证码失败' }); }
@@ -380,9 +656,11 @@ async function consumeValidCode(email, purpose, code) {
 }
 
 // 用户注册（返回token，但前端不自动登录）
-app.post('/api/user/register', async (req, res) => {
+app.post('/api/user/register', requireCaptchaIfFlagged, async (req, res) => {
     try {
         const { username, email, password, code } = req.body || {};
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+        if (!rlIpLogin10m(ip)) { await markCaptchaRequired('ip', ip); if (email) await markCaptchaRequired('email', String(email).toLowerCase()); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
         if (!username || !email || !password || !code) return res.status(400).json({ error: '缺少必要参数' });
         const u = await getAsync('SELECT id FROM users WHERE lower(username)=lower(?)', [username]);
         if (u) return res.status(409).json({ error: '用户名已被占用' });
@@ -391,30 +669,32 @@ app.post('/api/user/register', async (req, res) => {
         const ok = await consumeValidCode(email, 'register', code);
         if (!ok) return res.status(400).json({ error: '验证码无效或已过期' });
         const hash = bcrypt.hashSync(password, 10);
-        await runAsync('INSERT INTO users (username, email, password_hash, last_login_at) VALUES (?,?,?, CURRENT_TIMESTAMP)', [username, email, hash]);
-        const user = await getAsync('SELECT id, username, email FROM users WHERE username=?', [username]);
-        const token = jwt.sign({ id: user.id, username: user.username, role: 'user' }, JWT_SECRET, { expiresIn: '7d' });
+        await runAsync('INSERT INTO users (username, email, password_hash, last_login_at, token_version) VALUES (?,?,?, CURRENT_TIMESTAMP, 0)', [username, email, hash]);
+        const user = await getAsync('SELECT id, username, email, COALESCE(token_version,0) as token_version FROM users WHERE username=?', [username]);
+        const token = jwt.sign({ id: user.id, username: user.username, role: 'user', tv: Number(user.token_version||0) }, JWT_SECRET, { expiresIn: '7d' });
         return res.json({ message:'注册成功', token, user });
     } catch (e) { console.error(e); return res.status(500).json({ error: '注册失败' }); }
 });
 
 // 邮箱 + 密码登录
-app.post('/api/user/login/password', async (req, res) => {
+app.post('/api/user/login/password', requireCaptchaIfFlagged, async (req, res) => {
     try {
         const { email, password } = req.body || {};
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+        const userKey = String(email || '').toLowerCase();
+        if (!rlIpLogin10m(ip)) { await markCaptchaRequired('ip', ip); if (email) await markCaptchaRequired('email', String(email).toLowerCase()); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        if (!rlUserLogin10m(userKey)) { await markCaptchaRequired('email', userKey); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
         if (!email || !password) return res.status(400).json({ error: '缺少必要参数' });
         const user = await getAsync('SELECT * FROM users WHERE lower(email)=lower(?)', [email]);
         if (!user || !user.password_hash || !bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: '邮箱或密码错误' });
         await runAsync('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
-        const token = jwt.sign({ id: user.id, username: user.username, role: 'user' }, JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ id: user.id, username: user.username, role: 'user', tv: Number(user.token_version||0) }, JWT_SECRET, { expiresIn: '7d' });
         return res.json({ message:'登录成功', token, user: { id:user.id, username:user.username, email:user.email } });
     } catch (e) { console.error(e); return res.status(500).json({ error: '登录失败' }); }
 });
 
-// 邮箱+验证码登录接口保留（前端不再使用）
-
 // 找回密码：确认重置
-app.post('/api/user/password/reset-confirm', async (req, res) => {
+app.post('/api/user/password/reset-confirm', requireCaptchaIfFlagged, async (req, res) => {
     try {
         const { email, code, new_password } = req.body || {};
         if (!email || !code || !new_password) return res.status(400).json({ error: '缺少必要参数' });
@@ -424,7 +704,7 @@ app.post('/api/user/password/reset-confirm', async (req, res) => {
         const valid = await getAsync(`SELECT id FROM email_verification_codes WHERE email=? AND purpose='reset' AND code=? AND consumed_at IS NULL AND DATETIME(expires_at) > DATETIME('now') ORDER BY created_at DESC`, [email, code]);
         if (!valid) return res.status(400).json({ error: '验证码无效或已过期' });
         const hash = bcrypt.hashSync(new_password, 10);
-        await runAsync('UPDATE users SET password_hash = ? WHERE lower(email) = lower(?)', [hash, email]);
+        await runAsync('UPDATE users SET password_hash = ?, token_version = COALESCE(token_version,0) + 1 WHERE lower(email) = lower(?)', [hash, email]);
         await runAsync('UPDATE email_verification_codes SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?', [valid.id]);
         return res.json({ message: '密码已重置' });
     } catch (e) {
@@ -439,7 +719,7 @@ app.get('/api/user/verify', authenticateUserToken, (req, res) => {
 });
 
 // 新增：账号存在性检查（identifier 可为用户名或邮箱）
-app.post('/api/user/exist', async (req, res) => {
+app.post('/api/user/exist', requireCaptchaIfFlagged, async (req, res) => {
     try {
         const { identifier } = req.body || {};
         if (!identifier || typeof identifier !== 'string') {
@@ -466,7 +746,6 @@ app.post('/api/user/exist', async (req, res) => {
 app.delete('/api/user/me', authenticateUserToken, async (req, res) => {
     try {
         const userId = req.user.id;
-        // 获取邮箱以清理验证码记录
         const u = await getAsync('SELECT email FROM users WHERE id = ?', [userId]);
         await runAsync('DELETE FROM users WHERE id = ?', [userId]);
         if (u && u.email) {
@@ -484,14 +763,14 @@ app.get('/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// HLS代理接口 - 解决CORS和防盗链问题（公开接口，无需登录）
+// HLS代理接口 - 现状保持（不纳入字幕保护范围）
 app.get('/api/hls', async (req, res) => {
     const { url } = req.query;
     if (!url) {
         return res.status(400).json({ error: '缺少url参数' });
     }
 
-    // 统一的“仅发送一次”守护
+    // 统一的"仅发送一次"守护
     let responded = false;
     const safeStatus = (code) => {
         if (responded || res.headersSent) return false;
@@ -513,7 +792,7 @@ app.get('/api/hls', async (req, res) => {
         res.send(payload);
     };
 
-    // 处理可能的“嵌套代理”：url=http://<self>/api/hls?url=<real>
+    // 处理可能的"嵌套代理"：url=http://<self>/api/hls?url=<real>
     let rawUrl = url;
     try {
         const maybeLocal = new URL(rawUrl);
@@ -689,6 +968,9 @@ async function convertAssToVttString(assText) {
     });
 }
 
+// 统一 no-store 帮助函数
+function setNoStore(res){ try { res.set('Cache-Control','no-store'); } catch {} }
+
 // 用户认证
 app.post('/api/auth/login', (req, res) => {
     const { username, password } = req.body;
@@ -735,8 +1017,9 @@ app.get('/api/auth/verify', authenticateAdminToken, (req, res) => {
 });
 
 // 获取字幕文件（登录可见：用户或管理员）
-app.get('/api/subtitle/:video_id', authenticateAnyToken, (req, res) => {
+app.get('/api/subtitle/:video_id', authenticateAnyToken, async (req, res) => {
     const videoId = req.params.video_id;
+    setNoStore(res);
     
     db.get('SELECT * FROM subtitles WHERE lower(video_id) = lower(?)', [videoId], async (err, subtitle) => {
         if (err) {
@@ -747,18 +1030,41 @@ app.get('/api/subtitle/:video_id', authenticateAnyToken, (req, res) => {
             return res.status(404).json({ error: '字幕文件不存在' });
         }
         
+        // 限流与扫描（用户+IP）
+        const userId = req.user && req.user.id ? String(req.user.id) : '';
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+        // 用户 5 分钟突发桶
+        if (!allowSubtitleUser(userId)) { await markCaptchaRequired('user', userId); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        // IP 突发 + 1小时桶
+        if (!allowSubtitleIp10m(ip) || !allowSubtitleIp1h(ip)) { await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        // 扫描阈值与降配（10 分钟窗口 + 阈值）
+        await addScan(userId, 'video', videoId.toUpperCase(), 10*60, RATE.SCAN_UNIQUE_VIDEO_10MIN);
+        if (await isPenalized(userId)) {
+            // 简单降配：再次消耗一次用户桶，若失败则限流
+            if (!allowSubtitleUser(userId)) { await markCaptchaRequired('user', userId); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        }
+        
         try {
             const filePath = path.join(__dirname, '../uploads', path.basename(subtitle.file_path));
-            const content = await fs.readFile(filePath, 'utf-8');
-            
-            // 设置正确的内容类型与编码（统一按 UTF-8 返回）
+            const raw = await fs.readFile(filePath);
+            let textUtf8 = '';
+            const enc = chardet.detect(raw) || 'UTF-8';
+            textUtf8 = /utf-8/i.test(enc) ? raw.toString('utf8') : iconv.decode(raw, enc);
+
+            // 统一转为 VTT
             const ext = path.extname(subtitle.filename).toLowerCase();
-            const contentType = ext === '.vtt' ? 'text/vtt; charset=utf-8' : 'text/plain; charset=utf-8';
-            
-            res.set('Content-Type', contentType);
-            res.send(content);
+            let vtt = '';
+            if (ext === '.vtt') {
+                vtt = textUtf8.startsWith('WEBVTT') ? textUtf8 : `WEBVTT\n\n${textUtf8}`;
+            } else {
+                vtt = convertSrtToVttString(textUtf8);
+            }
+            // 注入水印
+            vtt = injectVttWatermark(vtt, { userId, videoId });
+            res.set('Content-Type', 'text/vtt; charset=utf-8');
+            return res.send(vtt);
         } catch (error) {
-            res.status(500).json({ error: '读取字幕文件失败' });
+            return res.status(500).json({ error: '读取字幕文件失败' });
         }
     });
 });
@@ -1152,8 +1458,19 @@ app.get('/api/subtitles/stats', authenticateAdminToken, async (req, res) => {
 
 // 获取某基础视频编号下的所有字幕变体（登录可见：用户或管理员）
 app.get('/api/subtitles/variants/:base_video_id', authenticateAnyToken, async (req, res) => {
+    setNoStore(res);
     const baseId = (req.params.base_video_id || '').toUpperCase();
     try {
+        // 限流与扫描（用户+IP）
+        const userId = req.user && req.user.id ? String(req.user.id) : '';
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+        if (!allowVariantsUser(userId)) { await markCaptchaRequired('user', userId); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        if (!allowVariantsIp10m(ip) || !allowVariantsIp1h(ip)) { await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        await addScan(userId, 'base', baseId, 10*60, RATE.SCAN_UNIQUE_BASE_10MIN);
+        if (await isPenalized(userId)) {
+            if (!allowVariantsUser(userId)) { await markCaptchaRequired('user', userId); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        }
+
         const rows = await getAllAsync(
             'SELECT video_id, base_video_id, variant, filename, file_size, updated_at FROM subtitles WHERE lower(base_video_id) = lower(?) ORDER BY COALESCE(variant,1) ASC, updated_at DESC',
             [baseId]
@@ -1203,7 +1520,6 @@ app.delete('/api/admin/users/:id', authenticateAdminToken, async (req, res) => {
         res.status(500).json({ error: '删除用户失败' });
     }
 });
-
 
 // 错误处理中间件
 app.use((err, req, res, next) => {
