@@ -360,13 +360,66 @@ class VideoPlayer {
         const resetCodeRow = document.getElementById('resetCodeRow');
         const resetPwdRow = document.getElementById('resetPwdRow');
         const resetSubmitRow = document.getElementById('resetSubmitRow');
+        const resetNextRow = document.getElementById('resetNextRow');
+        const btnResetNext = document.getElementById('btnResetNext');
         const btnSendResetCode = document.getElementById('btnSendResetCode');
         const btnConfirmReset = document.getElementById('btnConfirmReset');
         const resetError = document.getElementById('resetError');
         const resetGotoLogin = document.getElementById('resetGotoLogin');
 
-        if (resetClose) resetClose.onclick = () => { resetModal.style.display='none'; if (resetError) resetError.textContent=''; };
+        if (resetClose) resetClose.onclick = () => { 
+            resetModal.style.display='none'; 
+            if (resetError) resetError.textContent=''; 
+            // 返回登录弹窗
+            loginModal.style.display='flex';
+            if (loginError) loginError.textContent='';
+        };
         if (resetGotoLogin) resetGotoLogin.onclick = () => { resetModal.style.display='none'; loginModal.style.display='flex'; if (loginError) loginError.textContent=''; };
+        // 找回密码 Step1：仅输入邮箱后点击“确定”，自动发送验证码并进入下一步
+        if (btnResetNext) btnResetNext.onclick = async () => {
+            if (resetError) resetError.textContent = '';
+            const email = (resetEmail.value || '').trim();
+            if (!email) { if (resetError) resetError.textContent = '请输入邮箱'; return; }
+            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { if (resetError) resetError.textContent = '邮箱格式不正确'; return; }
+            try {
+                const token = await this.getCaptchaTokenIfAvailable();
+                const headers = { 'Content-Type':'application/json' };
+                if (token) headers['x-captcha-token'] = token;
+                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers, body: JSON.stringify({ email, purpose:'reset', captchaToken: token }) });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || '发送验证码失败');
+                this.showMessage('验证码已发送');
+                // 展示第二步输入区域
+                if (resetCodeRow) resetCodeRow.style.display='';
+                if (resetPwdRow) resetPwdRow.style.display='';
+                if (resetSubmitRow) resetSubmitRow.style.display='';
+                if (resetNextRow) resetNextRow.style.display='none';
+                // 若存在“获取验证码”按钮，则启动倒计时（用于重发）
+                if (btnSendResetCode) {
+                    const startCountdown = (buttonEl, seconds = 60) => {
+                        const i18n = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.I18N) || {};
+                        const renderSent = typeof i18n.sentWithCountdown === 'function' ? i18n.sentWithCountdown : (s)=>`已发送(${s}s)`;
+                        const renderResend = i18n.resendAfter || '重新发送';
+                        let remain = seconds;
+                        buttonEl.disabled = true;
+                        buttonEl.textContent = renderSent(remain);
+                        const t = setInterval(() => {
+                            remain -= 1;
+                            if (remain <= 0) {
+                                clearInterval(t);
+                                buttonEl.disabled = false;
+                                buttonEl.textContent = renderResend;
+                                return;
+                            }
+                            buttonEl.textContent = renderSent(remain);
+                        }, 1000);
+                    };
+                    startCountdown(btnSendResetCode, 60);
+                }
+            } catch (e) {
+                if (resetError) resetError.textContent = e && e.message ? e.message : '发送验证码失败';
+            }
+        };
 
         // 通用倒计时函数
         const startCountdown = (buttonEl, seconds = 60) => {
