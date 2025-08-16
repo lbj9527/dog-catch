@@ -1,253 +1,228 @@
 # M3U8视频播放器 + 字幕管理系统
 
-一个专为 missav.live 网站设计的视频播放器系统，支持自动字幕加载和管理。
+一个为 missav.live 等站点定制的视频播放器与字幕管理系统。包含静态播放器、后端 API（Express + SQLite）与管理员后台（Vue3 + Element Plus）。
 
 ## 🎯 项目特性
 
-- **智能资源嗅探**：油猴脚本自动检测页面中的视频资源
-- **多清晰度播放**：支持 Master Playlist 解析和清晰度选择
-- **自动字幕加载**：根据视频编号自动加载对应字幕
-- **字幕管理后台**：完整的字幕文件管理系统
-- **响应式设计**：适配PC和移动端设备
+- 智能嗅探（油猴脚本）跳转至自建播放器
+- 多清晰度播放（支持 Master Playlist）
+- 自动字幕加载（编号变体管理、去重存储、ASS/SSA→VTT 转码、统一 UTF-8）
+- 管理后台：上传/更新/批量删除/预览/统计/导出
+- 用户系统（邮箱验证码注册/登录/重置、登录校验）
+- 字幕访问鉴权与健壮性：
+  - 前端启动先校验 token；401 自动登出与禁用字幕
+  - 退出/注销立即移除字幕轨道（无需刷新）
+  - 支持 sessionStorage “记住我”策略（优先读 sessionStorage，回落 localStorage）
+- 前端播放器 UI 优化：
+  - 移除“复制链接”按钮
+  - 统一使用非阻塞 Toast 提示（无确认按钮）
 
 ## 📁 项目结构
 
 ```
-project-root/
-├── userscript/                 # 油猴脚本
-│   └── dog-catch-mobile.user.js    # 修改后的嗅探脚本
-├── frontend/                   # 前端播放器
-│   └── public/                 # 静态文件
-│       ├── index.html          # 播放器页面
-│       ├── styles.css          # 样式文件
-│       └── player.js           # 播放器逻辑
-├── backend/                    # 后端API服务
+dog-catch/
+├── userscript/                      # 油猴脚本
+│   └── dog-catch-mobile.user.js
+├── frontend/
+│   └── public/                      # 播放器静态站点
+│       ├── index.html               # 播放器页面（已移除复制按钮与消息条）
+│       ├── styles.css
+│       ├── player.js                # 播放器逻辑（鉴权、字幕、Toast）
+│       ├── config.js                # 前端配置（API_BASE_URL 等）
+│       └── serve.json
+├── backend/
+│   ├── src/server.js                # Express 服务（字幕与用户 API、HLS 代理）
+│   ├── uploads/                     # 字幕存储目录
+│   └── database/                    # SQLite 数据
+├── admin/                           # 管理后台（Vue3 + Vite）
 │   ├── src/
-│   │   └── server.js           # Express服务器
-│   ├── package.json            # 依赖配置
-│   ├── uploads/                # 字幕文件存储
-│   └── database/               # SQLite数据库
-├── admin/                      # 后台管理系统
-│   ├── src/
-│   │   ├── components/         # Vue组件
-│   │   ├── views/              # 页面组件
-│   │   ├── router/             # 路由配置
-│   │   └── utils/              # 工具函数
-│   ├── package.json            # 前端依赖
-│   └── vite.config.js          # Vite配置
-└── docs/                       # 项目文档
-    └── 项目需求文档.md          # 详细需求文档
+│   │   ├── views/                   # Dashboard、Login、UserManagement
+│   │   ├── components/              # UploadDialog/BatchUpload/Preview
+│   │   ├── router/
+│   │   └── utils/                   # api.js、userAdminApi.js
+│   └── vite.config.js
+├── start-backend.bat                # 启动后端（Windows）
+├── start-frontend.bat               # 启动播放器静态站点（Windows）
+├── start-admin.bat                  # 启动管理后台（Windows）
+└── README.md
 ```
 
 ## 🚀 快速开始
 
-### 1. 安装依赖
+### 1) 安装依赖
 
 ```bash
-# 后端依赖
-cd backend
-npm install
+# 后端
+cd backend && npm install
 
-# 管理后台依赖
-cd ../admin  
-npm install
+# 管理后台
+cd ../admin && npm install
 ```
 
-### 2. 启动后端服务
+### 2) 配置环境变量（重要）
 
+后端（建议在 PowerShell 设置临时变量，或持久化 setx）：
+
+```powershell
+# 生成随机密钥并设置（示例）
+$bytes = New-Object byte[] 48; [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes); $secret=[Convert]::ToBase64String($bytes)
+$env:JWT_SECRET = $secret
+
+# 可选：SMTP（发送邮箱验证码）
+$env:SMTP_HOST = 'smtp.example.com'
+$env:SMTP_PORT = '465'
+$env:SMTP_SECURE = 'true'
+$env:SMTP_USER = 'no-reply@example.com'
+$env:SMTP_PASS = 'your-smtp-pass'
+$env:SMTP_FROM = 'Subtitle Dog <no-reply@example.com>'
+```
+
+注意：更换 JWT_SECRET 会使旧 token 全部失效，需要重新登录。
+
+### 3) 启动服务
+
+- 后端（开发）
 ```bash
 cd backend
 npm run dev
-# 或
-npm start
+# 或 npm start
 ```
+默认地址：`http://localhost:8000`
 
-服务启动后访问：
-- API地址：http://localhost:8000
-- 健康检查：http://localhost:8000/health
-- 默认管理员账号：`admin` / `admin123`
-
-### 3. 部署前端播放器
-
-前端是纯静态文件，可以：
-
-**本地测试：**
+- 播放器（静态站点）
 ```bash
 cd frontend/public
-# 使用任何HTTP服务器，例如：
-python -m http.server 3000
-# 或
-npx serve . -p 3000
+# 推荐固定 serve 版本并禁用更新检查，减少噪声：
+set NO_UPDATE_NOTIFIER=1 && npx --yes serve@14.2.0 . -p 3000 --no-clipboard
 ```
+默认地址：`http://localhost:3000`
 
-**生产部署：**
-- 上传到静态托管服务（Vercel、Netlify等）
-- 或部署到CDN
-
-### 4. 启动后台管理系统
-
+- 管理后台（开发）
 ```bash
 cd admin
-npm install
 npm run dev
 ```
-
-管理系统启动后访问：
-- 管理后台：http://localhost:3001
-- 默认账号：`admin` / `admin123`
-
-### 5. 安装油猴脚本
-
-1. 确保浏览器已安装 Tampermonkey 扩展
-2. 打开 `userscript/dog-catch-mobile.user.js`
-3. 修改第65行的域名为你的实际域名：
-   ```javascript
-   const url = `https://your-domain.com/player?${...}`;
-   ```
-4. 在 Tampermonkey 中创建新脚本，粘贴代码并保存
+默认地址：`http://localhost:3001`
 
 ## ⚙️ 配置说明
 
-### 后端配置
+### 前端播放器（`frontend/public/config.js`）
 
-在 `backend/src/server.js` 中可以配置：
-
-```javascript
-const PORT = process.env.PORT || 8000;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+```js
+window.PLAYER_CONFIG = {
+  API_BASE_URL: 'http://localhost:8000',
+  SUBTITLE_NEED_LOGIN: true,      // 需要登录才能加载字幕
+  ALLOW_PLAY_WITHOUT_LOGIN: true  // 视频本身不强制登录
+}
 ```
 
-环境变量：
-- `PORT`：服务端口号
-- `JWT_SECRET`：JWT密钥（生产环境必须修改）
+URL 参数：`src`（视频源）、`type`（hls/mp4/auto）、`title`、`referer`、`video`（视频编号，用于字幕匹配）。
 
-### 前端配置
+### 后端（`backend/src/server.js`）
 
-在 `frontend/public/player.js` 中修改API地址：
+- 端口：`PORT`（默认 8000）
+- JWT：`JWT_SECRET`（生产务必设置强随机值）
+- 邮件：`SMTP_HOST/SMTP_PORT/SMTP_SECURE/SMTP_USER/SMTP_PASS/SMTP_FROM`（可选）
+- 静态：`/uploads` 提供字幕文件
 
-```javascript
-// 第264行附近，修改为实际的API地址
-const response = await fetch(`https://api.your-domain.com/api/subtitle/${this.currentVideoId}`);
-```
+数据库（SQLite）：
+- `subtitles`：`video_id` 唯一、`content_hash` 去重、`base_video_id` + `variant` 变体管理、`original_filename`
+- `admins`：默认创建 `admin/admin123`（上线前请修改）
+- `users`：用户系统（邮箱注册/登录）
+- `email_verification_codes`：验证码记录与限频
 
-## 🎛️ 后台管理系统功能
+鉴权：
+- 管理端：`/api/auth/login` → Bearer（admin）
+- 用户端：邮箱+密码登录；启动时 `GET /api/user/verify` 校验；后端会校验用户存在与 `active` 状态
 
-### 主要功能
-- **字幕管理**：查看所有视频的字幕状态，支持分页和搜索
-- **文件上传**：单个字幕文件上传，支持 .srt 和 .vtt 格式
-- **批量上传**：同时上传多个字幕文件，自动识别视频编号
-- **字幕预览**：在线预览字幕内容，支持格式化显示
-- **数据统计**：显示总视频数、已有字幕数、缺失字幕数和完成度
-- **数据导出**：导出字幕列表为 CSV 格式
+## 🔌 API 摘要（常用）
 
-### 操作说明
-1. **登录系统**：使用默认账号 `admin` / `admin123` 登录
-2. **查看列表**：主界面显示所有视频的字幕状态
-3. **上传字幕**：点击"上传字幕"按钮，输入视频编号并选择文件
-4. **批量上传**：点击"批量上传"，选择多个字幕文件自动批量处理
-5. **更新字幕**：对已有字幕点击"更新"按钮替换文件
-6. **预览字幕**：点击"预览"按钮查看字幕内容
-7. **搜索筛选**：使用搜索框快速找到特定视频编号
+- 用户
+  - `POST /api/user/email-code`（purpose: register/reset）
+  - `POST /api/user/register`
+  - `POST /api/user/login/password`
+  - `POST /api/user/password/reset-confirm`
+  - `GET /api/user/verify`（用户登录校验）
+  - `POST /api/user/exist`（账号存在性检查）
+  - `DELETE /api/user/me`（自助注销）
 
-## 📡 API接口
+- 字幕（用户或管理员登录可见）
+  - `GET /api/subtitle/:video_id`（返回 UTF-8 文本；若源为 ASS/SSA，上传时已转 VTT）
+  - `GET /api/subtitles/variants/:base_video_id`（获取基础编号下的字幕变体）
 
-### 公开接口
-- `GET /api/subtitle/:video_id` - 获取字幕文件
+- 管理字幕（管理员）
+  - `GET /api/subtitles?page&limit&search`
+  - `POST /api/subtitle/:video_id`（上传，ASS/SSA→VTT，去重）
+  - `PUT /api/subtitle/:video_id`（更新，去重）
+  - `DELETE /api/subtitle/:video_id`（删除）
+  - `DELETE /api/subtitles`（批量删除）
+  - `GET /api/subtitles/stats`（统计）
 
-### 认证接口
-- `POST /api/auth/login` - 管理员登录
-- `GET /api/auth/verify` - 验证token
+- 管理用户（管理员）
+  - `GET /api/admin/users/stats`
+  - `GET /api/admin/users?page&limit&search`
+  - `DELETE /api/admin/users/:id`
 
-### 管理接口（需要认证）
-- `GET /api/subtitles` - 获取字幕列表
-- `POST /api/subtitle/:video_id` - 上传字幕
-- `PUT /api/subtitle/:video_id` - 更新字幕
-- `DELETE /api/subtitle/:video_id` - 删除字幕
+- 其他
+  - `GET /health`（健康检查）
+  - `GET /api/hls?url=...`（HLS 代理；本项目不对 m3u8/分片做保护）
 
-## 🔧 开发说明
+## 🖥️ 前端播放器行为要点
 
-### 当前开发进度
+- 启动即校验用户 token；失败自动登出，禁用字幕 UI，提示 Toast
+- 成功登录后：
+  - 拉取字幕变体，填充并启用选择框
+  - 拉取字幕文本后启用“字幕开关”按钮
+- 退出登录/注销账号：
+  - 立即移除所有字幕轨道、撤销 Blob URL、清空状态，无需刷新页面
+- 提示改为非阻塞 Toast（右上角自动消失，无确认按钮）
+- 已移除“复制链接”按钮与页面消息条
 
-✅ **已完成：**
-- [x] 油猴脚本修改（跳转到自建播放器）
-- [x] 前端播放器（Video.js + 清晰度选择 + 字幕显示）
-- [x] 后端API服务（字幕管理 + 用户认证）
-- [x] 后台管理界面（Vue.js + Element Plus）
-- [x] 批量字幕管理功能
-- [x] 搜索和筛选功能
-- [x] 项目基础结构
+## 🔐 字幕保护范围（项目边界）
 
-📋 **待开发：**
-- [ ] 生产环境部署配置
-- [ ] 性能优化和错误处理
-- [ ] 更多字幕格式支持
+- 仅保护“字幕加载”和“防止大量爬取字幕文件”
+- 不保护 m3u8/视频流代理
 
-### Git 配置
+建议（后续可选）：
+- 对 `GET /api/subtitle/:video_id`、`GET /api/subtitles/variants/:base` 增加用户/IP 限流
+- 服务端统一返回 VTT 并注入轻量水印（不可见字符/NOTE 注释）以便追责
 
-项目已配置完整的 `.gitignore` 和 `.gitattributes` 文件：
+## 🧰 常见问题（Troubleshooting）
 
-- **`.gitignore`**: 忽略 `node_modules`、构建输出、数据库文件、上传文件等
-- **`.gitattributes`**: 统一行尾符，正确识别文件类型
-- **目录保持**: 使用 `.gitkeep` 文件保持重要的空目录结构
+- 前端静态站点启动出现
+  - `WARN Checking for updates failed / ERROR Cannot read properties of undefined (reading 'code')`
+    - 来源于 `serve` 的更新检查，使用 `set NO_UPDATE_NOTIFIER=1` 并固定版本 `serve@14.2.0`
 
-### 本地开发
+- 拖动进度条后不加载
+  - 强制刷新缓存（Ctrl+F5）；确保 Toast 容器不拦截事件（已设置 pointer-events:none）
+  - 检查 Network 是否有分片/playlist 请求，若通过 `/api/hls`，留意上游 `ECONNRESET/ETIMEDOUT`
 
-1. **后端开发**：
-   ```bash
-   cd backend
-   npm run dev  # 使用nodemon自动重启
-   ```
+- 如何查看/清理 token
+  - Console: `localStorage.getItem('user_token')` / `sessionStorage.getItem('user_token')`
+  - 清理：`localStorage.removeItem('user_token'); sessionStorage.removeItem('user_token')`
 
-2. **前端开发**：
-   - 直接修改 `frontend/public/` 下的文件
-   - 使用本地HTTP服务器测试
+- 后端日志 `代理请求错误: read ECONNRESET`
+  - 上游断开或网络抖动；与本项目字幕保护无关
 
-3. **后台管理开发**：
-   ```bash
-   cd admin
-   npm run dev  # 使用Vite热重载
-   ```
+## 📦 近期变更（Changelog）
 
-4. **调试脚本**：
-   - 修改油猴脚本中的域名指向本地服务
-   - 在浏览器控制台查看日志
+- 前端播放器
+  - 启动校验 token；401 自动登出
+  - 退出/注销即时移除字幕轨道与状态
+  - 启用字幕选择下拉（构建后自动解禁）
+  - 移除“复制链接”按钮；消息改 Toast（无确认按钮）
 
-## 🌐 部署建议
+- 后端
+  - 用户鉴权增加“用户存在且 active”校验
+  - 保持 HLS 代理现状（不纳入保护范围）
 
-### 生产环境
+## 🛡️ 生产建议
 
-1. **前端**：部署到 Vercel/Netlify
-2. **后端**：部署到 Railway/Heroku/VPS
-3. **域名**：配置自定义域名和HTTPS证书
-
-### 环境变量
-
-生产环境需要设置的环境变量：
-```bash
-PORT=8000
-JWT_SECRET=your-super-secret-key-here
-NODE_ENV=production
-```
-
-## 🤝 贡献指南
-
-1. Fork 项目
-2. 创建功能分支
-3. 提交更改
-4. 推送到分支
-5. 创建 Pull Request
+- 必须设置强随机 `JWT_SECRET`
+- 上线前修改默认管理员密码
+- 数据库与 `uploads/` 做备份与权限控制
+- 仅在可信环境开放 CORS（如需要）
 
 ## 📄 许可证
 
-MIT License
-
-## 🆘 问题反馈
-
-如有问题，请创建 Issue 或联系开发者。
-
----
-
-**注意**：
-- 生产环境使用前请修改默认的管理员密码和JWT密钥
-- 确保字幕文件存储目录有适当的读写权限
-- 建议定期备份数据库文件 
+MIT 
