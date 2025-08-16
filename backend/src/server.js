@@ -625,7 +625,7 @@ app.post('/api/user/email-code', requireCaptchaIfFlagged, async (req, res) => {
         if (recent.length > 0) {
             const last = new Date(recent[0].created_at);
             if ((now - last) < 60000) { await markCaptchaRequired('email', String(email).toLowerCase()); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁，请稍后再试', requireCaptcha: true }); }
-            if (recent.length >= 5) { await markCaptchaRequired('email', String(email).toLowerCase()); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求次数过多，请稍后再试', requireCaptcha: true }); }
+            if (recent.length >= 10) { await markCaptchaRequired('email', String(email).toLowerCase()); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求次数过多，请稍后再试', requireCaptcha: true }); }
         }
         const code = Math.floor(100000 + Math.random()*900000).toString();
         const expiresAt = new Date(Date.now()+5*60000).toISOString();

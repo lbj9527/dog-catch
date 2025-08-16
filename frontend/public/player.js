@@ -251,7 +251,19 @@ class VideoPlayer {
             }
         };
         gotoRegister.onclick = () => { loginModal.style.display='none'; if (loginError) loginError.textContent=''; regModal.style.display='flex'; };
-        if (gotoReset) gotoReset.onclick = () => { loginModal.style.display='none'; document.getElementById('resetModal').style.display='flex'; };
+        if (gotoReset) gotoReset.onclick = () => {
+            if (loginError) loginError.textContent='';
+            loginModal.style.display='none';
+            const resetModal = document.getElementById('resetModal');
+            const resetCodeRow = document.getElementById('resetCodeRow');
+            const resetPwdRow = document.getElementById('resetPwdRow');
+            const resetSubmitRow = document.getElementById('resetSubmitRow');
+            // 直接展示完整步骤：验证码、新密码与提交
+            if (resetCodeRow) resetCodeRow.style.display='';
+            if (resetPwdRow) resetPwdRow.style.display='';
+            if (resetSubmitRow) resetSubmitRow.style.display='';
+            resetModal.style.display='flex';
+        };
 
         // 注册弹窗
         regClose.onclick = () => { regModal.style.display='none'; };
@@ -271,6 +283,8 @@ class VideoPlayer {
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || '发送失败');
                 this.showMessage('验证码已发送');
+                // 点击“重新发送”后立即进入倒计时
+                if (typeof startCountdown === 'function') startCountdown(btnSendRegCode, 60);
             } catch (e) { this.showMessage(e.message || '发送失败', 'error'); }
         };
         // 注册 Step1：请求验证码并显示 Step2
@@ -375,12 +389,28 @@ class VideoPlayer {
             if (loginError) loginError.textContent='';
         };
         if (resetGotoLogin) resetGotoLogin.onclick = () => { resetModal.style.display='none'; loginModal.style.display='flex'; if (loginError) loginError.textContent=''; };
-        // 找回密码 Step1：仅输入邮箱后点击“确定”，自动发送验证码并进入下一步
+        // 兼容：若仍存在“确定”按钮（旧缓存），点击后与直接进入第二步逻辑一致
         if (btnResetNext) btnResetNext.onclick = async () => {
             if (resetError) resetError.textContent = '';
             const email = (resetEmail.value || '').trim();
             if (!email) { if (resetError) resetError.textContent = '请输入邮箱'; return; }
             if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { if (resetError) resetError.textContent = '邮箱格式不正确'; return; }
+            // 开启加载态
+            const setButtonLoading = (buttonEl, on, text='请稍后…') => {
+                if (!buttonEl) return;
+                if (on) {
+                    if (!buttonEl.dataset.originalText) buttonEl.dataset.originalText = buttonEl.textContent || '';
+                    buttonEl.textContent = text;
+                    buttonEl.disabled = true;
+                    buttonEl.classList.add('btn-loading');
+                } else {
+                    buttonEl.disabled = false;
+                    buttonEl.classList.remove('btn-loading');
+                    const orig = buttonEl.dataset.originalText;
+                    if (typeof orig !== 'undefined') { buttonEl.textContent = orig; delete buttonEl.dataset.originalText; }
+                }
+            };
+            setButtonLoading(btnResetNext, true);
             try {
                 const token = await this.getCaptchaTokenIfAvailable();
                 const headers = { 'Content-Type':'application/json' };
@@ -418,6 +448,8 @@ class VideoPlayer {
                 }
             } catch (e) {
                 if (resetError) resetError.textContent = e && e.message ? e.message : '发送验证码失败';
+                // 失败恢复按钮
+                setButtonLoading(btnResetNext, false);
             }
         };
 
