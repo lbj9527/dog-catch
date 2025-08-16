@@ -103,10 +103,7 @@ class VideoPlayer {
     
     // 设置控制按钮
     setupControls() {
-        // 复制链接
-        document.getElementById('copyLink').onclick = () => {
-            this.copyToClipboard(this.currentVideoUrl);
-        };
+        // 复制链接（已移除按钮，无需绑定）
         
         // 字幕开关
         const subtitleBtn = document.getElementById('subtitleToggle');
@@ -905,40 +902,92 @@ class VideoPlayer {
         subtitleBtn.textContent = '显示字幕';
     }
     
-    // 复制到剪贴板
+    // 复制到剪贴板（按钮已移除，可整体删除或保留备用）
     async copyToClipboard(text) {
         try {
-            if (navigator.clipboard) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
                 await navigator.clipboard.writeText(text);
-            } else {
-                // 兼容旧浏览器
-                const textarea = document.createElement('textarea');
-                textarea.value = text;
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
+                this.showMessage('链接已复制到剪贴板', 'success');
+                return;
             }
-            
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
             this.showMessage('链接已复制到剪贴板', 'success');
-            setTimeout(() => this.clearMessage(), 2000);
         } catch (error) {
             this.showMessage('复制失败，请手动复制', 'error');
         }
     }
     
-    // 显示消息
+    // 显示消息（改为非阻塞Toast，无需确认按钮）
     showMessage(message, type = 'info') {
-        const messageEl = document.getElementById('message');
-        messageEl.textContent = message;
-        messageEl.className = type;
+        if (type === 'loading') return; // 避免频繁弹出
+        this.showToast(message, type, 2000);
     }
     
-    // 清除消息
-    clearMessage() {
-        const messageEl = document.getElementById('message');
-        messageEl.textContent = '';
-        messageEl.className = '';
+    // 清除消息（不再使用 DOM 区域）
+    clearMessage() { /* noop */ }
+
+    // 创建或获取 Toast 容器
+    ensureToastContainer() {
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            container.style.position = 'fixed';
+            container.style.top = '16px';
+            container.style.right = '16px';
+            container.style.zIndex = '9999';
+            container.style.display = 'flex';
+            container.style.flexDirection = 'column';
+            container.style.gap = '10px';
+            container.style.pointerEvents = 'none';
+            document.body.appendChild(container);
+        }
+        return container;
+    }
+
+    // 显示一个自动消失的 Toast
+    showToast(message, type = 'info', duration = 2000) {
+        const container = this.ensureToastContainer();
+        const toast = document.createElement('div');
+        toast.textContent = message;
+        toast.style.pointerEvents = 'none';
+        toast.style.padding = '10px 14px';
+        toast.style.borderRadius = '6px';
+        toast.style.fontSize = '14px';
+        toast.style.color = '#fff';
+        toast.style.boxShadow = '0 6px 20px rgba(0,0,0,0.2)';
+        toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(-6px)';
+
+        // 颜色方案
+        let bg = 'rgba(0,0,0,0.8)';
+        if (type === 'success') bg = 'rgba(16, 185, 129, 0.95)';
+        else if (type === 'error') bg = 'rgba(239, 68, 68, 0.95)';
+        else if (type === 'info') bg = 'rgba(59, 130, 246, 0.95)';
+        toast.style.background = bg;
+
+        container.appendChild(toast);
+        // 进入动画
+        requestAnimationFrame(() => {
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateY(0)';
+        });
+        // 自动移除
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(-6px)';
+            setTimeout(() => {
+                try { container.removeChild(toast); } catch {}
+            }, 300);
+        }, Math.max(1000, duration));
     }
 }
 

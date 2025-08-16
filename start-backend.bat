@@ -17,7 +17,7 @@ set "SMTP_HOST=smtp.gmail.com"
 set "SMTP_PORT=465"
 set "SMTP_SECURE=true"
 set "SMTP_USER=wangcong95278@gmail.com"
-set "SMTP_PASS=wbmgkhtcajihyuhe"
+set "SMTP_PASS="
 set "SMTP_FROM=Subtitle Dog <wangcong95278@gmail.com>"
 echo SMTP configured for %SMTP_HOST%:%SMTP_PORT%
 
