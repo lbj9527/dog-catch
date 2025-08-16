@@ -11,13 +11,13 @@ class VideoPlayer {
         this.subtitleUrl = '';
         this.subtitleVariants = [];
         this.currentSubtitleId = '';
-        this.userToken = localStorage.getItem('user_token') || '';
+        this.userToken = (sessionStorage.getItem('user_token') || localStorage.getItem('user_token') || '');
         
         this.init();
     }
     
     // 初始化播放器
-    init() {
+    async init() {
         // 解析URL参数
         const params = this.parseUrlParams();
         if (!params.src) {
@@ -36,6 +36,8 @@ class VideoPlayer {
         // 设置按钮事件
         this.setupControls();
         this.setupAuthUi();
+        // 先校验 token，确保 UI 与权限同步
+        await this.verifyTokenAndSyncUI();
         this.refreshAuthUi();
         
         // 初始化Video.js播放器
@@ -59,6 +61,33 @@ class VideoPlayer {
     }
     
     isLoggedIn() { return !!this.userToken; }
+
+    async accountExists(identifier) {
+        try {
+            const r = await fetch(`${API_BASE_URL}/api/user/exist`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ identifier })
+            });
+            const j = await r.json();
+            if (!r.ok) throw new Error(j.error || '检查失败');
+            return !!j.exists;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // 新增：运行时校验当前 token 是否有效
+    async verifyTokenAndSyncUI() {
+        if (!this.isLoggedIn()) return;
+        try {
+            const r = await fetch(`${API_BASE_URL}/api/user/verify`, { headers: { Authorization: `Bearer ${this.userToken}` } });
+            if (!r.ok) throw new Error('unauthorized');
+        } catch (_) {
+            this.doLogout();
+            this.showMessage('登录已过期，请重新登录', 'error');
+        }
+    }
 
     // 解析URL参数
     parseUrlParams() {
@@ -200,6 +229,11 @@ class VideoPlayer {
             const email = (regEmail.value || '').trim();
             if (!email) return this.showMessage('请输入邮箱', 'error');
             try {
+                const exists = await this.accountExists(email);
+                if (exists) {
+                    this.showMessage('该邮箱已注册，请直接登录', 'error');
+                    return;
+                }
                 const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, purpose:'register' }) });
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || '发送失败');
@@ -216,6 +250,10 @@ class VideoPlayer {
             if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { if (regError) regError.textContent = '邮箱格式不正确'; return; }
             if (password.length < 6) { if (regError) regError.textContent = '密码长度至少6位'; return; }
             try {
+                const [emailExists, usernameExists] = await Promise.all([this.accountExists(email), this.accountExists(username)]);
+                if (emailExists) { if (regError) regError.textContent = '该邮箱已注册，请直接登录'; return; }
+                if (usernameExists) { if (regError) regError.textContent = '该昵称已被占用，请更换'; return; }
+
                 const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, purpose:'register' }) });
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || '验证码发送失败');
@@ -366,9 +404,11 @@ class VideoPlayer {
     }
 
     doLogout() {
+        try { sessionStorage.removeItem('user_token'); } catch {}
         localStorage.removeItem('user_token');
         this.userToken = '';
         this.disableSubtitleUi('登录后可用');
+        this.refreshAuthUi();
         this.showMessage('已退出登录');
     }
 
@@ -620,6 +660,11 @@ class VideoPlayer {
             const baseId = this.extractBaseId(this.currentVideoId);
             const headers = this.isLoggedIn() ? { Authorization: `Bearer ${this.userToken}` } : undefined;
             const resp = await fetch(`${API_BASE_URL}/api/subtitles/variants/${encodeURIComponent(baseId)}`, { headers });
+            if (resp.status === 401) {
+                this.doLogout();
+                this.showMessage('登录已过期，请重新登录', 'error');
+                return;
+            }
             if (!resp.ok) {
                 // 回退为按当前 videoId 加载单一字幕
                 await this.loadSubtitleByVideoId(this.currentVideoId);
@@ -687,6 +732,11 @@ class VideoPlayer {
         try {
             const headers = this.isLoggedIn() ? { Authorization: `Bearer ${this.userToken}` } : undefined;
             const response = await fetch(`${API_BASE_URL}/api/subtitle/${encodeURIComponent(videoId)}`, { headers });
+            if (response.status === 401) {
+                this.doLogout();
+                this.showMessage('登录已过期，请重新登录', 'error');
+                return;
+            }
             if (response.ok) {
                 const subtitleText = await response.text();
                 const vttContent = this.convertSRTtoVTT(subtitleText);

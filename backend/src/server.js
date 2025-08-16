@@ -113,14 +113,50 @@ function authenticateAdminToken(req, res, next) {
 function authenticateUserToken(req, res, next) {
     const { payload, error } = verifyJwtFromHeader(req);
     if (error) return res.status(401).json({ error });
-    if (payload && payload.role === 'user') { req.user = payload; return next(); }
+    if (payload && payload.role === 'user') {
+        // 严格校验：用户必须存在且处于 active 状态
+        getAsync('SELECT id, status FROM users WHERE id = ?', [payload.id])
+            .then(row => {
+                if (!row) return res.status(401).json({ error: '用户不存在或已被删除' });
+                if (String(row.status || '').toLowerCase() !== 'active') {
+                    return res.status(403).json({ error: '用户状态不可用' });
+                }
+                req.user = payload;
+                return next();
+            })
+            .catch(err => {
+                console.error('鉴权查询用户失败:', err);
+                return res.status(500).json({ error: '鉴权失败' });
+            });
+        return; // 防止继续向下执行
+    }
     return res.status(403).json({ error: '没有用户权限' });
 }
 
 function authenticateAnyToken(req, res, next) {
     const { payload, error } = verifyJwtFromHeader(req);
     if (error) return res.status(401).json({ error });
-    if (payload && (payload.role === 'user' || payload.role === 'admin')) { req.user = payload; return next(); }
+    if (payload && (payload.role === 'user' || payload.role === 'admin')) {
+        if (payload.role === 'admin') {
+            req.user = payload;
+            return next();
+        }
+        // user 角色需严格校验用户存在性与状态
+        getAsync('SELECT id, status FROM users WHERE id = ?', [payload.id])
+            .then(row => {
+                if (!row) return res.status(401).json({ error: '用户不存在或已被删除' });
+                if (String(row.status || '').toLowerCase() !== 'active') {
+                    return res.status(403).json({ error: '用户状态不可用' });
+                }
+                req.user = payload;
+                return next();
+            })
+            .catch(err => {
+                console.error('鉴权查询用户失败:', err);
+                return res.status(500).json({ error: '鉴权失败' });
+            });
+        return;
+    }
     return res.status(403).json({ error: '无权限' });
 }
 
