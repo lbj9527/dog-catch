@@ -533,8 +533,8 @@ app.use(cors({
         if (allowedOrigins.has(origin)) return cb(null, true);
         return cb(new Error('Not allowed by CORS'));
     },
-    methods: ['GET','HEAD','PUT','PATCH','POST','DELETE'],
-    allowedHeaders: ['Content-Type','Authorization','Range'],
+    methods: ['GET','HEAD','PUT','PATCH','POST','DELETE','OPTIONS'],
+    allowedHeaders: ['Content-Type','Authorization','Range','x-captcha-token','x-require-captcha'],
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -660,7 +660,8 @@ app.post('/api/user/register', requireCaptchaIfFlagged, async (req, res) => {
     try {
         const { username, email, password, code } = req.body || {};
         const ip = req.ip || req.connection?.remoteAddress || 'unknown';
-        if (!rlIpLogin10m(ip)) { await markCaptchaRequired('ip', ip); if (email) await markCaptchaRequired('email', String(email).toLowerCase()); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        const passIp = await allowLoginIp10m(ip);
+        if (!passIp) { await markCaptchaRequired('ip', ip); if (email) await markCaptchaRequired('email', String(email).toLowerCase()); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
         if (!username || !email || !password || !code) return res.status(400).json({ error: '缺少必要参数' });
         const u = await getAsync('SELECT id FROM users WHERE lower(username)=lower(?)', [username]);
         if (u) return res.status(409).json({ error: '用户名已被占用' });
@@ -682,8 +683,10 @@ app.post('/api/user/login/password', requireCaptchaIfFlagged, async (req, res) =
         const { email, password } = req.body || {};
         const ip = req.ip || req.connection?.remoteAddress || 'unknown';
         const userKey = String(email || '').toLowerCase();
-        if (!rlIpLogin10m(ip)) { await markCaptchaRequired('ip', ip); if (email) await markCaptchaRequired('email', String(email).toLowerCase()); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
-        if (!rlUserLogin10m(userKey)) { await markCaptchaRequired('email', userKey); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        const passIpLogin = await allowLoginIp10m(ip);
+        if (!passIpLogin) { await markCaptchaRequired('ip', ip); if (email) await markCaptchaRequired('email', String(email).toLowerCase()); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        const passUserLogin = await allowLoginUser10m(userKey);
+        if (!passUserLogin) { await markCaptchaRequired('email', userKey); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
         if (!email || !password) return res.status(400).json({ error: '缺少必要参数' });
         const user = await getAsync('SELECT * FROM users WHERE lower(email)=lower(?)', [email]);
         if (!user || !user.password_hash || !bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: '邮箱或密码错误' });

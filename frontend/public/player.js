@@ -296,6 +296,25 @@ class VideoPlayer {
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || '验证码发送失败');
                 this.showMessage('验证码已发送');
+                // 与点击“获取验证码”一致：自动开始倒计时（本地实现，避免依赖稍后定义的函数表达式）
+                if (btnSendRegCode) {
+                    const i18n = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.I18N) || {};
+                    const renderSent = typeof i18n.sentWithCountdown === 'function' ? i18n.sentWithCountdown : (s)=>`已发送(${s}s)`;
+                    const renderResend = i18n.resendAfter || '重新发送';
+                    let remain = 60;
+                    btnSendRegCode.disabled = true;
+                    btnSendRegCode.textContent = renderSent(remain);
+                    const t = setInterval(() => {
+                        remain -= 1;
+                        if (remain <= 0) {
+                            clearInterval(t);
+                            btnSendRegCode.disabled = false;
+                            btnSendRegCode.textContent = renderResend;
+                            return;
+                        }
+                        btnSendRegCode.textContent = renderSent(remain);
+                    }, 1000);
+                }
                 // 显示 Step2
                 regCodeRow.style.display = '';
                 regStep1Buttons.style.display = 'none';
@@ -474,7 +493,9 @@ class VideoPlayer {
             }
         } catch {}
 
-        this.player = videojs('videoPlayer', {
+        const el = document.getElementById('videoPlayer');
+        if (!el) { console.error('video element not found'); return; }
+        this.player = videojs(el, {
             controls: true,
             fluid: true,
             responsive: true,
