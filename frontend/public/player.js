@@ -401,12 +401,14 @@ class VideoPlayer {
             subtitleBtn.disabled = true;
             subtitleBtn.textContent = '显示字幕';
         }
+        this.removeAllSubtitleTracks(tip);
     }
 
     doLogout() {
         try { sessionStorage.removeItem('user_token'); } catch {}
         localStorage.removeItem('user_token');
         this.userToken = '';
+        this.removeAllSubtitleTracks('登录后可用');
         this.disableSubtitleUi('登录后可用');
         this.refreshAuthUi();
         this.showMessage('已退出登录');
@@ -713,6 +715,7 @@ class VideoPlayer {
             select.appendChild(option);
         });
         select.style.display = 'inline-block';
+        select.disabled = false;
     }
 
     async switchSubtitleVariant(videoId) {
@@ -788,6 +791,42 @@ class VideoPlayer {
                 }
             }
         } catch {}
+    }
+
+    // 新增：移除所有字幕轨道并重置相关状态与UI
+    removeAllSubtitleTracks(tip) {
+        try {
+            if (this.player && this.player.textTracks) {
+                const tracks = Array.from(this.player.textTracks());
+                tracks.forEach(t => {
+                    if (t.kind === 'subtitles') {
+                        try { t.mode = 'disabled'; } catch {}
+                        try { this.player.removeRemoteTextTrack(t); } catch {}
+                    }
+                });
+            }
+        } catch {}
+        try {
+            if (this.subtitleUrl) {
+                URL.revokeObjectURL(this.subtitleUrl);
+                this.subtitleUrl = '';
+            }
+        } catch {}
+        this.currentSubtitleId = '';
+        this.subtitleVariants = [];
+        // 重置UI
+        const subtitleBtn = document.getElementById('subtitleToggle');
+        if (subtitleBtn) { subtitleBtn.disabled = true; subtitleBtn.textContent = '显示字幕'; }
+        const select = document.getElementById('subtitleSelect');
+        if (select) {
+            select.style.display = 'inline-block';
+            select.innerHTML = '';
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = tip || '登录后可用';
+            select.appendChild(opt);
+            select.disabled = true;
+        }
     }
 
     // 释放资源，防止重复实例与内存泄漏
