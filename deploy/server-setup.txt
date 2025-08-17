@@ -1,0 +1,102 @@
+# 一次性上线命令清单（Ubuntu/Debian）
+# 如果你已安装过某些组件，可按需跳过
+
+# 1) 基础包、Node.js 18、PM2、Nginx
+sudo apt update && sudo apt install -y curl git unzip ca-certificates gnupg nginx
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+sudo npm i -g pm2
+
+# 2) 目录结构
+sudo mkdir -p /opt/dog-catch/backend /opt/dog-catch/frontend-dist /opt/dog-catch/admin-dist
+sudo mkdir -p /var/log/pm2
+
+# 3) 上传代码/构建产物
+# - 将本地 backend 目录上传到 /opt/dog-catch/backend
+# - 将本地 frontend/public 下的所有文件上传到 /opt/dog-catch/frontend-dist
+# - 在本地 admin 目录执行：npm ci && npm run build，构建后 dist 上传到 /opt/dog-catch/admin-dist
+
+# 4) 后端依赖安装
+cd /opt/dog-catch/backend
+sudo npm ci
+
+# 5) 创建 PM2 配置并启动
+sudo tee /opt/dog-catch/pm2-ecosystem.config.js >/dev/null <<'EOF'
+module.exports = {
+  apps: [
+    {
+      name: 'dog-catch-backend',
+      script: 'src/server.js',
+      cwd: '/opt/dog-catch/backend',
+      instances: 1,
+      exec_mode: 'fork',
+      env: {
+        NODE_ENV: 'production',
+        PORT: 8000,
+        JWT_SECRET: 'CHANGE_ME_TO_A_SECURE_RANDOM_STRING',
+        CORS_ORIGINS: 'https://player.sub-dog.top,https://admin.sub-dog.top'
+      },
+      out_file: '/var/log/pm2/dog-catch-backend-out.log',
+      error_file: '/var/log/pm2/dog-catch-backend-error.log',
+      max_memory_restart: '300M',
+      watch: false
+    }
+  ]
+};
+EOF
+
+# 启动 PM2 并保存
+pm2 start /opt/dog-catch/pm2-ecosystem.config.js
+pm2 save
+pm2 status
+
+# 6) Nginx 站点配置
+sudo tee /etc/nginx/sites-available/sub-dog.top >/dev/null <<'EOF'
+$(cat <<'NGINX'
+# API
+server { listen 80; server_name api.sub-dog.top; return 301 https://$server_name$request_uri; }
+server {
+  listen 443 ssl http2; server_name api.sub-dog.top;
+  ssl_certificate /root/cert/sub-dog.top.cer;
+  ssl_certificate_key /root/cert/sub-dog.top.key;
+  ssl_protocols TLSv1.2 TLSv1.3; ssl_prefer_server_ciphers on;
+  location / {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+# Player
+server { listen 80; server_name player.sub-dog.top; return 301 https://$server_name$request_uri; }
+server {
+  listen 443 ssl http2; server_name player.sub-dog.top;
+  ssl_certificate /root/cert/sub-dog.top.cer;
+  ssl_certificate_key /root/cert/sub-dog.top.key;
+  root /opt/dog-catch/frontend-dist; index index.html;
+  location / { try_files $uri $uri/ /index.html; }
+}
+# Admin
+server { listen 80; server_name admin.sub-dog.top; return 301 https://$server_name$request_uri; }
+server {
+  listen 443 ssl http2; server_name admin.sub-dog.top;
+  ssl_certificate /root/cert/sub-dog.top.cer;
+  ssl_certificate_key /root/cert/sub-dog.top.key;
+  root /opt/dog-catch/admin-dist; index index.html;
+  location / { try_files $uri $uri/ /index.html; }
+}
+NGINX
+)
+EOF
+
+sudo ln -sf /etc/nginx/sites-available/sub-dog.top /etc/nginx/sites-enabled/sub-dog.top
+sudo nginx -t && sudo systemctl reload nginx
+
+# 7) 自检
+curl -I http://api.sub-dog.top
+curl -I https://api.sub-dog.top
+curl -I https://player.sub-dog.top
+curl -I https://admin.sub-dog.top
+
+# 如果启用了 UFW，确保放行 80/443（可选）
+# sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw reload
