@@ -11,88 +11,42 @@ sudo npm i -g pm2
 sudo mkdir -p /opt/dog-catch/backend /opt/dog-catch/frontend-dist /opt/dog-catch/admin-dist
 sudo mkdir -p /var/log/pm2
 
-# 3) 上传代码/构建产物
-# - 将本地 backend 目录上传到 /opt/dog-catch/backend
-# - 将本地 frontend/public 下的所有文件上传到 /opt/dog-catch/frontend-dist
-# - 在本地 admin 目录执行：npm ci && npm run build，构建后 dist 上传到 /opt/dog-catch/admin-dist
+# 3) 服务器端构建与发布（已在服务器克隆源码）
+# 后端：无需上传，直接使用 /opt/dog-catch/backend
+# 前台：将 /opt/dog-catch/frontend/public 下的文件发布到 /opt/dog-catch/frontend-dist（请确认 config.js 中 API_BASE_URL=https://api.sub-dog.top）
+sudo rsync -av --delete /opt/dog-catch/frontend/public/ /opt/dog-catch/frontend-dist/
+# 管理后台：在服务器构建并发布
+cd /opt/dog-catch/admin
+npm ci
+npm run build
+sudo rsync -av --delete /opt/dog-catch/admin/dist/ /opt/dog-catch/admin-dist/
 
 # 4) 后端依赖安装
 cd /opt/dog-catch/backend
 sudo npm ci
 
-# 5) 创建 PM2 配置并启动
-sudo tee /opt/dog-catch/pm2-ecosystem.config.js >/dev/null <<'EOF'
-module.exports = {
-  apps: [
-    {
-      name: 'dog-catch-backend',
-      script: 'src/server.js',
-      cwd: '/opt/dog-catch/backend',
-      instances: 1,
-      exec_mode: 'fork',
-      env: {
-        NODE_ENV: 'production',
-        PORT: 8000,
-        JWT_SECRET: 'CHANGE_ME_TO_A_SECURE_RANDOM_STRING',
-        CORS_ORIGINS: 'https://player.sub-dog.top,https://admin.sub-dog.top'
-      },
-      out_file: '/var/log/pm2/dog-catch-backend-out.log',
-      error_file: '/var/log/pm2/dog-catch-backend-error.log',
-      max_memory_restart: '300M',
-      watch: false
-    }
-  ]
-};
-EOF
+# 5) 设置环境变量（必须）
+# 5.1) Linux 服务器（推荐）
+# 请在当前 Shell 会话中加载环境变量，使 PM2 读取到这些值。
+# 注意：必须使用 source 以便变量在当前会话生效。
+source /opt/dog-catch/deploy/set-env.sh
+# 如需在后续更新环境变量后让 PM2 使用新值，可执行：
+# pm2 restart dog-catch-backend --update-env
 
-# 启动 PM2 并保存
+# 6) PM2 配置与启动
+# 使用仓库中的 PM2 配置文件（deploy/pm2-ecosystem.config.js），其中 env 字段会优先读取上一步设置的环境变量。
+sudo cp -f /opt/dog-catch/deploy/pm2-ecosystem.config.js /opt/dog-catch/pm2-ecosystem.config.js
 pm2 start /opt/dog-catch/pm2-ecosystem.config.js
 pm2 save
 pm2 status
 
-# 6) Nginx 站点配置
-sudo tee /etc/nginx/sites-available/sub-dog.top >/dev/null <<'EOF'
-$(cat <<'NGINX'
-# API
-server { listen 80; server_name api.sub-dog.top; return 301 https://$server_name$request_uri; }
-server {
-  listen 443 ssl http2; server_name api.sub-dog.top;
-  ssl_certificate /root/cert/sub-dog.top.cer;
-  ssl_certificate_key /root/cert/sub-dog.top.key;
-  ssl_protocols TLSv1.2 TLSv1.3; ssl_prefer_server_ciphers on;
-  location / {
-    proxy_pass http://127.0.0.1:8000;
-    proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-  }
-}
-# Player
-server { listen 80; server_name player.sub-dog.top; return 301 https://$server_name$request_uri; }
-server {
-  listen 443 ssl http2; server_name player.sub-dog.top;
-  ssl_certificate /root/cert/sub-dog.top.cer;
-  ssl_certificate_key /root/cert/sub-dog.top.key;
-  root /opt/dog-catch/frontend-dist; index index.html;
-  location / { try_files $uri $uri/ /index.html; }
-}
-# Admin
-server { listen 80; server_name admin.sub-dog.top; return 301 https://$server_name$request_uri; }
-server {
-  listen 443 ssl http2; server_name admin.sub-dog.top;
-  ssl_certificate /root/cert/sub-dog.top.cer;
-  ssl_certificate_key /root/cert/sub-dog.top.key;
-  root /opt/dog-catch/admin-dist; index index.html;
-  location / { try_files $uri $uri/ /index.html; }
-}
-NGINX
-)
-EOF
-
+# 7) Nginx 站点配置（使用 deploy/nginx-sites.conf）
+# 请确保 /root/cert/ 下的证书文件路径与 nginx-sites.conf 中保持一致。
+sudo cp -f /opt/dog-catch/deploy/nginx-sites.conf /etc/nginx/sites-available/sub-dog.top
 sudo ln -sf /etc/nginx/sites-available/sub-dog.top /etc/nginx/sites-enabled/sub-dog.top
 sudo nginx -t && sudo systemctl reload nginx
 
-# 7) 自检
+# 8) 自检
 curl -I http://api.sub-dog.top
 curl -I https://api.sub-dog.top
 curl -I https://player.sub-dog.top

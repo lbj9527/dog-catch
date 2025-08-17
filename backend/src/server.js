@@ -40,6 +40,10 @@ if (SOCKS_PROXY_URL) {
 }
 
 const app = express();
+
+// 信任反向代理，确保能正确获取客户端协议（HTTPS）
+app.set('trust proxy', true);
+
 const PORT = process.env.PORT || 8000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
@@ -1562,4 +1566,4 @@ process.on('SIGINT', () => {
         }
         process.exit(0);
     });
-}); 
+});
