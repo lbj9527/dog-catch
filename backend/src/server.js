@@ -891,7 +891,19 @@ app.get('/api/hls', async (req, res) => {
             try {
                 // 强制按utf-8解析文本m3u8
                 const raw = Buffer.concat(chunks).toString('utf8');
-                const rewritten = rewriteM3U8(raw, targetUrl, `${req.protocol}://${req.get('host')}`);
+                // 计算代理源，优先 X-Forwarded-Proto/Host，避免HTTPS场景被降级为http
+                const fProtoHdr = (req.headers['x-forwarded-proto'] || '').toString();
+                const forwardedProto = fProtoHdr.split(',')[0].trim().toLowerCase();
+                const fHostHdr = (req.headers['x-forwarded-host'] || '').toString();
+                const forwardedHost = fHostHdr.split(',')[0].trim();
+                const host = forwardedHost || req.get('host');
+                const scheme = forwardedProto
+                    ? (forwardedProto === 'https' ? 'https' : 'http')
+                    : (req.secure ? 'https' : (req.protocol === 'https' ? 'https' : 'http'));
+                const proxyOrigin = `${scheme}://${host}`;
+
+                const rewritten = rewriteM3U8(raw, targetUrl, proxyOrigin);
+                safeSet('Cache-Control', 'no-store');
                 safeSend(rewritten);
             } catch (e) {
                 console.error('改写m3u8失败:', e);
