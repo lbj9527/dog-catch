@@ -935,6 +935,10 @@ function rewriteM3U8(content, baseUrl, proxyOrigin) {
     const lines = content.split(/\r?\n/);
     const out = [];
 
+    // 当前代理主机名，用于识别并解包已经被代理过的URL，避免二次包裹
+    let proxyHost = '';
+    try { proxyHost = new URL(proxyOrigin).host; } catch { proxyHost = ''; }
+
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
         const trimmed = line.trim();
@@ -949,7 +953,16 @@ function rewriteM3U8(content, baseUrl, proxyOrigin) {
             if (/^#EXT-X-/.test(trimmed) && /URI="[^"]+"/i.test(trimmed)) {
                 line = line.replace(/URI="([^"]+)"/gi, (m, g1) => {
                     try {
-                        const abs = new URL(g1, baseUrl).href;
+                        // 防止嵌套代理：如果已经是本服务的 /api/hls?url=... 则先解包
+                        let target = g1;
+                        try {
+                            const u = new URL(g1, baseUrl);
+                            if (u.pathname === '/api/hls' && u.searchParams.has('url') && (!proxyHost || u.host === proxyHost)) {
+                                target = u.searchParams.get('url') || g1;
+                            }
+                        } catch { /* ignore */ }
+
+                        const abs = new URL(target, baseUrl).href;
                         const proxied = `${proxyOrigin}/api/hls?url=${encodeURIComponent(abs)}`;
                         return `URI="${proxied}"`;
                     } catch {
@@ -963,7 +976,16 @@ function rewriteM3U8(content, baseUrl, proxyOrigin) {
 
         // 非注释：资源URI（分片或子清单）
         try {
-            const absolute = new URL(trimmed, baseUrl).href;
+            // 防止嵌套代理：如果已经是本服务的 /api/hls?url=... 则先解包
+            let target = trimmed;
+            try {
+                const u = new URL(trimmed, baseUrl);
+                if (u.pathname === '/api/hls' && u.searchParams.has('url') && (!proxyHost || u.host === proxyHost)) {
+                    target = u.searchParams.get('url') || trimmed;
+                }
+            } catch { /* ignore */ }
+
+            const absolute = new URL(target, baseUrl).href;
             const proxied = `${proxyOrigin}/api/hls?url=${encodeURIComponent(absolute)}`;
             out.push(proxied);
         } catch {
