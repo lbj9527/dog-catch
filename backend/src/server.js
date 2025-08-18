@@ -527,14 +527,27 @@ db.serialize(() => {
 // 中间件
 // 安全响应头
 app.use(helmet());
-// CORS 白名单（默认放行本地开发域名）
-const defaultCors = ['http://localhost:3000', 'http://localhost:3001'];
+// CORS 白名单（默认放行本地开发域名和生产环境）
+const defaultCors = [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://player.sub-dog.top',
+    'https://api.sub-dog.top'
+];
 const corsList = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 const allowedOrigins = new Set((corsList.length ? corsList : defaultCors));
 app.use(cors({
     origin(origin, cb) {
-        if (!origin) return cb(null, true);
+        if (!origin) return cb(null, true); // 允许无 Origin（如本地文件、某些应用内 WebView）
         if (allowedOrigins.has(origin)) return cb(null, true);
+        // 允许 *.sub-dog.top 通配（手动判断）
+        try {
+            const url = new URL(origin);
+            const host = url.hostname;
+            if (host.endsWith('.sub-dog.top') || host === 'sub-dog.top') {
+                return cb(null, true);
+            }
+        } catch {}
         return cb(new Error('Not allowed by CORS'));
     },
     methods: ['GET','HEAD','PUT','PATCH','POST','DELETE','OPTIONS'],
