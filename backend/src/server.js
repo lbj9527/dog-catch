@@ -939,6 +939,34 @@ function rewriteM3U8(content, baseUrl, proxyOrigin) {
     let proxyHost = '';
     try { proxyHost = new URL(proxyOrigin).host; } catch { proxyHost = ''; }
 
+    // 递归解包已代理的URL，确保获得原始URL
+    function recursivelyUnwrapProxiedUrl(url) {
+        let current = url;
+        let maxDepth = 10; // 防止无限循环
+        
+        while (maxDepth-- > 0) {
+            try {
+                const u = new URL(current);
+                // 检查是否为我们的代理URL
+                if (u.pathname === '/api/hls' && u.searchParams.has('url')) {
+                    // 如果有proxyHost限制，检查host匹配；否则只要路径和参数匹配就解包
+                    if (!proxyHost || u.host === proxyHost) {
+                        const innerUrl = decodeURIComponent(u.searchParams.get('url') || '');
+                        if (innerUrl && innerUrl !== current) {
+                            current = innerUrl;
+                            continue; // 继续解包
+                        }
+                    }
+                }
+                break; // 不是代理URL或无法再解包，退出循环
+            } catch {
+                break; // URL解析失败，退出循环
+            }
+        }
+        
+        return current;
+    }
+
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
         const trimmed = line.trim();
@@ -953,15 +981,8 @@ function rewriteM3U8(content, baseUrl, proxyOrigin) {
             if (/^#EXT-X-/.test(trimmed) && /URI="[^"]+"/i.test(trimmed)) {
                 line = line.replace(/URI="([^"]+)"/gi, (m, g1) => {
                     try {
-                        // 防止嵌套代理：如果已经是本服务的 /api/hls?url=... 则先解包
-                        let target = g1;
-                        try {
-                            const u = new URL(g1, baseUrl);
-                            if (u.pathname === '/api/hls' && u.searchParams.has('url') && (!proxyHost || u.host === proxyHost)) {
-                                target = u.searchParams.get('url') || g1;
-                            }
-                        } catch { /* ignore */ }
-
+                        // 递归解包嵌套代理URL
+                        const target = recursivelyUnwrapProxiedUrl(g1);
                         const abs = new URL(target, baseUrl).href;
                         const proxied = `${proxyOrigin}/api/hls?url=${encodeURIComponent(abs)}`;
                         return `URI="${proxied}"`;
@@ -976,15 +997,8 @@ function rewriteM3U8(content, baseUrl, proxyOrigin) {
 
         // 非注释：资源URI（分片或子清单）
         try {
-            // 防止嵌套代理：如果已经是本服务的 /api/hls?url=... 则先解包
-            let target = trimmed;
-            try {
-                const u = new URL(trimmed, baseUrl);
-                if (u.pathname === '/api/hls' && u.searchParams.has('url') && (!proxyHost || u.host === proxyHost)) {
-                    target = u.searchParams.get('url') || trimmed;
-                }
-            } catch { /* ignore */ }
-
+            // 递归解包嵌套代理URL
+            const target = recursivelyUnwrapProxiedUrl(trimmed);
             const absolute = new URL(target, baseUrl).href;
             const proxied = `${proxyOrigin}/api/hls?url=${encodeURIComponent(absolute)}`;
             out.push(proxied);
