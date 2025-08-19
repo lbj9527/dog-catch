@@ -254,13 +254,19 @@ class VideoPlayer {
         // 登录弹窗
         loginClose.onclick = () => { loginModal.style.display='none'; if (loginError) loginError.textContent=''; };
         btnDoLogin.onclick = async () => {
-            // 开启加载状态：禁用按钮与输入框，按钮显示请稍后
+            // 立即开启加载状态：禁用按钮与输入框，按钮显示请稍后
             this.setFormLoading('#loginModal .form', true, '请稍后…');
+            
             try {
                 const email = (loginEmail.value || '').trim();
                 const password = loginPassword.value;
                 const remember = !!document.getElementById('loginRemember')?.checked;
-                if (!email || !password) throw new Error('请输入邮箱和密码');
+                
+                // 前端校验（在加载状态开启后）
+                if (!email || !password) {
+                    throw new Error('请输入邮箱和密码');
+                }
+                
                 const token = await this.getCaptchaTokenIfAvailable();
                 const headers = { 'Content-Type':'application/json' };
                 if (token) headers['x-captcha-token'] = token;
