@@ -642,7 +642,7 @@ class VideoPlayer {
             playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2],
             html5: {
                 vhs: {
-                    overrideNative: false,
+                    overrideNative: true,
                     // 调优以提升seek恢复速度
                     // 目标缓冲时长（秒），缩短到更快达成可播放状态
                     targetDuration: 10,
