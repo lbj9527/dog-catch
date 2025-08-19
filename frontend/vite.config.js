@@ -8,6 +8,7 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,
+    sourcemap: true,
     rollupOptions: {
       // 保持 config.js 作为外部运行时文件：通过将其视为静态资源复制，而非打包依赖
       // 我们会直接在 index.html 中以普通 <script src="./config.js"> 引用它
