@@ -119,6 +119,42 @@ class VideoPlayer {
         }
     }
 
+    // 按钮加载状态管理
+    setButtonLoading(buttonEl, on, text = '请稍后…') {
+        if (!buttonEl) return;
+        if (on) {
+            if (!buttonEl.dataset.originalText) buttonEl.dataset.originalText = buttonEl.textContent || '';
+            buttonEl.textContent = text;
+            buttonEl.disabled = true;
+            buttonEl.classList.add('btn-loading');
+        } else {
+            buttonEl.disabled = false;
+            buttonEl.classList.remove('btn-loading');
+            const orig = buttonEl.dataset.originalText;
+            if (typeof orig !== 'undefined') { 
+                buttonEl.textContent = orig; 
+                delete buttonEl.dataset.originalText; 
+            }
+        }
+    }
+
+    // 表单加载状态管理（同时控制按钮和输入框）
+    setFormLoading(formSelector, on, buttonText = '请稍后…') {
+        const form = document.querySelector(formSelector);
+        if (!form) return;
+        
+        const inputs = form.querySelectorAll('input[type="email"], input[type="password"], input[type="text"]');
+        const buttons = form.querySelectorAll('button');
+        
+        inputs.forEach(input => {
+            input.disabled = on;
+        });
+        
+        buttons.forEach(button => {
+            this.setButtonLoading(button, on, buttonText);
+        });
+    }
+
     // 解析URL参数
     parseUrlParams() {
         const urlParams = new URLSearchParams(window.location.search);
@@ -218,6 +254,8 @@ class VideoPlayer {
         // 登录弹窗
         loginClose.onclick = () => { loginModal.style.display='none'; if (loginError) loginError.textContent=''; };
         btnDoLogin.onclick = async () => {
+            // 开启加载状态：禁用按钮与输入框，按钮显示请稍后
+            this.setFormLoading('#loginModal .form', true, '请稍后…');
             try {
                 const email = (loginEmail.value || '').trim();
                 const password = loginPassword.value;
@@ -248,6 +286,9 @@ class VideoPlayer {
                 const msg = e && e.message ? e.message : '登录失败';
                 if (loginError) loginError.textContent = msg;
                 this.showMessage(msg, 'error');
+            } finally {
+                // 恢复表单状态
+                this.setFormLoading('#loginModal .form', false);
             }
         };
         gotoRegister.onclick = () => { loginModal.style.display='none'; if (loginError) loginError.textContent=''; regModal.style.display='flex'; };
