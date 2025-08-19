@@ -553,6 +553,8 @@ class VideoPlayer {
             const newPassword = (document.getElementById('resetPassword').value || '');
             if (!email || !code || !newPassword) { if (resetError) resetError.textContent = '请完整填写邮箱、验证码与新密码'; return; }
             if (newPassword.length < 6) { if (resetError) resetError.textContent = '新密码至少6位'; return; }
+            // 表单级加载态：在发起请求前启用，禁用表单并将按钮文案替换为“请稍后…”
+            this.setFormLoading('#resetModal .form', true, '请稍后…');
             try {
                 const token = await this.getCaptchaTokenIfAvailable();
                 const headers = { 'Content-Type':'application/json' };
@@ -567,6 +569,9 @@ class VideoPlayer {
                 try { loginPassword.value = ''; } catch {}
             } catch (e) {
                 if (resetError) resetError.textContent = e && e.message ? e.message : '重置失败';
+            } finally {
+                // 无论成功失败，恢复表单状态
+                this.setFormLoading('#resetModal .form', false);
             }
         };
     }
