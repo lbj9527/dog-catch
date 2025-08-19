@@ -3,6 +3,7 @@ const API_BASE_URL = new URLSearchParams(location.search).get('api') || (window.
 const REQUIRE_SUBTITLE_LOGIN = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.SUBTITLE_NEED_LOGIN) !== false;
 const ALLOW_PLAY_WITHOUT_LOGIN = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.ALLOW_PLAY_WITHOUT_LOGIN) !== false;
 const CAPTCHA_SITE_KEY = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.CAPTCHA_SITE_KEY) || '10000000-ffff-ffff-ffff-000000000001';
+const ENABLE_CAPTCHA = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.CAPTCHA_ENABLED) === true;
 class VideoPlayer {
     constructor() {
         this.player = null;
@@ -21,6 +22,7 @@ class VideoPlayer {
     // 初始化 hCaptcha（invisible）
     initCaptcha() {
         try {
+            if (!ENABLE_CAPTCHA) return;
             if (!window.hcaptcha) return;
             const container = document.getElementById('hcap') || (() => { const d=document.createElement('div'); d.id='hcap'; d.style.display='none'; document.body.appendChild(d); return d; })();
             if (this.hcaptchaWidgetId === null) {
@@ -31,6 +33,7 @@ class VideoPlayer {
 
     async getCaptchaTokenIfAvailable() {
         try {
+            if (!ENABLE_CAPTCHA) return '';
             if (!window.hcaptcha) return '';
             if (this.hcaptchaWidgetId === null) this.initCaptcha();
             if (typeof window.hcaptcha.execute !== 'function') return '';
