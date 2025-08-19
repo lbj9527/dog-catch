@@ -48,10 +48,23 @@ fi
 npm run build
 echo "✅ 管理后台构建完成"
 
-# 5. 静态文件同步
+# 5. 构建前台并同步静态文件
+echo "🏗️  构建前台播放器..."
+cd "$PROJECT_ROOT/frontend"
+if [ -f package-lock.json ]; then
+    npm ci
+else
+    npm install
+fi
+npm run build
+
 echo "📁 同步静态文件..."
-# 前台静态文件 (frontend/public -> frontend-dist)
-sudo rsync -av --delete "$PROJECT_ROOT/frontend/public/" "$PROJECT_ROOT/frontend-dist/"
+# 前台构建产物 (frontend/dist -> frontend-dist)
+sudo rsync -av --delete "$PROJECT_ROOT/frontend/dist/" "$PROJECT_ROOT/frontend-dist/"
+# 保留运行时配置：复制 config.js 到前端根目录
+if [ -f "$PROJECT_ROOT/frontend/public/config.js" ]; then
+    sudo cp -f "$PROJECT_ROOT/frontend/public/config.js" "$PROJECT_ROOT/frontend-dist/config.js"
+fi
 # 管理后台 (admin/dist -> admin-dist)
 sudo rsync -av --delete "$PROJECT_ROOT/admin/dist/" "$PROJECT_ROOT/admin-dist/"
 echo "✅ 静态文件同步完成"
