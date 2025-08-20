@@ -58,10 +58,9 @@ else
 fi
 npm run build
 
-echo "📁 同步静态文件..."
-# 前台构建产物 (frontend/dist -> frontend-dist)
+echo "📁 同步前台构建产物..."
 sudo rsync -av --delete "$PROJECT_ROOT/frontend/dist/" "$PROJECT_ROOT/frontend-dist/"
-# 保留运行时配置：复制 config.js 到前端根目录
+# 如需覆盖运行时配置，可保留 config.js（按需启用）
 if [ -f "$PROJECT_ROOT/frontend/public/config.js" ]; then
     sudo cp -f "$PROJECT_ROOT/frontend/public/config.js" "$PROJECT_ROOT/frontend-dist/config.js"
 fi

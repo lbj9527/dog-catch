@@ -13,8 +13,11 @@ sudo mkdir -p /var/log/pm2
 
 # 3) 服务器端构建与发布（已在服务器克隆源码）
 # 后端：无需上传，直接使用 /opt/dog-catch/backend
-# 前台：将 /opt/dog-catch/frontend/public 下的文件发布到 /opt/dog-catch/frontend-dist（请确认 config.js 中 API_BASE_URL=https://api.sub-dog.top）
-sudo rsync -av --delete /opt/dog-catch/frontend/public/ /opt/dog-catch/frontend-dist/
+# 前台：在服务器使用 Vite 构建并发布到 /opt/dog-catch/frontend-dist（请确认 public/config.js 中 API_BASE_URL=https://api.sub-dog.top）
+cd /opt/dog-catch/frontend
+npm ci
+npm run build
+sudo rsync -av --delete /opt/dog-catch/frontend/dist/ /opt/dog-catch/frontend-dist/
 # 管理后台：在服务器构建并发布
 cd /opt/dog-catch/admin
 npm ci
