@@ -173,6 +173,14 @@ body {
     .controls select {
         font-size: 12px;
         padding: 4px 8px;
+        height: 28px; /* 统一按钮高度 */
+        box-sizing: border-box;
+    }
+    
+    /* iOS端用户头像图标尺寸调整 */
+    .user-avatar {
+        width: 28px;
+        height: 28px;
     }
     
     #message {
@@ -232,7 +240,8 @@ body {
 /* 字幕样式：去除背景，调整文字颜色为略暗白色，增强可读性 */
 /* WebVTT cue（标准方式） */
 video::cue {
-    background: transparent;
+    background: transparent !important;
+    background-color: transparent !important;
     color: #e6e6e6;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
@@ -240,11 +249,31 @@ video::cue {
 /* 覆盖 Video.js 的默认字幕背景（兼容不同版本的结构） */
 .video-js .vjs-text-track-cue {
     background: transparent !important;
+    background-color: transparent !important;
     color: #e6e6e6 !important;
 }
 
 .video-js .vjs-text-track-cue > div,
 .video-js .vjs-text-track-display div {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+/* iOS Safari 字幕背景强制移除 */
+.video-js .vjs-text-track-display .vjs-text-track-cue,
+.video-js .vjs-text-track-display .vjs-text-track-cue div,
+.video-js .vjs-text-track-display .vjs-text-track-cue span {
+    background: none !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+}
+
+/* WebKit/Safari 特定字幕样式 */
+video::-webkit-media-text-track-display {
+    background: transparent !important;
+}
+
+video::-webkit-media-text-track-container {
     background: transparent !important;
 }
 
