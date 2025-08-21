@@ -18,13 +18,6 @@ module.exports = {
         CAPTCHA_PROVIDER: process.env.CAPTCHA_PROVIDER || 'hcaptcha',
         CAPTCHA_SITE_KEY: process.env.CAPTCHA_SITE_KEY || 'CHANGE_ME',
         CAPTCHA_SECRET_KEY: process.env.CAPTCHA_SECRET_KEY || 'CHANGE_ME',
-        // SMTP for email verification
-        SMTP_HOST: process.env.SMTP_HOST || 'CHANGE_ME',
-        SMTP_PORT: process.env.SMTP_PORT || 'CHANGE_ME',
-        SMTP_SECURE: process.env.SMTP_SECURE || 'CHANGE_ME',
-        SMTP_USER: process.env.SMTP_USER || 'CHANGE_ME',
-        SMTP_PASS: process.env.SMTP_PASS || 'CHANGE_ME',
-        SMTP_FROM: process.env.SMTP_FROM || 'CHANGE_ME',
         // Email rate limiting knobs (non-sensitive defaults)
         EMAIL_CODE_MIN_INTERVAL_SEC: process.env.EMAIL_CODE_MIN_INTERVAL_SEC || 30,
         EMAIL_CODE_IP_MIN_INTERVAL_SEC: process.env.EMAIL_CODE_IP_MIN_INTERVAL_SEC || 5

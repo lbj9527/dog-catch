@@ -14,7 +14,6 @@ const assToVtt = require('ass-to-vtt');
 const { Readable } = require('stream');
 const chardet = require('chardet');
 const iconv = require('iconv-lite');
-const nodemailer = require('nodemailer');
 const helmet = require('helmet');
 const crypto = require('crypto');
 const Redis = require('ioredis');
@@ -246,17 +245,7 @@ async function checkEmailCodeLimits(emailLower, ip) {
 }
 
 // 邮件发送器
-let mailTransporter = null;
-try {
-    mailTransporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT || 465),
-        secure: String(process.env.SMTP_SECURE || 'true') === 'true',
-        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-    });
-} catch (e) {
-    console.warn('Init mail transporter failed:', e && e.message);
-}
+// 邮件发送功能已移除，改为控制台打印验证码
 
 // 数据库初始化
 const db = new sqlite3.Database('./database/subtitles.db');
@@ -631,7 +620,6 @@ const authenticateToken = (req, res, next) => {
 // 用户邮件验证码（开发环境可返回dev_code）
 app.post('/api/user/email-code', requireCaptchaIfFlagged, async (req, res) => {
     try {
-        const DEV_RETURN_CODE = false; // 开发环境也走真实邮箱
         const { email, purpose } = req.body || {};
         if (!email || !purpose || !['register','login','reset'].includes(purpose)) return res.status(400).json({ error: '参数错误' });
         const ip = req.ip || req.connection?.remoteAddress || 'unknown';
@@ -648,19 +636,6 @@ app.post('/api/user/email-code', requireCaptchaIfFlagged, async (req, res) => {
         const expiresAt = new Date(Date.now()+5*60000).toISOString();
         await runAsync(`INSERT INTO email_verification_codes (email, code, purpose, expires_at, request_ip) VALUES (?,?,?,?,?)`, [email, code, purpose, expiresAt, req.ip || '']);
         console.log(`[EmailCode] purpose=${purpose} email=${email} code=${code}`);
-        try {
-            if (!mailTransporter) throw new Error('mail transporter not configured');
-            const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@example.com';
-            await mailTransporter.sendMail({
-                from,
-                to: email,
-                subject: `[Subtitle Dog] ${purpose==='register'?'注册':'找回密码'} 验证码`,
-                text: `您的验证码为：${code}（5分钟内有效）。如果非本人操作请忽略本邮件。`,
-                html: `<p>您的验证码为：<b style="font-size:18px;">${code}</b></p><p>5分钟内有效。如非本人操作请忽略。</p>`
-            });
-        } catch (e) {
-            console.error('发送邮件失败:', e && e.message);
-        }
         return res.json({ message:'验证码已发送' });
     } catch (e) { console.error(e); return res.status(500).json({ error: '发送验证码失败' }); }
 });
@@ -1622,8 +1597,7 @@ process.on('SIGINT', () => {
     db.close((err) => {
         if (err) {
             console.error('关闭数据库连接失败:', err);
-        } else {
-            console.log('数据库连接已关闭');
+        } else {            console.log('数据库连接已关闭');
         }
         process.exit(0);
     });
