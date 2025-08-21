@@ -12,7 +12,7 @@ export CAPTCHA_SECRET_KEY="ES_593b0e3494e640719de0e3d8644e5483"
 
 # --- SMTP (Gmail App Password) ---
 export SMTP_HOST="smtp.gmail.com"
-export SMTP_PORT="465"
+export SMTP_PORT="587"
 export SMTP_SECURE="true"
 export SMTP_USER="wangcong95278@gmail.com"
 export SMTP_PASS="wbmgkhtcajihyuhe"
