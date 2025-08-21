@@ -863,8 +863,17 @@ app.post('/api/user/password/reset-confirm', requireCaptchaIfFlagged, async (req
 });
 
 // 用户 token 校验
-app.get('/api/user/verify', authenticateUserToken, (req, res) => {
-    res.json({ valid: true, user: { id: req.user.id, username: req.user.username } });
+app.get('/api/user/verify', authenticateUserToken, async (req, res) => {
+    try {
+        const user = await getAsync('SELECT id, username, email FROM users WHERE id = ?', [req.user.id]);
+        if (!user) {
+            return res.status(404).json({ error: '用户不存在' });
+        }
+        res.json({ valid: true, user: { id: user.id, username: user.username, email: user.email } });
+    } catch (error) {
+        console.error('获取用户信息失败:', error);
+        res.status(500).json({ error: '获取用户信息失败' });
+    }
 });
 
 // 新增：账号存在性检查（identifier 可为用户名或邮箱）

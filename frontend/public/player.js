@@ -19,21 +19,40 @@ class VideoPlayer {
         this.init();
     }
 
-    updateUserEmail() {
+    async updateUserEmail() {
         const userEmailDisplay = document.getElementById('userEmailDisplay');
         if (userEmailDisplay) {
-            // 从token中解析用户邮箱，如果无法解析则显示默认文本
-            const email = this.getUserEmailFromToken() || 'user@example.com';
-            userEmailDisplay.textContent = email;
+            try {
+                const email = await this.getUserEmailFromAPI();
+                userEmailDisplay.textContent = email || 'user@example.com';
+            } catch (error) {
+                console.error('获取用户邮箱失败:', error);
+                userEmailDisplay.textContent = 'user@example.com';
+            }
         }
     }
 
-    getUserEmailFromToken() {
+    async getUserEmailFromAPI() {
         try {
             if (!this.userToken) return null;
-            const payload = JSON.parse(atob(this.userToken.split('.')[1]));
-            return payload.email || null;
-        } catch (e) {
+            
+            const response = await fetch(`${API_BASE_URL}/api/user/verify`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                return data.user?.email;
+            } else {
+                console.error('获取用户信息失败:', response.status);
+                return null;
+            }
+        } catch (error) {
+            console.error('API请求失败:', error);
             return null;
         }
     }
@@ -131,7 +150,7 @@ class VideoPlayer {
         this.initCaptcha();
         // 先校验 token，确保 UI 与权限同步
         await this.verifyTokenAndSyncUI();
-        this.refreshAuthUi();
+        await this.refreshAuthUi();
         
         // 初始化Video.js播放器
         this.initVideoJs();
@@ -274,7 +293,7 @@ class VideoPlayer {
         const userMenu = document.getElementById('userMenu');
         const menuLogout = document.getElementById('menuLogout');
         const menuDeleteAccount = document.getElementById('menuDeleteAccount');
-        const settingsBtn = document.getElementById('settingsBtn');
+        const menuSettings = document.getElementById('menuSettings');
         const settingsModal = document.getElementById('settingsModal');
         const settingsClose = document.getElementById('settingsClose');
 
@@ -320,10 +339,10 @@ class VideoPlayer {
         
         // 用户菜单项点击事件
         if (menuLogout) {
-            menuLogout.onclick = () => {
+            menuLogout.onclick = async () => {
                 if (userMenu) userMenu.style.display = 'none';
                 this.doLogout();
-                this.refreshAuthUi();
+                await this.refreshAuthUi();
             };
         }
         
@@ -342,9 +361,10 @@ class VideoPlayer {
             };
         }
         
-        // 设置按钮点击事件
-        if (settingsBtn) {
-            settingsBtn.onclick = () => {
+        // 设置菜单项点击事件
+        if (menuSettings) {
+            menuSettings.onclick = () => {
+                if (userMenu) userMenu.style.display = 'none';
                 if (settingsModal) settingsModal.style.display = 'flex';
             };
         }
@@ -415,7 +435,7 @@ class VideoPlayer {
                 this.showMessage('登录成功');
                 loginModal.style.display='none';
                 if (loginError) loginError.textContent='';
-                this.refreshAuthUi();
+                await this.refreshAuthUi();
                 if (this.currentVideoId) this.loadSubtitleVariants();
             } catch (e) {
                 const msg = e && e.message ? e.message : '登录失败';
@@ -714,7 +734,7 @@ class VideoPlayer {
         };
     }
 
-    refreshAuthUi() {
+    async refreshAuthUi() {
         const loginBtn = document.getElementById('loginBtn');
         const userAvatar = document.getElementById('userAvatar');
         const subtitleSelectEl = document.getElementById('subtitleSelect');
@@ -727,7 +747,7 @@ class VideoPlayer {
         }
         // 如果已登录，更新用户邮箱显示
         if (logged) {
-            this.updateUserEmail();
+            await this.updateUserEmail();
         }
     }
 
