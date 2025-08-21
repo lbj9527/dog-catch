@@ -1311,7 +1311,7 @@ class VideoPlayer {
             container = document.createElement('div');
             container.id = 'toast-container';
             container.style.position = 'fixed';
-            container.style.top = '16px';
+            container.style.bottom = '16px';
             container.style.right = '16px';
             container.style.zIndex = '9999';
             container.style.display = 'flex';
