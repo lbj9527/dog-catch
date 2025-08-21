@@ -20,8 +20,21 @@
             </select>
             <button id="subtitleToggle">显示字幕</button>
             <button id="loginBtn">登录/注册</button>
-            <button id="logoutBtn" style="display:none;">退出</button>
-            <button id="deleteAccountBtn" style="display:none;">注销账号</button>
+            <!-- 用户图标和菜单 -->
+            <div id="userAvatar" class="user-avatar" style="display:none;">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <circle cx="16" cy="16" r="15" fill="#666" stroke="#888" stroke-width="1"/>
+                    <path d="M16 8c2.2 0 4 1.8 4 4s-1.8 4-4 4-4-1.8-4-4 1.8-4 4-4zm0 14c-4.4 0-8-2.2-8-4.9 0-1.6 2.7-3.1 8-3.1s8 1.5 8 3.1c0 2.7-3.6 4.9-8 4.9z" fill="white"/>
+                </svg>
+            </div>
+            <!-- 用户菜单 -->
+            <div id="userMenu" class="user-menu" style="display:none;">
+                <div class="user-menu-item user-email" id="userEmailDisplay">user@example.com</div>
+                <div class="user-menu-item" id="menuLogout">退出登录</div>
+                <div class="user-menu-item" id="menuDeleteAccount">注销账户</div>
+            </div>
+            <!-- 设置按钮 -->
+            <button id="settingsBtn">设置</button>
         </div>
     </div>
 
@@ -184,6 +197,24 @@
                             <div id="resetError" style="color:#e53935; font-size:12px; min-height:16px;"></div>
                         </div>
                         
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div id="settingsModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span id="settingsClose" class="close">×</span>
+                <h3>设置</h3>
+            </div>
+            <div class="modal-body">
+                <div class="auth-panel">
+                    <div class="auth-header">
+                        <h3 class="auth-title">应用设置 ⚙️</h3>
+                        <p class="auth-subtitle">功能开发中，敬请期待...</p>
                     </div>
                 </div>
             </div>

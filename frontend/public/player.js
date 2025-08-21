@@ -18,6 +18,25 @@ class VideoPlayer {
         
         this.init();
     }
+
+    updateUserEmail() {
+        const userEmailDisplay = document.getElementById('userEmailDisplay');
+        if (userEmailDisplay) {
+            // 从token中解析用户邮箱，如果无法解析则显示默认文本
+            const email = this.getUserEmailFromToken() || 'user@example.com';
+            userEmailDisplay.textContent = email;
+        }
+    }
+
+    getUserEmailFromToken() {
+        try {
+            if (!this.userToken) return null;
+            const payload = JSON.parse(atob(this.userToken.split('.')[1]));
+            return payload.email || null;
+        } catch (e) {
+            return null;
+        }
+    }
     
     // 初始化 hCaptcha（invisible）
     initCaptcha() {
@@ -251,8 +270,13 @@ class VideoPlayer {
 
     setupAuthUi() {
         const loginBtn = document.getElementById('loginBtn');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const deleteAccountBtn = document.getElementById('deleteAccountBtn');
+        const userAvatar = document.getElementById('userAvatar');
+        const userMenu = document.getElementById('userMenu');
+        const menuLogout = document.getElementById('menuLogout');
+        const menuDeleteAccount = document.getElementById('menuDeleteAccount');
+        const settingsBtn = document.getElementById('settingsBtn');
+        const settingsModal = document.getElementById('settingsModal');
+        const settingsClose = document.getElementById('settingsClose');
 
         // whoModal 已移除
 
@@ -283,18 +307,70 @@ class VideoPlayer {
 
         // 主按钮：直接打开登录
         loginBtn.onclick = () => { if (!this.isLoggedIn()) { loginModal.style.display='flex'; if (loginError) loginError.textContent=''; } };
-        logoutBtn.onclick = () => { this.doLogout(); this.refreshAuthUi(); };
-        deleteAccountBtn.onclick = async () => {
-            if (!this.isLoggedIn()) return;
-            if (!confirm('确定要注销当前账号吗？此操作不可恢复')) return;
-            try {
-                const r = await fetch(`${API_BASE_URL}/api/user/me`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${this.userToken}` } });
-                const j = await r.json();
-                if (!r.ok) throw new Error(j.error || '注销失败');
+        
+        // 用户头像点击事件
+        if (userAvatar) {
+            userAvatar.onclick = (e) => {
+                e.stopPropagation();
+                if (userMenu) {
+                    userMenu.style.display = userMenu.style.display === 'none' || !userMenu.style.display ? 'block' : 'none';
+                }
+            };
+        }
+        
+        // 用户菜单项点击事件
+        if (menuLogout) {
+            menuLogout.onclick = () => {
+                if (userMenu) userMenu.style.display = 'none';
                 this.doLogout();
-                this.showMessage('账号已注销');
-            } catch (e) { this.showMessage(e.message || '注销失败', 'error'); }
-        };
+                this.refreshAuthUi();
+            };
+        }
+        
+        if (menuDeleteAccount) {
+            menuDeleteAccount.onclick = async () => {
+                if (userMenu) userMenu.style.display = 'none';
+                if (!this.isLoggedIn()) return;
+                if (!confirm('确定要注销当前账号吗？此操作不可恢复')) return;
+                try {
+                    const r = await fetch(`${API_BASE_URL}/api/user/me`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${this.userToken}` } });
+                    const j = await r.json();
+                    if (!r.ok) throw new Error(j.error || '注销失败');
+                    this.doLogout();
+                    this.showMessage('账号已注销');
+                } catch (e) { this.showMessage(e.message || '注销失败', 'error'); }
+            };
+        }
+        
+        // 设置按钮点击事件
+        if (settingsBtn) {
+            settingsBtn.onclick = () => {
+                if (settingsModal) settingsModal.style.display = 'flex';
+            };
+        }
+        
+        // 设置弹窗关闭事件
+        if (settingsClose) {
+            settingsClose.onclick = () => {
+                if (settingsModal) settingsModal.style.display = 'none';
+            };
+        }
+        
+        // 点击设置弹窗外部关闭
+        if (settingsModal) {
+            settingsModal.onclick = (e) => {
+                if (e.target === settingsModal) {
+                    settingsModal.style.display = 'none';
+                }
+            };
+        }
+        
+        // 点击页面其他地方关闭用户菜单
+        document.addEventListener('click', (e) => {
+            if (userMenu && !userAvatar.contains(e.target) && !userMenu.contains(e.target)) {
+                userMenu.style.display = 'none';
+            }
+        });
 
         // who 流程已移除
 
@@ -640,16 +716,18 @@ class VideoPlayer {
 
     refreshAuthUi() {
         const loginBtn = document.getElementById('loginBtn');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const deleteAccountBtn = document.getElementById('deleteAccountBtn');
+        const userAvatar = document.getElementById('userAvatar');
         const subtitleSelectEl = document.getElementById('subtitleSelect');
         const subtitleBtn = document.getElementById('subtitleToggle');
         const logged = this.isLoggedIn();
         loginBtn.style.display = logged ? 'none' : '';
-        logoutBtn.style.display = logged ? '' : 'none';
-        if (deleteAccountBtn) deleteAccountBtn.style.display = logged ? '' : 'none';
+        if (userAvatar) userAvatar.style.display = logged ? '' : 'none';
         if (!logged && REQUIRE_SUBTITLE_LOGIN) {
             this.disableSubtitleUi('登录后可用');
+        }
+        // 如果已登录，更新用户邮箱显示
+        if (logged) {
+            this.updateUserEmail();
         }
     }
 
