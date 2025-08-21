@@ -119,6 +119,152 @@ function makeLimiter({ keyPrefix, points, durationSec }){
     };
 }
 
+// 简化限流系统配置
+const SIMPLE_RATE_LIMITS = {
+    LOGIN_IP_PER_MIN: Number(process.env.RL_LOGIN_IP_PER_MIN || 20),
+    LOGIN_ACCOUNT_PER_MIN: Number(process.env.RL_LOGIN_ACCOUNT_PER_MIN || 5),
+    EMAIL_CODE_EMAIL_COOLDOWN_SEC: Number(process.env.RL_EMAIL_CODE_EMAIL_COOLDOWN_SEC || 30),
+    EMAIL_CODE_EMAIL_PER_10MIN: Number(process.env.RL_EMAIL_CODE_EMAIL_PER_10MIN || 5),
+    EMAIL_CODE_EMAIL_PER_HOUR: Number(process.env.RL_EMAIL_CODE_EMAIL_PER_HOUR || 10),
+    EMAIL_CODE_IP_PER_HOUR: Number(process.env.RL_EMAIL_CODE_IP_PER_HOUR || 20),
+    REGISTER_IP_PER_10MIN: Number(process.env.RL_REGISTER_IP_PER_10MIN || 5),
+    REGISTER_IP_PER_HOUR: Number(process.env.RL_REGISTER_IP_PER_HOUR || 20),
+    REGISTER_EMAIL_PER_HOUR: Number(process.env.RL_REGISTER_EMAIL_PER_HOUR || 3)
+};
+
+// 固定窗口计数器
+async function fixedWindowLimiter(scopeKey, windowSec, limit) {
+    try {
+        if (!redis) {
+            // 内存回退
+            const memoryCounters = fixedWindowLimiter._memoryCounters = fixedWindowLimiter._memoryCounters || new Map();
+            const now = Math.floor(Date.now() / 1000);
+            const windowStart = Math.floor(now / windowSec) * windowSec;
+            const key = `${scopeKey}:${windowStart}`;
+            const current = memoryCounters.get(key) || 0;
+            if (current >= limit) {
+                return { allowed: false, remaining: 0, resetTime: (windowStart + windowSec) * 1000 };
+            }
+            memoryCounters.set(key, current + 1);
+            // 清理过期的计数器
+            for (const [k] of memoryCounters) {
+                const keyWindowStart = parseInt(k.split(':').pop());
+                if (keyWindowStart < windowStart - windowSec) {
+                    memoryCounters.delete(k);
+                }
+            }
+            return { allowed: true, remaining: limit - current - 1, resetTime: (windowStart + windowSec) * 1000 };
+        }
+        
+        const now = Math.floor(Date.now() / 1000);
+        const windowStart = Math.floor(now / windowSec) * windowSec;
+        const key = `rl:fw:${scopeKey}:${windowStart}`;
+        
+        const current = await redis.incr(key);
+        if (current === 1) {
+            await redis.expire(key, windowSec);
+        }
+        
+        const allowed = current <= limit;
+        const remaining = Math.max(0, limit - current);
+        const resetTime = (windowStart + windowSec) * 1000;
+        
+        return { allowed, remaining, resetTime };
+    } catch (error) {
+        console.warn('fixedWindowLimiter error:', error.message);
+        return { allowed: true, remaining: 999, resetTime: Date.now() + windowSec * 1000 };
+    }
+}
+
+// 单键冷却（硬冷却）
+async function singleKeyCooldown(scopeKey, windowSec) {
+    try {
+        if (!redis) {
+            // 内存回退
+            const memoryCooldowns = singleKeyCooldown._memoryCooldowns = singleKeyCooldown._memoryCooldowns || new Map();
+            const now = Date.now();
+            const lastTime = memoryCooldowns.get(scopeKey) || 0;
+            if (now - lastTime < windowSec * 1000) {
+                return { allowed: false, retryAfter: Math.ceil((lastTime + windowSec * 1000 - now) / 1000) };
+            }
+            memoryCooldowns.set(scopeKey, now);
+            return { allowed: true, retryAfter: 0 };
+        }
+        
+        const key = `rl:cd:${scopeKey}`;
+        const result = await redis.set(key, '1', 'EX', windowSec, 'NX');
+        
+        if (result === 'OK') {
+            return { allowed: true, retryAfter: 0 };
+        } else {
+            const ttl = await redis.ttl(key);
+            return { allowed: false, retryAfter: Math.max(1, ttl) };
+        }
+    } catch (error) {
+        console.warn('singleKeyCooldown error:', error.message);
+        return { allowed: true, retryAfter: 0 };
+    }
+}
+
+// 统一限流中间件
+function createRateLimit(rules) {
+    return async (req, res, next) => {
+        try {
+            const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+            const email = req.body?.email ? String(req.body.email).toLowerCase() : null;
+            const account = email; // 可以扩展为用户名或其他标识
+            
+            const checks = [];
+            let retryAfter = 0;
+            let scope = 'unknown';
+            
+            for (const rule of rules) {
+                let key;
+                switch (rule.key) {
+                    case 'ip': key = `ip:${ip}`; break;
+                    case 'email': key = email ? `email:${email}` : null; break;
+                    case 'account': key = account ? `account:${account}` : null; break;
+                    default: continue;
+                }
+                
+                if (!key) continue;
+                
+                if (rule.type === 'cooldown') {
+                    const result = await singleKeyCooldown(key, rule.window);
+                    if (!result.allowed) {
+                        retryAfter = Math.max(retryAfter, result.retryAfter);
+                        scope = rule.key;
+                    }
+                    checks.push({ rule, result });
+                } else {
+                    const result = await fixedWindowLimiter(key, rule.window, rule.limit);
+                    if (!result.allowed) {
+                        retryAfter = Math.max(retryAfter, Math.ceil((result.resetTime - Date.now()) / 1000));
+                        scope = rule.key;
+                    }
+                    checks.push({ rule, result });
+                }
+            }
+            
+            // 如果任何检查失败，返回429
+            if (retryAfter > 0) {
+                res.set('Retry-After', retryAfter.toString());
+                return res.status(429).json({
+                    code: 'RATE_LIMITED',
+                    scope: scope,
+                    retry_after: retryAfter,
+                    error: `请求过于频繁，请等待 ${retryAfter} 秒后重试`
+                });
+            }
+            
+            next();
+        } catch (error) {
+            console.warn('Rate limit middleware error:', error.message);
+            next(); // 出错时不阻断请求
+        }
+    };
+}
+
 // 扫描阈值存储（Redis Set）
 async function addScan(userId, kind, member, windowSec, threshold){
     if (!redis) return 0;
@@ -206,6 +352,25 @@ const allowVariantsIp1h = makeLimiter({ keyPrefix: 'rl:var:ip60', points: RATE.V
 const allowLoginUser10m = makeLimiter({ keyPrefix: 'rl:login:u', points: 5, durationSec: 10*60 });
 const allowLoginIp10m = makeLimiter({ keyPrefix: 'rl:login:ip', points: 30, durationSec: 10*60 });
 const allowEmailIp1h = makeLimiter({ keyPrefix: 'rl:ecode:ip', points: 20, durationSec: 60*60 });
+
+// 新的简化限流中间件
+const loginRateLimit = createRateLimit([
+    { key: 'ip', type: 'window', window: 60, limit: SIMPLE_RATE_LIMITS.LOGIN_IP_PER_MIN },
+    { key: 'account', type: 'window', window: 60, limit: SIMPLE_RATE_LIMITS.LOGIN_ACCOUNT_PER_MIN }
+]);
+
+const emailCodeRateLimit = createRateLimit([
+    { key: 'email', type: 'cooldown', window: SIMPLE_RATE_LIMITS.EMAIL_CODE_EMAIL_COOLDOWN_SEC },
+    { key: 'email', type: 'window', window: 600, limit: SIMPLE_RATE_LIMITS.EMAIL_CODE_EMAIL_PER_10MIN },
+    { key: 'email', type: 'window', window: 3600, limit: SIMPLE_RATE_LIMITS.EMAIL_CODE_EMAIL_PER_HOUR },
+    { key: 'ip', type: 'window', window: 3600, limit: SIMPLE_RATE_LIMITS.EMAIL_CODE_IP_PER_HOUR }
+]);
+
+const registerRateLimit = createRateLimit([
+    { key: 'ip', type: 'window', window: 600, limit: SIMPLE_RATE_LIMITS.REGISTER_IP_PER_10MIN },
+    { key: 'ip', type: 'window', window: 3600, limit: SIMPLE_RATE_LIMITS.REGISTER_IP_PER_HOUR },
+    { key: 'email', type: 'window', window: 3600, limit: SIMPLE_RATE_LIMITS.REGISTER_EMAIL_PER_HOUR }
+]);
 
 // 新增：本地内存级验证码发送最小间隔限制（同步，避免未 await 时失效）
 const EMAIL_CODE_MIN_INTERVAL_SEC = Number(process.env.EMAIL_CODE_MIN_INTERVAL_SEC || 30); // 同邮箱最小重试间隔
@@ -618,26 +783,24 @@ const authenticateToken = (req, res, next) => {
 // 路由
 
 // 用户邮件验证码（开发环境可返回dev_code）
-app.post('/api/user/email-code', requireCaptchaIfFlagged, async (req, res) => {
+app.post('/api/user/email-code', requireCaptchaIfFlagged, emailCodeRateLimit, async (req, res) => {
     try {
         const { email, purpose } = req.body || {};
-        if (!email || !purpose || !['register','login','reset'].includes(purpose)) return res.status(400).json({ error: '参数错误' });
-        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
-        const passMinInterval = await checkEmailCodeLimits(String(email).toLowerCase(), ip);
-        if (!passMinInterval) { await markCaptchaRequired('email', String(email).toLowerCase()); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁，请稍后再试', requireCaptcha: true }); }
-        const now = new Date();
-        const recent = await getAllAsync(`SELECT created_at FROM email_verification_codes WHERE email = ? AND purpose = ? AND DATETIME(created_at) > DATETIME(?,'-1 hour') ORDER BY created_at DESC`, [email, purpose, now.toISOString()]);
-        if (recent.length > 0) {
-            const last = new Date(recent[0].created_at);
-            if ((now - last) < 60000) { await markCaptchaRequired('email', String(email).toLowerCase()); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁，请稍后再试', requireCaptcha: true }); }
-            if (recent.length >= 10) { await markCaptchaRequired('email', String(email).toLowerCase()); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求次数过多，请稍后再试', requireCaptcha: true }); }
+        if (!email || !purpose || !['register','login','reset'].includes(purpose)) {
+            return res.status(400).json({ error: '参数错误' });
         }
+        
         const code = Math.floor(100000 + Math.random()*900000).toString();
         const expiresAt = new Date(Date.now()+5*60000).toISOString();
-        await runAsync(`INSERT INTO email_verification_codes (email, code, purpose, expires_at, request_ip) VALUES (?,?,?,?,?)`, [email, code, purpose, expiresAt, req.ip || '']);
+        await runAsync(`INSERT INTO email_verification_codes (email, code, purpose, expires_at, request_ip) VALUES (?,?,?,?,?)`, 
+            [email, code, purpose, expiresAt, req.ip || '']);
+        
         console.log(`[EmailCode] purpose=${purpose} email=${email} code=${code}`);
         return res.json({ message:'验证码已发送' });
-    } catch (e) { console.error(e); return res.status(500).json({ error: '发送验证码失败' }); }
+    } catch (e) { 
+        console.error(e); 
+        return res.status(500).json({ error: '发送验证码失败' }); 
+    }
 });
 
 async function consumeValidCode(email, purpose, code) {
@@ -648,12 +811,9 @@ async function consumeValidCode(email, purpose, code) {
 }
 
 // 用户注册（返回token，但前端不自动登录）
-app.post('/api/user/register', requireCaptchaIfFlagged, async (req, res) => {
+app.post('/api/user/register', requireCaptchaIfFlagged, registerRateLimit, async (req, res) => {
     try {
         const { username, email, password, code } = req.body || {};
-        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
-        const passIp = await allowLoginIp10m(ip);
-        if (!passIp) { await markCaptchaRequired('ip', ip); if (email) await markCaptchaRequired('email', String(email).toLowerCase()); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
         if (!username || !email || !password || !code) return res.status(400).json({ error: '缺少必要参数' });
         const u = await getAsync('SELECT id FROM users WHERE lower(username)=lower(?)', [username]);
         if (u) return res.status(409).json({ error: '用户名已被占用' });
@@ -670,15 +830,9 @@ app.post('/api/user/register', requireCaptchaIfFlagged, async (req, res) => {
 });
 
 // 邮箱 + 密码登录
-app.post('/api/user/login/password', requireCaptchaIfFlagged, async (req, res) => {
+app.post('/api/user/login/password', requireCaptchaIfFlagged, loginRateLimit, async (req, res) => {
     try {
         const { email, password } = req.body || {};
-        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
-        const userKey = String(email || '').toLowerCase();
-        const passIpLogin = await allowLoginIp10m(ip);
-        if (!passIpLogin) { await markCaptchaRequired('ip', ip); if (email) await markCaptchaRequired('email', String(email).toLowerCase()); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
-        const passUserLogin = await allowLoginUser10m(userKey);
-        if (!passUserLogin) { await markCaptchaRequired('email', userKey); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
         if (!email || !password) return res.status(400).json({ error: '缺少必要参数' });
         const user = await getAsync('SELECT * FROM users WHERE lower(email)=lower(?)', [email]);
         if (!user || !user.password_hash || !bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: '邮箱或密码错误' });

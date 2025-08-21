@@ -43,6 +43,50 @@ class VideoPlayer {
             return token;
         } catch { return ''; }
     }
+
+    // 处理429限流响应的统一方法
+    handleRateLimitResponse(response, responseData, buttonElement, errorElement) {
+        if (response.status !== 429) return false;
+        
+        const retryAfter = parseInt(response.headers.get('Retry-After')) || 
+                          (responseData && responseData.retry_after) || 30;
+        const scope = responseData && responseData.scope || 'request';
+        
+        // 显示限流错误信息
+        const message = responseData && responseData.error || 
+                       `请求过于频繁，请等待 ${retryAfter} 秒后重试`;
+        if (errorElement) errorElement.textContent = message;
+        this.showMessage(message, 'error');
+        
+        // 禁用按钮并开始倒计时
+        if (buttonElement) {
+            this.startRateLimitCountdown(buttonElement, retryAfter);
+        }
+        
+        return true;
+    }
+    
+    // 限流倒计时功能
+    startRateLimitCountdown(buttonElement, seconds) {
+        if (!buttonElement) return;
+        
+        const originalText = buttonElement.textContent;
+        buttonElement.disabled = true;
+        
+        let remaining = seconds;
+        const updateButton = () => {
+            if (remaining > 0) {
+                buttonElement.textContent = `请等待 ${remaining} 秒`;
+                remaining--;
+                setTimeout(updateButton, 1000);
+            } else {
+                buttonElement.textContent = originalText;
+                buttonElement.disabled = false;
+            }
+        };
+        
+        updateButton();
+    }
     
     // 初始化播放器
     async init() {
@@ -275,7 +319,13 @@ class VideoPlayer {
                 if (token) headers['x-captcha-token'] = token;
                 const r = await fetch(`${API_BASE_URL}/api/user/login/password`, { method:'POST', headers, body: JSON.stringify({ email, password, captchaToken: token }) });
                 const j = await r.json();
-                if (!r.ok) throw new Error(j.error || '登录失败');
+                if (!r.ok) {
+                    // 检查是否为429限流响应
+                    if (this.handleRateLimitResponse(r, j, btnDoLogin, loginError)) {
+                        return; // 已处理限流响应，直接返回
+                    }
+                    throw new Error(j.error || '登录失败');
+                }
                 this.userToken = j.token || '';
                 if (this.userToken) {
                     if (remember) {
@@ -331,7 +381,13 @@ class VideoPlayer {
                 if (token) headers['x-captcha-token'] = token;
                 const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers, body: JSON.stringify({ email, purpose:'register', captchaToken: token }) });
                 const j = await r.json();
-                if (!r.ok) throw new Error(j.error || '发送失败');
+                if (!r.ok) {
+                    // 检查是否为429限流响应
+                    if (this.handleRateLimitResponse(r, j, btnSendRegCode, null)) {
+                        return; // 已处理限流响应，直接返回
+                    }
+                    throw new Error(j.error || '发送失败');
+                }
                 this.showMessage('验证码已发送');
                 // 点击“重新发送”后立即进入倒计时
                 if (typeof startCountdown === 'function') startCountdown(btnSendRegCode, 60);
@@ -358,7 +414,13 @@ class VideoPlayer {
                 if (token) headers['x-captcha-token'] = token;
                 const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers, body: JSON.stringify({ email, purpose:'register', captchaToken: token }) });
                 const j = await r.json();
-                if (!r.ok) throw new Error(j.error || '验证码发送失败');
+                if (!r.ok) {
+                    // 检查是否为429限流响应
+                    if (this.handleRateLimitResponse(r, j, btnStartRegister, regError)) {
+                        return; // 已处理限流响应，直接返回
+                    }
+                    throw new Error(j.error || '验证码发送失败');
+                }
                 this.showMessage('验证码已发送');
                 // 与点击“获取验证码”一致：自动开始倒计时（本地实现，避免依赖稍后定义的函数表达式）
                 if (btnSendRegCode) {
@@ -402,7 +464,13 @@ class VideoPlayer {
                 if (token) headers['x-captcha-token'] = token;
                 const r = await fetch(`${API_BASE_URL}/api/user/register`, { method:'POST', headers, body: JSON.stringify({ username, email, password, code, captchaToken: token }) });
                 const j = await r.json();
-                if (!r.ok) throw new Error(j.error || '注册失败');
+                if (!r.ok) {
+                    // 检查是否为429限流响应
+                    if (this.handleRateLimitResponse(r, j, btnConfirmRegister, regError)) {
+                        return; // 已处理限流响应，直接返回
+                    }
+                    throw new Error(j.error || '注册失败');
+                }
                 this.showMessage('注册成功，请登录');
                 regModal.style.display='none';
                 // 打开登录并预填邮箱
@@ -467,7 +535,13 @@ class VideoPlayer {
                 if (token) headers['x-captcha-token'] = token;
                 const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers, body: JSON.stringify({ email, purpose:'reset', captchaToken: token }) });
                 const j = await r.json();
-                if (!r.ok) throw new Error(j.error || '发送验证码失败');
+                if (!r.ok) {
+                    // 检查是否为429限流响应
+                    if (this.handleRateLimitResponse(r, j, btnResetNext, resetError)) {
+                        return; // 已处理限流响应，直接返回
+                    }
+                    throw new Error(j.error || '发送验证码失败');
+                }
                 this.showMessage('验证码已发送');
                 // 展示第二步输入区域
                 if (resetCodeRow) resetCodeRow.style.display='';
@@ -517,7 +591,13 @@ class VideoPlayer {
                 if (token) headers['x-captcha-token'] = token;
                 const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers, body: JSON.stringify({ email, purpose:'reset', captchaToken: token }) });
                 const j = await r.json();
-                if (!r.ok) throw new Error(j.error || '发送验证码失败');
+                if (!r.ok) {
+                    // 检查是否为429限流响应
+                    if (this.handleRateLimitResponse(r, j, btnSendResetCode, resetError)) {
+                        return; // 已处理限流响应，直接返回
+                    }
+                    throw new Error(j.error || '发送验证码失败');
+                }
                 this.showMessage('验证码已发送');
                 resetCodeRow.style.display='';
                 resetPwdRow.style.display='';
