@@ -277,6 +277,12 @@ video::-webkit-media-text-track-container {
     background: transparent !important;
 }
 
+/* iOS Safari 字幕整行背景移除 - 这是关键的修复 */
+video::-webkit-media-text-track-display-backdrop {
+    background-color: rgba(0,0,0,0) !important;
+    background: transparent !important;
+}
+
 /* Modal 样式 */
 .modal {
     position: fixed;
