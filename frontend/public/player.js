@@ -476,24 +476,6 @@ class VideoPlayer {
                 if (resetNextRow) resetNextRow.style.display='none';
                 // 若存在“获取验证码”按钮，则启动倒计时（用于重发）
                 if (btnSendResetCode) {
-                    const startCountdown = (buttonEl, seconds = 60) => {
-                        const i18n = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.I18N) || {};
-                        const renderSent = typeof i18n.sentWithCountdown === 'function' ? i18n.sentWithCountdown : (s)=>`已发送(${s}s)`;
-                        const renderResend = i18n.resendAfter || '重新发送';
-                        let remain = seconds;
-                        buttonEl.disabled = true;
-                        buttonEl.textContent = renderSent(remain);
-                        const t = setInterval(() => {
-                            remain -= 1;
-                            if (remain <= 0) {
-                                clearInterval(t);
-                                buttonEl.disabled = false;
-                                buttonEl.textContent = renderResend;
-                                return;
-                            }
-                            buttonEl.textContent = renderSent(remain);
-                        }, 1000);
-                    };
                     startCountdown(btnSendResetCode, 60);
                 }
             } catch (e) {
