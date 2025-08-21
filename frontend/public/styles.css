@@ -179,8 +179,8 @@ body {
     
     /* iOS端用户头像图标尺寸调整 */
     .user-avatar {
-        width: 24px;
-        height: 24px;
+        width: 28px !important;
+        height: 28px !important;
     }
     
     #message {
