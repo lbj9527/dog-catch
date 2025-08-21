@@ -36,6 +36,24 @@
         />
       </div>
       
+      <!-- 扫描结果统计 -->
+      <div v-if="parsedFiles.length > 0" class="scan-results">
+        <div class="scan-summary">
+          <span>扫描结果：</span>
+          <el-tag type="success" size="small">有效 {{ validFiles.length }}</el-tag>
+          <el-tag v-if="invalidCount > 0" type="danger" size="small">无效 {{ invalidCount }}</el-tag>
+          <el-button 
+            v-if="invalidCount > 0" 
+            type="primary" 
+            size="small" 
+            @click="downloadInvalidList"
+            style="margin-left: 10px;"
+          >
+            下载无效文件清单
+          </el-button>
+        </div>
+      </div>
+      
       <!-- 文件列表 -->
       <div v-if="parsedFiles.length > 0" class="file-list">
         <h4>待上传文件列表 ({{ parsedFiles.length }} 个)</h4>
@@ -136,7 +154,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { UploadFilled, Check, Close } from '@element-plus/icons-vue'
 import { subtitleAPI } from '../utils/api'
@@ -163,6 +181,8 @@ const totalCount = ref(0)
 const uploadStatusText = ref('')
 // 新增：目录选择 input 引用
 const dirInput = ref()
+// 新增：无效文件名集合
+const invalidFileNames = ref(new Set())
 
 // 计算属性
 const visible = computed({
@@ -195,11 +215,20 @@ const failedCount = computed(() => {
   return uploadResults.value.filter(result => !result.success).length
 })
 
+const invalidCount = computed(() => {
+  return invalidFileNames.value.size
+})
+
 // 监听器
 watch(() => props.modelValue, (newVal) => {
   if (newVal) {
     resetData()
   }
+})
+
+// 生命周期钩子 - 组件卸载前清理
+onBeforeUnmount(() => {
+  resetData()
 })
 
 // 方法
@@ -241,8 +270,15 @@ const handleDirectoryChange = (e) => {
     if (f.size > 1024 * 1024) continue
     filtered.push(f)
   }
+  // 重置无效文件名集合
+  invalidFileNames.value.clear()
+  
   parsedFiles.value = filtered.map((file, idx) => {
     const videoId = extractVideoId(file.name)
+    // 记录无效文件名
+    if (!videoId) {
+      invalidFileNames.value.add(file.name)
+    }
     return {
       uid: `${Date.now()}_${idx}`,
       fileName: file.name,
@@ -296,8 +332,15 @@ const validateFile = (file) => {
 }
 
 const parseFiles = (files) => {
+  // 重置无效文件名集合
+  invalidFileNames.value.clear()
+  
   parsedFiles.value = files.map(file => {
     const videoId = extractVideoId(file.name)
+    // 记录无效文件名
+    if (!videoId) {
+      invalidFileNames.value.add(file.name)
+    }
     return {
       uid: file.uid,
       fileName: file.name,
@@ -414,6 +457,47 @@ const resetData = () => {
   totalCount.value = 0
   uploadStatusText.value = ''
   uploading.value = false
+  // 重置无效文件名集合
+  invalidFileNames.value.clear()
+}
+
+// 新增：下载无效文件清单
+const downloadInvalidList = () => {
+  if (invalidFileNames.value.size === 0) {
+    ElMessage.warning('暂无无效文件')
+    return
+  }
+  
+  try {
+    // 生成文件内容
+    const content = Array.from(invalidFileNames.value).join('\n')
+    
+    // 生成文件名
+    const now = new Date()
+    const dateStr = now.getFullYear() + 
+      String(now.getMonth() + 1).padStart(2, '0') + 
+      String(now.getDate()).padStart(2, '0') + '-' +
+      String(now.getHours()).padStart(2, '0') + 
+      String(now.getMinutes()).padStart(2, '0') + 
+      String(now.getSeconds()).padStart(2, '0')
+    const fileName = `无效文件清单-${dateStr}.txt`
+    
+    // 创建 Blob 并下载
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    
+    ElMessage.success('无效文件清单下载成功')
+  } catch (error) {
+    console.error('下载失败:', error)
+    ElMessage.error('下载失败，请重试')
+  }
 }
 
 const formatFileSize = (bytes) => {
@@ -453,6 +537,22 @@ const getStatusText = (status) => {
 .folder-tip {
   color: #909399;
   font-size: 12px;
+}
+
+.scan-results {
+  margin-top: 15px;
+  padding: 12px;
+  background-color: #f0f9ff;
+  border-radius: 4px;
+  border: 1px solid #b3d8ff;
+}
+
+.scan-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #333;
 }
 
 .batch-upload :deep(.el-upload-dragger) {
@@ -527,4 +627,4 @@ const getStatusText = (status) => {
   margin: 2px 0;
   font-size: 13px;
 }
-</style> 
+</style>
