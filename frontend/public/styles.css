@@ -88,24 +88,24 @@ body {
     margin-bottom: 56px; /* 为底部外置的点赞按钮预留空间，避免与播放器重叠 */
 }
 
-/* 点赞按钮样式（外置到播放器容器下方左侧） */
+/* 点赞按钮样式（统一为外置到播放器下方左侧） */
 .like-controls {
     position: absolute;
-    bottom: -48px; /* 将按钮放到播放器容器外部（下方） */
-    left: 0;       /* 贴齐容器左侧 */
-    z-index: 1;
+    bottom: -48px;
+    left: 0;
+    z-index: 100;
     pointer-events: auto;
 }
 
-/* 响应式设计 - 移动端适配 */
+/* 移动端覆盖：保持外置 */
 @media (max-width: 767px) {
     .like-controls {
-        bottom: -40px; /* 移动端按钮略小，预留空间稍小 */
+        bottom: -40px;
         left: 0;
     }
 }
 
-/* 平板端适配 */
+/* 平板端覆盖：保持外置 */
 @media (min-width: 768px) and (max-width: 1023px) {
     .like-controls {
         bottom: -44px;

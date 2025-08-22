@@ -140,6 +140,13 @@
               </template>
             </el-table-column>
             
+            <!-- 新增：点赞数列 -->
+            <el-table-column prop="likes_count" label="点赞数" width="120" align="right" sortable>
+              <template #default="scope">
+                <span>{{ scope.row.likes_count ?? 0 }}</span>
+              </template>
+            </el-table-column>
+            
             <el-table-column prop="updated_at" label="更新时间" width="180">
               <template #default="scope">
                 <span v-if="scope.row.updated_at">{{ formatDate(scope.row.updated_at) }}</span>
@@ -516,4 +523,4 @@ onMounted(() => { loadData() })
 .table-card { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
 .action-buttons { display: flex; gap: 5px; justify-content: center; }
 .pagination-wrapper { display: flex; justify-content: center; margin-top: 20px; }
-</style> 
+</style>

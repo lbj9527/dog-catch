@@ -781,6 +781,9 @@ class VideoPlayer {
         try { sessionStorage.removeItem('user_token'); } catch {}
         localStorage.removeItem('user_token');
         this.userToken = '';
+        // Reset like state and UI on logout
+        this.currentLikeStatus = { isLiked: false, likesCount: 0 };
+        this.updateLikeUI();
         this.removeAllSubtitleTracks('登录后可用');
         this.disableSubtitleUi('登录后可用');
         this.refreshAuthUi();
