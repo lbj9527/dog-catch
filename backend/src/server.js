@@ -672,6 +672,22 @@ db.serialize(() => {
     // 新增：为 users 表补充 token_version 列
     db.run('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0', () => {});
     
+    // 新增：为 subtitles 表补充 likes_count 列
+    db.run('ALTER TABLE subtitles ADD COLUMN likes_count INTEGER DEFAULT 0', () => {});
+    
+    // 新增：字幕点赞表
+    db.run(`CREATE TABLE IF NOT EXISTS subtitle_likes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        video_id TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    
+    // 为 subtitle_likes 表创建唯一索引，确保一个用户对一个字幕版本只能点赞一次
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_subtitle_likes_user_video ON subtitle_likes(user_id, video_id)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_subtitle_likes_video ON subtitle_likes(video_id)', () => {});
+    
     // 创建默认管理员账号 (用户名: admin, 密码: admin123)
     const defaultPassword = bcrypt.hashSync('admin123', 10);
     db.run(`INSERT OR IGNORE INTO admins (username, password_hash) VALUES (?, ?)`, 
@@ -1684,6 +1700,113 @@ app.get('/api/subtitles/variants/:base_video_id', authenticateAnyToken, async (r
         res.json({ base: extractBaseVideoId(baseId), variants: rows });
     } catch (e) {
         res.status(500).json({ error: '获取字幕变体失败' });
+    }
+});
+
+// 获取字幕点赞状态（匿名可访问）
+app.get('/api/subtitles/like-status/:video_id', authenticateAnyToken, async (req, res) => {
+    const videoId = (req.params.video_id || '').toLowerCase().trim();
+    if (!videoId) {
+        return res.status(400).json({ error: '视频ID不能为空' });
+    }
+
+    try {
+        // 获取字幕的点赞总数
+        const subtitle = await getAsync(
+            'SELECT likes_count FROM subtitles WHERE lower(video_id) = lower(?)',
+            [videoId]
+        );
+        
+        if (!subtitle) {
+            return res.status(404).json({ error: '字幕不存在' });
+        }
+
+        const likesCount = subtitle.likes_count || 0;
+        let isLiked = false;
+
+        // 如果用户已登录，检查是否已点赞
+        if (req.user && req.user.id) {
+            const userLike = await getAsync(
+                'SELECT id FROM subtitle_likes WHERE user_id = ? AND lower(video_id) = lower(?)',
+                [req.user.id, videoId]
+            );
+            isLiked = !!userLike;
+        }
+
+        res.json({
+            video_id: videoId,
+            likes_count: likesCount,
+            is_liked: isLiked,
+            is_logged_in: !!(req.user && req.user.id)
+        });
+    } catch (err) {
+        console.error('获取点赞状态失败:', err);
+        res.status(500).json({ error: '获取点赞状态失败' });
+    }
+});
+
+// 切换字幕点赞状态（需要登录）
+app.post('/api/subtitles/like-toggle/:video_id', authenticateUserToken, async (req, res) => {
+    const videoId = (req.params.video_id || '').toLowerCase().trim();
+    if (!videoId) {
+        return res.status(400).json({ error: '视频ID不能为空' });
+    }
+
+    const userId = req.user.id;
+
+    try {
+        // 检查字幕是否存在
+        const subtitle = await getAsync(
+            'SELECT id, likes_count FROM subtitles WHERE lower(video_id) = lower(?)',
+            [videoId]
+        );
+        
+        if (!subtitle) {
+            return res.status(404).json({ error: '字幕不存在' });
+        }
+
+        // 检查用户是否已点赞
+        const existingLike = await getAsync(
+            'SELECT id FROM subtitle_likes WHERE user_id = ? AND lower(video_id) = lower(?)',
+            [userId, videoId]
+        );
+
+        let isLiked = false;
+        let likesCount = subtitle.likes_count || 0;
+
+        if (existingLike) {
+            // 取消点赞
+            await runAsync(
+                'DELETE FROM subtitle_likes WHERE user_id = ? AND lower(video_id) = lower(?)',
+                [userId, videoId]
+            );
+            likesCount = Math.max(0, likesCount - 1);
+            isLiked = false;
+        } else {
+            // 添加点赞
+            await runAsync(
+                'INSERT INTO subtitle_likes (user_id, video_id, created_at) VALUES (?, ?, datetime("now"))',
+                [userId, videoId]
+            );
+            likesCount = likesCount + 1;
+            isLiked = true;
+        }
+
+        // 更新字幕表的点赞计数
+        await runAsync(
+            'UPDATE subtitles SET likes_count = ? WHERE lower(video_id) = lower(?)',
+            [likesCount, videoId]
+        );
+
+        res.json({
+            video_id: videoId,
+            likes_count: likesCount,
+            is_liked: isLiked,
+            action: isLiked ? 'liked' : 'unliked'
+        });
+    } catch (err) {
+        console.error('切换点赞状态失败:', err);
+        res.status(500).json({ error: '切换点赞状态失败' });
     }
 });
 

@@ -454,3 +454,107 @@ video::-webkit-media-text-track-display-backdrop {
 .controls {
     position: relative;
 }
+
+/* 点赞按钮样式 */
+.like-controls {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    z-index: 100;
+    pointer-events: auto;
+}
+
+.like-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(4px);
+    font-size: 14px;
+    user-select: none;
+}
+
+.like-button:hover {
+    background: rgba(0, 0, 0, 0.8);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.like-button.liked {
+    background: rgba(255, 59, 92, 0.8);
+    border-color: rgba(255, 59, 92, 0.6);
+    color: #fff;
+}
+
+.like-button.liked:hover {
+    background: rgba(255, 59, 92, 0.9);
+    border-color: rgba(255, 59, 92, 0.8);
+}
+
+.like-button .like-icon {
+    width: 18px;
+    height: 18px;
+    transition: transform 0.2s ease;
+}
+
+.like-button.liked .like-icon {
+    transform: scale(1.1);
+    fill: #fff;
+}
+
+.like-button .like-count {
+    font-weight: 500;
+    min-width: 20px;
+    text-align: center;
+}
+
+.like-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.like-button:disabled:hover {
+    background: rgba(0, 0, 0, 0.7);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: none;
+    box-shadow: none;
+}
+
+/* 响应式设计 - 移动端适配 */
+@media (max-width: 767px) {
+    .like-controls {
+        bottom: 12px;
+        left: 12px;
+    }
+    
+    .like-button {
+        padding: 6px 10px;
+        font-size: 13px;
+        border-radius: 16px;
+    }
+    
+    .like-button .like-icon {
+        width: 16px;
+        height: 16px;
+    }
+    
+    .like-button .like-count {
+        min-width: 18px;
+    }
+}
+
+/* 平板端适配 */
+@media (min-width: 768px) and (max-width: 1023px) {
+    .like-controls {
+        bottom: 14px;
+        left: 14px;
+    }
+}

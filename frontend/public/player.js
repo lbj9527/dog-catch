@@ -16,6 +16,10 @@ class VideoPlayer {
         this.userToken = (sessionStorage.getItem('user_token') || localStorage.getItem('user_token') || '');
         this.hcaptchaWidgetId = null;
         
+        // 点赞相关属性
+        this.currentLikeStatus = { isLiked: false, likesCount: 0 };
+        this.likeDebounceTimer = null;
+        
         this.init();
     }
 
@@ -282,6 +286,9 @@ class VideoPlayer {
                 }
             };
         }
+        
+        // 点赞按钮
+        this.setupLikeButton();
         
         // 设置fallback链接
         document.getElementById('fallbackLink').href = this.currentVideoUrl;
@@ -1120,6 +1127,8 @@ class VideoPlayer {
                 const subtitleBtn = document.getElementById('subtitleToggle');
                 subtitleBtn.disabled = false;
                 subtitleBtn.textContent = '隐藏字幕';
+                // 防抖更新点赞状态
+                this.debouncedFetchLikeStatus();
             }
         } catch (e) {
             console.error('加载字幕失败', e);
@@ -1359,6 +1368,120 @@ class VideoPlayer {
                 try { container.removeChild(toast); } catch {}
             }, 300);
         }, Math.max(1000, duration));
+    }
+    
+    // 设置点赞按钮
+    setupLikeButton() {
+        const likeBtn = document.getElementById('likeButton');
+        const likeCount = document.getElementById('likeCount');
+        
+        if (!likeBtn || !likeCount) return;
+        
+        // 绑定点击事件
+        likeBtn.addEventListener('click', () => {
+            this.toggleLike();
+        });
+        
+        // 初始化点赞状态
+        this.fetchLikeStatus();
+    }
+    
+    // 获取点赞状态
+    async fetchLikeStatus() {
+        if (!this.currentVideoId) return;
+        
+        try {
+            const response = await fetch(`/api/subtitles/like-status/${this.currentVideoId}`);
+            if (response.ok) {
+                const data = await response.json();
+                this.currentLikeStatus = {
+                    isLiked: data.isLiked || false,
+                    likesCount: data.likesCount || 0
+                };
+                this.updateLikeUI();
+            }
+        } catch (error) {
+            console.error('获取点赞状态失败:', error);
+        }
+    }
+    
+    // 切换点赞状态
+    async toggleLike() {
+        if (!this.currentVideoId) {
+            this.showMessage(window.PLAYER_CONFIG.I18N.like.selectVideoFirst, 'error');
+            return;
+        }
+        
+        if (!this.userToken) {
+            this.showMessage(window.PLAYER_CONFIG.I18N.like.loginRequired, 'error');
+            return;
+        }
+        
+        const likeBtn = document.getElementById('likeButton');
+        if (likeBtn) likeBtn.disabled = true;
+        
+        try {
+            const response = await fetch(`/api/subtitles/like-toggle/${this.currentVideoId}`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                this.currentLikeStatus = {
+                    isLiked: data.isLiked,
+                    likesCount: data.likesCount
+                };
+                this.updateLikeUI();
+                this.showMessage(data.isLiked ? window.PLAYER_CONFIG.I18N.like.likeSuccess : window.PLAYER_CONFIG.I18N.like.unlikeSuccess, 'success');
+            } else if (response.status === 401) {
+                this.showMessage(window.PLAYER_CONFIG.I18N.like.loginExpired, 'error');
+            } else {
+                this.showMessage(window.PLAYER_CONFIG.I18N.like.operationFailed, 'error');
+            }
+        } catch (error) {
+            console.error('点赞操作失败:', error);
+            this.showMessage(window.PLAYER_CONFIG.I18N.like.networkError, 'error');
+        } finally {
+            if (likeBtn) likeBtn.disabled = false;
+        }
+    }
+    
+    // 更新点赞UI
+    updateLikeUI() {
+        const likeBtn = document.getElementById('likeButton');
+        const likeCount = document.getElementById('likeCount');
+        const likeSvg = likeBtn?.querySelector('svg');
+        
+        if (!likeBtn || !likeCount || !likeSvg) return;
+        
+        // 更新点赞数量
+        likeCount.textContent = this.currentLikeStatus.likesCount;
+        
+        // 更新点赞状态样式
+        if (this.currentLikeStatus.isLiked) {
+            likeBtn.classList.add('liked');
+            likeSvg.style.fill = '#ff6b6b';
+            likeSvg.style.stroke = '#ff6b6b';
+        } else {
+            likeBtn.classList.remove('liked');
+            likeSvg.style.fill = 'none';
+            likeSvg.style.stroke = '#666';
+        }
+    }
+    
+    // 防抖更新点赞状态（字幕切换时调用）
+    debouncedFetchLikeStatus() {
+        if (this.likeDebounceTimer) {
+            clearTimeout(this.likeDebounceTimer);
+        }
+        
+        this.likeDebounceTimer = setTimeout(() => {
+            this.fetchLikeStatus();
+        }, 300);
     }
 }
 
