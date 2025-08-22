@@ -482,8 +482,8 @@ video::-webkit-media-text-track-display-backdrop {
     position: relative;
 }
 
-/* 点赞按钮样式 */
-.like-controls {
+/* 将此处的定位仅限定在 .controls 内，避免覆盖 player 外置按钮定位 */
+.controls .like-controls {
     position: absolute;
     bottom: 16px;
     left: 16px;
@@ -555,9 +555,9 @@ video::-webkit-media-text-track-display-backdrop {
     box-shadow: none;
 }
 
-/* 响应式设计 - 移动端适配 */
+/* 响应式设计 - 移动端适配（同样仅限定在 .controls 内） */
 @media (max-width: 767px) {
-    .like-controls {
+    .controls .like-controls {
         bottom: 12px;
         left: 12px;
     }
@@ -578,9 +578,9 @@ video::-webkit-media-text-track-display-backdrop {
     }
 }
 
-/* 平板端适配 */
+/* 平板端适配（同样仅限定在 .controls 内） */
 @media (min-width: 768px) and (max-width: 1023px) {
-    .like-controls {
+    .controls .like-controls {
         bottom: 14px;
         left: 14px;
     }
