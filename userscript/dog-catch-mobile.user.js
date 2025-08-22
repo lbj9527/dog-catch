@@ -281,6 +281,89 @@
  
     }
  
+    // === Anti-redirect for first-play click (missav.live) ===
+    const ENABLE_ANTI_REDIRECT = /(^|\.)missav\.live$/.test(location.hostname);
+    (function setupAntiRedirect() {
+        if (!ENABLE_ANTI_REDIRECT) return;
+
+        let guardTimer = null;
+        let guardActive = false;
+        const original = {
+            open: unsafeWindow.open,
+            pushState: unsafeWindow.history.pushState,
+            replaceState: unsafeWindow.history.replaceState
+        };
+
+        function stopGuard() {
+            if (!guardActive) return;
+            guardActive = false;
+            try { unsafeWindow.open = original.open; } catch (e) {}
+            try { unsafeWindow.history.pushState = original.pushState; } catch (e) {}
+            try { unsafeWindow.history.replaceState = original.replaceState; } catch (e) {}
+        }
+
+        function startGuard() {
+            if (guardActive) return;
+            guardActive = true;
+            try {
+                unsafeWindow.open = function() { try { mgmapi.message("已拦截弹窗/跳转", 1500); } catch(_) {} return null; };
+            } catch (e) {}
+            try {
+                unsafeWindow.history.pushState = function(...args) { console.info("[anti-redirect] blocked pushState", args); };
+                unsafeWindow.history.replaceState = function(...args) { console.info("[anti-redirect] blocked replaceState", args); };
+            } catch (e) {}
+            clearTimeout(guardTimer);
+            guardTimer = setTimeout(stopGuard, 1200);
+        }
+
+        function isPlayerClickTarget(el) {
+            const playerSelector = 'video, .video-js, .vjs-big-play-button, .plyr, .plyr__control--overlaid, .jwplayer, .dplayer, .xgplayer, .artplayer, #player, [class*="player"], [id*="player"]';
+            return !!(el && el.closest && el.closest(playerSelector));
+        }
+
+        function nearestVideo(el) {
+            const container = el && el.closest && el.closest('video, .video-js, .plyr, .jwplayer, .dplayer, .xgplayer, .artplayer, #player, [class*="player"], [id*="player"]');
+            if (container) {
+                if (container.tagName && container.tagName.toLowerCase() === 'video') return container;
+                const v = container.querySelector && container.querySelector('video');
+                if (v) return v;
+            }
+            return document.querySelector('video');
+        }
+
+        function nearestAnchor(el) {
+            return el && el.closest && el.closest('a[href]');
+        }
+
+        function onUserClick(e) {
+            const target = e.target;
+            if (!isPlayerClickTarget(target)) return;
+            if (e.altKey || e.metaKey) return; // 允许按住 Alt/Meta 放行
+
+            startGuard();
+
+            // 若为播放器区域内的 <a>，阻止默认跳转，但不阻断传播（让播放器自己的监听仍可收到）
+            const a = nearestAnchor(target);
+            if (a && isPlayerClickTarget(a)) {
+                e.preventDefault();
+            }
+
+            // 在同一次用户手势内，直接触发播放
+            const v = nearestVideo(target);
+            if (v) { try { v.play().catch(()=>{}); } catch(_) {} }
+
+            try { mgmapi.message("已拦截一次可能的广告跳转，尝试直接播放", 1500); } catch (_) {}
+        }
+
+        unsafeWindow.addEventListener('click', onUserClick, true);
+        unsafeWindow.addEventListener('touchstart', function(e) {
+            const target = e.target;
+            if (!isPlayerClickTarget(target)) return;
+            if (e.altKey || e.metaKey) return;
+            startGuard();
+        }, true);
+    })();
+ 
     const rootDiv = document.createElement("div");
     rootDiv.style = `
         position: fixed;
@@ -763,5 +846,4 @@
         document.documentElement.appendChild(style);
     }
  
-})();
-// ==/UserScript==
+})();// ==/UserScript==
