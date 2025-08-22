@@ -73,6 +73,7 @@ body {
     max-width: 960px;
 }
 
+/* 播放器容器样式调整：允许外部控件溢出显示，并为底部外置控件预留空间 */
 .player-box {
     position: relative;
     width: min(100%, calc((100vh - 84px) * (16 / 9))); /* 方案B：按视口高度反推宽度 */
@@ -80,10 +81,36 @@ body {
     aspect-ratio: 16 / 9;
     background: #000;
     border-radius: 8px;
-    overflow: hidden;
+    overflow: visible; /* 原为 hidden，改为 visible 以便将点赞按钮放在容器外部 */
     margin-left: auto;
     margin-right: auto;
     max-height: calc(100vh - 84px); /* 头部(~64px) + 外边距/内边距(~20px) */
+    margin-bottom: 56px; /* 为底部外置的点赞按钮预留空间，避免与播放器重叠 */
+}
+
+/* 点赞按钮样式（外置到播放器容器下方左侧） */
+.like-controls {
+    position: absolute;
+    bottom: -48px; /* 将按钮放到播放器容器外部（下方） */
+    left: 0;       /* 贴齐容器左侧 */
+    z-index: 1;
+    pointer-events: auto;
+}
+
+/* 响应式设计 - 移动端适配 */
+@media (max-width: 767px) {
+    .like-controls {
+        bottom: -40px; /* 移动端按钮略小，预留空间稍小 */
+        left: 0;
+    }
+}
+
+/* 平板端适配 */
+@media (min-width: 768px) and (max-width: 1023px) {
+    .like-controls {
+        bottom: -44px;
+        left: 0;
+    }
 }
 
 .player-box .video-js {

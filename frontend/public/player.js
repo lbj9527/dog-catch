@@ -1391,13 +1391,22 @@ class VideoPlayer {
         if (!this.currentVideoId) return;
         
         try {
-            const response = await fetch(`/api/subtitles/like-status/${this.currentVideoId}`);
+            const base = (API_BASE_URL || (window.PLAYER_CONFIG?.API_BASE_URL || '')).replace(/\/$/, '');
+            const headers = this.userToken ? { Authorization: `Bearer ${this.userToken}` } : {};
+            const response = await fetch(`${base}/api/subtitles/like-status/${this.currentVideoId}`, { headers });
             if (response.ok) {
                 const data = await response.json();
                 this.currentLikeStatus = {
-                    isLiked: data.isLiked || false,
-                    likesCount: data.likesCount || 0
+                    isLiked: !!(data.is_liked ?? data.isLiked ?? false),
+                    likesCount: Number(data.likes_count ?? data.likesCount ?? 0)
                 };
+                // 确保展示点赞数
+                const likeCountEl = document.getElementById('likeCount');
+                if (likeCountEl) likeCountEl.style.display = 'inline';
+                this.updateLikeUI();
+            } else if (response.status === 401) {
+                // 未授权则重置状态但不报错
+                this.currentLikeStatus = { isLiked: false, likesCount: Number(this.currentLikeStatus.likesCount || 0) };
                 this.updateLikeUI();
             }
         } catch (error) {
@@ -1414,6 +1423,8 @@ class VideoPlayer {
         
         if (!this.userToken) {
             this.showMessage(window.PLAYER_CONFIG.I18N.like.loginRequired, 'error');
+            const loginModal = document.getElementById('loginModal');
+            if (loginModal) loginModal.style.display = 'flex';
             return;
         }
         
@@ -1421,7 +1432,9 @@ class VideoPlayer {
         if (likeBtn) likeBtn.disabled = true;
         
         try {
-            const response = await fetch(`/api/subtitles/like-toggle/${this.currentVideoId}`, {
+            const base = (API_BASE_URL || (window.PLAYER_CONFIG?.API_BASE_URL || '')).replace(/\/$/, '');
+            const url = `${base}/api/subtitles/like-toggle/${this.currentVideoId}`;
+            const response = await fetch(url, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${this.userToken}`,
@@ -1432,11 +1445,14 @@ class VideoPlayer {
             if (response.ok) {
                 const data = await response.json();
                 this.currentLikeStatus = {
-                    isLiked: data.isLiked,
-                    likesCount: data.likesCount
+                    isLiked: !!(data.is_liked ?? data.liked ?? false),
+                    likesCount: Number(data.likes_count ?? data.likesCount ?? 0)
                 };
+                // 已登录操作成功，确保展示点赞数
+                const likeCountEl = document.getElementById('likeCount');
+                if (likeCountEl) likeCountEl.style.display = 'inline';
                 this.updateLikeUI();
-                this.showMessage(data.isLiked ? window.PLAYER_CONFIG.I18N.like.likeSuccess : window.PLAYER_CONFIG.I18N.like.unlikeSuccess, 'success');
+                this.showMessage(this.currentLikeStatus.isLiked ? window.PLAYER_CONFIG.I18N.like.likeSuccess : window.PLAYER_CONFIG.I18N.like.unlikeSuccess, 'success');
             } else if (response.status === 401) {
                 this.showMessage(window.PLAYER_CONFIG.I18N.like.loginExpired, 'error');
             } else {
@@ -1458,8 +1474,11 @@ class VideoPlayer {
         
         if (!likeBtn || !likeCount || !likeSvg) return;
         
-        // 更新点赞数量
-        likeCount.textContent = this.currentLikeStatus.likesCount;
+        // 确保展示点赞数
+        likeCount.style.display = 'inline';
+        
+        // 更新点赞数量（千分位/缩写）
+        likeCount.textContent = this.formatLikeCount(this.currentLikeStatus.likesCount);
         
         // 更新点赞状态样式
         if (this.currentLikeStatus.isLiked) {
@@ -1471,6 +1490,16 @@ class VideoPlayer {
             likeSvg.style.fill = 'none';
             likeSvg.style.stroke = '#666';
         }
+    }
+    
+    // 数字格式化：< 1000 使用千分位；>=1000 使用缩写 1.2k
+    formatLikeCount(n) {
+        const num = Number(n) || 0;
+        if (num >= 1000) {
+            const val = (num / 1000).toFixed(1).replace(/\.0$/, '');
+            return `${val}k`;
+        }
+        try { return num.toLocaleString('zh-CN'); } catch { return String(num); }
     }
     
     // 防抖更新点赞状态（字幕切换时调用）
