@@ -1694,7 +1694,7 @@ app.get('/api/subtitles/variants/:base_video_id', authenticateAnyToken, async (r
         }
 
         const rows = await getAllAsync(
-            'SELECT video_id, base_video_id, variant, filename, file_size, updated_at FROM subtitles WHERE lower(base_video_id) = lower(?) ORDER BY COALESCE(variant,1) ASC, updated_at DESC',
+            'SELECT video_id, base_video_id, variant, filename, file_size, updated_at, likes_count FROM subtitles WHERE lower(base_video_id) = lower(?) ORDER BY COALESCE(variant,1) ASC, updated_at DESC',
             [baseId]
         );
         res.json({ base: extractBaseVideoId(baseId), variants: rows });

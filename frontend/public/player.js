@@ -1087,15 +1087,31 @@ class VideoPlayer {
         this.subtitleVariants.forEach(v => {
             const option = document.createElement('option');
             option.value = v.video_id;
-            // Use backend-provided video_id as the display label.
-            // This ensures default variant shows as base (no -1), and others as base-2, base-3, etc.
-            const label = v && v.video_id ? String(v.video_id) : ((Number(v.variant) || 1) === 1 ? this.extractBaseId(this.currentVideoId) : `${this.extractBaseId(this.currentVideoId)}-${v.variant}`);
-            option.textContent = label;
+            // 名称：使用后端提供的 video_id（默认版=base；其他=base-n）
+            const name = v && v.video_id ? String(v.video_id) : ((Number(v.variant) || 1) === 1 ? this.extractBaseId(this.currentVideoId) : `${this.extractBaseId(this.currentVideoId)}-${v.variant}`);
+            const count = Number(v && v.likes_count != null ? v.likes_count : 0);
+            option.textContent = `${name} ·  ❤ ${count}`;
             if (v.video_id === activeVideoId) option.selected = true;
             select.appendChild(option);
         });
         select.style.display = 'inline-block';
         select.disabled = false;
+    }
+
+    // 在点赞后局部刷新下拉框中对应项的点赞数显示
+    updateSubtitleOptionLikeCount(videoId, newCount) {
+        const select = document.getElementById('subtitleSelect');
+        if (!select) return;
+        const options = Array.from(select.options);
+        const idx = options.findIndex(opt => String(opt.value).toUpperCase() === String(videoId).toUpperCase());
+        if (idx >= 0) {
+            const v = this.subtitleVariants.find(x => String(x.video_id).toUpperCase() === String(videoId).toUpperCase());
+            if (v) v.likes_count = Number(newCount) || 0;
+            // 重新生成该项的显示文本
+            const name = v && v.video_id ? String(v.video_id) : this.extractBaseId(this.currentVideoId);
+            const count = Number(v && v.likes_count != null ? v.likes_count : 0);
+            options[idx].textContent = `${name} ·  ❤ ${count}`;
+        }
     }
 
     async switchSubtitleVariant(videoId) {
@@ -1410,13 +1426,19 @@ class VideoPlayer {
                 const likeCountEl = document.getElementById('likeCount');
                 if (likeCountEl) likeCountEl.style.display = 'inline';
                 this.updateLikeUI();
+                // 同步更新下拉框对应项的点赞数
+                this.updateSubtitleOptionLikeCount(activeId, this.currentLikeStatus.likesCount);
+                this.showMessage(this.currentLikeStatus.isLiked ? window.PLAYER_CONFIG.I18N.like.likeSuccess : window.PLAYER_CONFIG.I18N.like.unlikeSuccess, 'success');
             } else if (response.status === 401) {
-                // 未授权则重置状态但不报错
-                this.currentLikeStatus = { isLiked: false, likesCount: Number(this.currentLikeStatus.likesCount || 0) };
-                this.updateLikeUI();
+                this.showMessage(window.PLAYER_CONFIG.I18N.like.loginExpired, 'error');
+            } else {
+                this.showMessage(window.PLAYER_CONFIG.I18N.like.operationFailed, 'error');
             }
         } catch (error) {
-            console.error('获取点赞状态失败:', error);
+            console.error('点赞操作失败:', error);
+            this.showMessage(window.PLAYER_CONFIG.I18N.like.networkError, 'error');
+        } finally {
+            if (likeBtn) likeBtn.disabled = false;
         }
     }
     
@@ -1459,6 +1481,8 @@ class VideoPlayer {
                 const likeCountEl = document.getElementById('likeCount');
                 if (likeCountEl) likeCountEl.style.display = 'inline';
                 this.updateLikeUI();
+                // 同步更新下拉框对应项的点赞数
+                this.updateSubtitleOptionLikeCount(activeId, this.currentLikeStatus.likesCount);
                 this.showMessage(this.currentLikeStatus.isLiked ? window.PLAYER_CONFIG.I18N.like.likeSuccess : window.PLAYER_CONFIG.I18N.like.unlikeSuccess, 'success');
             } else if (response.status === 401) {
                 this.showMessage(window.PLAYER_CONFIG.I18N.like.loginExpired, 'error');
