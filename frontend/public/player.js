@@ -1087,7 +1087,9 @@ class VideoPlayer {
         this.subtitleVariants.forEach(v => {
             const option = document.createElement('option');
             option.value = v.video_id;
-            const label = (Number(v.variant) || 1) === 1 ? '字幕(默认)' : `字幕(版本${v.variant})`;
+            // Use backend-provided video_id as the display label.
+            // This ensures default variant shows as base (no -1), and others as base-2, base-3, etc.
+            const label = v && v.video_id ? String(v.video_id) : ((Number(v.variant) || 1) === 1 ? this.extractBaseId(this.currentVideoId) : `${this.extractBaseId(this.currentVideoId)}-${v.variant}`);
             option.textContent = label;
             if (v.video_id === activeVideoId) option.selected = true;
             select.appendChild(option);
