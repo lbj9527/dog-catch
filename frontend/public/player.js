@@ -1009,7 +1009,7 @@ class VideoPlayer {
     selectDefaultQuality() {
         if (this.qualities.length === 0) return null;
         
-        // 选择中等清晰度：如果有多个选项，选择中间的；如果只有一个，选择它
+        // 选择中间清晰度：如果有多个选项，选择中间的；如果只有一个，选择它
         const middleIndex = Math.floor(this.qualities.length / 2);
         return this.qualities[middleIndex];
     }
@@ -1090,7 +1090,7 @@ class VideoPlayer {
             // 名称：使用后端提供的 video_id（默认版=base；其他=base-n）
             const name = v && v.video_id ? String(v.video_id) : ((Number(v.variant) || 1) === 1 ? this.extractBaseId(this.currentVideoId) : `${this.extractBaseId(this.currentVideoId)}-${v.variant}`);
             const count = Number(v && v.likes_count != null ? v.likes_count : 0);
-            option.textContent = `${name} ·  ❤ ${count}`;
+            option.textContent = `${name}  ❤ ${count}`;
             if (v.video_id === activeVideoId) option.selected = true;
             select.appendChild(option);
         });
@@ -1110,7 +1110,7 @@ class VideoPlayer {
             // 重新生成该项的显示文本
             const name = v && v.video_id ? String(v.video_id) : this.extractBaseId(this.currentVideoId);
             const count = Number(v && v.likes_count != null ? v.likes_count : 0);
-            options[idx].textContent = `${name} ·  ❤ ${count}`;
+            options[idx].textContent = `${name}  ❤ ${count}`;
         }
     }
 
