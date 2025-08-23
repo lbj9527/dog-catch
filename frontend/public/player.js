@@ -1391,12 +1391,13 @@ class VideoPlayer {
     
     // 获取点赞状态
     async fetchLikeStatus() {
-        if (!this.currentVideoId) return;
+        const activeId = this.currentSubtitleId || this.currentVideoId;
+        if (!activeId) return;
         
         try {
             const base = (API_BASE_URL || (window.PLAYER_CONFIG?.API_BASE_URL || '')).replace(/\/$/, '');
             const headers = this.userToken ? { Authorization: `Bearer ${this.userToken}` } : {};
-            const response = await fetch(`${base}/api/subtitles/like-status/${this.currentVideoId}`, { headers });
+            const response = await fetch(`${base}/api/subtitles/like-status/${activeId}`, { headers });
             if (response.ok) {
                 const data = await response.json();
                 this.currentLikeStatus = {
@@ -1419,7 +1420,8 @@ class VideoPlayer {
     
     // 切换点赞状态
     async toggleLike() {
-        if (!this.currentVideoId) {
+        const activeId = this.currentSubtitleId || this.currentVideoId;
+        if (!activeId) {
             this.showMessage(window.PLAYER_CONFIG.I18N.like.selectVideoFirst, 'error');
             return;
         }
@@ -1436,7 +1438,7 @@ class VideoPlayer {
         
         try {
             const base = (API_BASE_URL || (window.PLAYER_CONFIG?.API_BASE_URL || '')).replace(/\/$/, '');
-            const url = `${base}/api/subtitles/like-toggle/${this.currentVideoId}`;
+            const url = `${base}/api/subtitles/like-toggle/${activeId}`;
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
