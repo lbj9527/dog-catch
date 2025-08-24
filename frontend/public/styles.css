@@ -678,3 +678,27 @@ body.modal-open {
         left: 14px;
     }
 }
+
+/* 心愿单头部瘦身 */
+#wishlistModal .modal-header { padding: 6px 8px; }
+#wishlistModal .modal-header h3 { margin: 0; font-size: 16px; line-height: 1.2; }
+#wishlistModal .modal-header .close { font-size: 16px; line-height: 1; padding: 2px 6px; }
+
+/* 紧凑间距与计数文案间距 */
+#wishlistModal .auth-panel { padding: 12px 8px 10px; /* 原16px 8px 12px*/ }
+#wishlistModal .auth-panel .form { gap: 6px; /* 原8px */ }
+#wishlistModal #wlCountText { margin-bottom: 4px; }
+
+/* 关键：允许子项在嵌套flex中收缩 */
+#wishlistModal .modal-body { min-height: 0; }
+#wishlistModal .auth-panel { min-height: 0; }
+#wishlistModal .auth-panel .form { min-height: 0; }
+
+/* 让列表所在行可伸缩，并让列表吃满高度 */
+#wishlistModal .wl-list-row { flex: 1 1 auto; min-height: 0; display: flex; }
+#wishlistModal #wlList { height: 100%; max-height: none; }
+
+/* 移动端媒体查询内也保持列表占满高度 */
+@media (max-width: 600px) {
+  #wishlistModal #wlList { height: 100%; max-height: none; }
+}
