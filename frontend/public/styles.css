@@ -352,12 +352,16 @@ video::-webkit-media-text-track-display-backdrop {
     flex-direction: column;
 }
 
-#wishlistModal .modal-body {
-    flex: 1;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
+/* 方案B：心愿单简化结构样式 */
+#wishlistModal .modal-body { flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+#wishlistModal .wlFormSection { padding: 10px 8px; display: grid; gap: 8px; flex: none; }
+#wishlistModal .wlFormSection .row-compact { display: grid; grid-template-columns: max-content 1fr; gap: 6px; align-items: center; }
+@media (max-width: 420px) {
+  #wishlistModal .wlFormSection .row-compact { grid-template-columns: 1fr; gap: 6px; }
 }
+#wishlistModal .wlListSection { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; padding: 0 6px 10px 8px; }
+/* 覆盖此前 #wishlistModal #wlList { height:100% } 的设定，确保由容器滚动 */
+#wishlistModal .wlListSection #wlList { height: auto; max-height: none; }
 
 #wishlistModal .auth-panel {
     height: 100%;
