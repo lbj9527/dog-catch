@@ -358,7 +358,9 @@ video::-webkit-media-text-track-display-backdrop {
 #wishlistModal .auth-panel {
     height: 100%;
     overflow: hidden;
-    padding: 16px 16px 12px;
+    padding: 16px 8px 12px;
+    max-width: none;
+    margin: 0;
 }
 
 #wishlistModal .auth-panel .form {
