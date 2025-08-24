@@ -339,6 +339,52 @@ video::-webkit-media-text-track-display-backdrop {
     font-size: 18px;
 }
 .modal-body { padding: 12px; }
+
+/* 心愿单弹窗特殊样式 */
+#wishlistModal .modal-content {
+    width: min(640px, 92vw);
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+#wishlistModal .modal-body {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+#wishlistModal .auth-panel {
+    height: 100%;
+    overflow: hidden;
+    padding: 16px 16px 12px;
+}
+
+#wishlistModal .auth-panel .form {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#wishlistModal #wlList {
+    flex: 1 1 auto;
+    max-height: min(60vh, 520px);
+    overflow-y: auto;
+    padding-right: 6px;
+}
+
+/* 移动端适配 */
+@media (max-width: 600px) {
+    #wishlistModal .modal-content {
+        max-height: 85vh;
+    }
+    
+    #wishlistModal #wlList {
+        max-height: 50vh;
+    }
+}
 .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
 .tabs .tab { padding: 6px 10px; border: 1px solid #444; background:#222; border-radius: 4px; cursor: pointer; }
 .tabs .tab.active { background: #2f77ff; border-color:#2f77ff; }
