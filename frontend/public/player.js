@@ -437,17 +437,8 @@ class VideoPlayer {
                     this.updateWishlistCurrentInput();
                     this.wlLoadList(true);
                     
-                    // 启动轮询以同步后台状态更新
-                    if (this._wlPollTimer) clearInterval(this._wlPollTimer);
-                    this._wlPollTimer = setInterval(() => {
-                        const modalVisible = wishlistModal && wishlistModal.style.display !== 'none';
-                        if (modalVisible) {
-                            this.wlLoadList(true);
-                        } else {
-                            clearInterval(this._wlPollTimer);
-                            this._wlPollTimer = null;
-                        }
-                    }, 10000);
+                    // 启动轻量级轮询以同步后台状态更新
+                     this.wlStartPolling();
                 }
             };
         }
@@ -456,7 +447,7 @@ class VideoPlayer {
         if (wishlistClose) {
             wishlistClose.onclick = () => {
                 if (wishlistModal) wishlistModal.style.display = 'none';
-                if (this._wlPollTimer) { clearInterval(this._wlPollTimer); this._wlPollTimer = null; }
+                this.wlStopPolling();
             };
         }
         
@@ -465,7 +456,7 @@ class VideoPlayer {
             wishlistModal.onclick = (e) => {
                 if (e.target === wishlistModal) {
                     wishlistModal.style.display = 'none';
-                    if (this._wlPollTimer) { clearInterval(this._wlPollTimer); this._wlPollTimer = null; }
+                    this.wlStopPolling();
                 }
             };
         }
@@ -474,7 +465,7 @@ class VideoPlayer {
         if (wishlistClose) {
             wishlistClose.onclick = () => {
                 wishlistModal.style.display = 'none';
-                if (this._wlPollTimer) { clearInterval(this._wlPollTimer); this._wlPollTimer = null; }
+                this.wlStopPolling();
             };
         }
         
@@ -1693,15 +1684,15 @@ class VideoPlayer {
                 const badgeColor = isUpdated ? '#2e7d32' : '#999';
                 const badgeText = status || '未更新';
                 return `
-                <div class="wl-item" style="position:relative;border:1px solid #ddd;margin:8px 0;padding:12px;border-radius:4px;">
-                    <div style="font-weight:bold;margin-bottom:4px;">${this.escapeHtml(item.video_id || item.base_video_id)}</div>
-                    ${item.note ? `<div style="color:#666;margin-bottom:8px;">${this.escapeHtml(item.note)}</div>` : ''}
-                    <div style="font-size:12px;color:#999;">
-                        ${new Date(item.created_at).toLocaleString()}
-                        <button onclick="window.videoPlayerInstance.wlDelete(${item.id})" style="float:right;background:#ff4444;color:white;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;">删除</button>
-                    </div>
-                    <span style="position:absolute;top:8px;right:8px;font-size:12px;color:${badgeColor};">${badgeText}</span>
-                </div>`;
+                 <div class="wl-item" data-id="${item.id}" style="position:relative;border:1px solid #ddd;margin:8px 0;padding:12px;border-radius:4px;">
+                     <div style="font-weight:bold;margin-bottom:4px;">${this.escapeHtml(item.video_id || item.base_video_id)}</div>
+                     ${item.note ? `<div style="color:#666;margin-bottom:8px;">${this.escapeHtml(item.note)}</div>` : ''}
+                     <div style="font-size:12px;color:#999;">
+                         ${new Date(item.created_at).toLocaleString()}
+                         <button onclick="window.videoPlayerInstance.wlDelete(${item.id})" style="float:right;background:#ff4444;color:white;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;">删除</button>
+                     </div>
+                     <span class="wl-status-badge" style="position:absolute;top:8px;right:8px;font-size:12px;color:${badgeColor};">${badgeText}</span>
+                 </div>`;
             }).join('');
         }
         
@@ -1837,6 +1828,132 @@ class VideoPlayer {
             this.showMessage(message, 'error');
         } finally {
             this.setButtonLoading(wlAddBtn, false, '添加到心愿单');
+        }
+    }
+    
+    // 启动心愿单状态轮询
+    wlStartPolling() {
+        this.wlStopPolling(); // 先停止现有轮询
+        this._wlPollingInFlight = false;
+        this._wlPollRetryCount = 0;
+        this._wlScheduleNextPoll();
+    }
+    
+    // 停止心愿单状态轮询
+    wlStopPolling() {
+        if (this._wlPollTimer) {
+            clearTimeout(this._wlPollTimer);
+            this._wlPollTimer = null;
+        }
+        this._wlPollingInFlight = false;
+    }
+    
+    // 安排下一次轮询
+    _wlScheduleNextPoll() {
+        if (this._wlPollTimer) return; // 防止重复安排
+        
+        // 根据重试次数调整间隔：正常10s，出错后退避到30s
+        const interval = this._wlPollRetryCount > 0 ? 30000 : 10000;
+        
+        this._wlPollTimer = setTimeout(() => {
+            this._wlPollTimer = null;
+            this._wlPollStatusUpdate();
+        }, interval);
+    }
+    
+    // 轻量级状态更新（不重绘整个列表）
+    async _wlPollStatusUpdate() {
+        // 检查弹窗是否仍然打开
+        const wishlistModal = document.getElementById('wishlistModal');
+        if (!wishlistModal || wishlistModal.style.display === 'none') {
+            this.wlStopPolling();
+            return;
+        }
+        
+        // 防止并发请求
+        if (this._wlPollingInFlight) {
+            this._wlScheduleNextPoll();
+            return;
+        }
+        
+        // 如果列表为空，直接安排下次轮询
+        if (!this.wl.list || this.wl.list.length === 0) {
+            this._wlScheduleNextPoll();
+            return;
+        }
+        
+        if (!this.isLoggedIn()) {
+            this.wlStopPolling();
+            return;
+        }
+        
+        this._wlPollingInFlight = true;
+        
+        try {
+            const params = new URLSearchParams({ 
+                limit: Math.max(this.wl.list.length, 20) // 至少获取当前已显示的数量
+            });
+            
+            const response = await fetch(`${API_BASE_URL}/api/user/wishlists?${params}`, {
+                headers: { Authorization: `Bearer ${this.userToken}` }
+            });
+            
+            if (response.status === 401) {
+                this.doLogout();
+                this.wlStopPolling();
+                return;
+            }
+            
+            if (!response.ok) {
+                if (response.status === 429) {
+                    // 遇到限流，增加重试计数并退避
+                    this._wlPollRetryCount = Math.min(this._wlPollRetryCount + 1, 3);
+                } else {
+                    throw new Error('Network error');
+                }
+                this._wlScheduleNextPoll();
+                return;
+            }
+            
+            const data = await response.json();
+            
+            // 重置重试计数
+            this._wlPollRetryCount = 0;
+            
+            // 构建新数据的 Map
+            const newDataMap = new Map();
+            (data.data || []).forEach(item => {
+                newDataMap.set(item.id, item);
+            });
+            
+            // 原地更新状态
+            this.wl.list.forEach((item, index) => {
+                const newItem = newDataMap.get(item.id);
+                if (newItem && newItem.status !== item.status) {
+                    // 更新内存中的数据
+                    this.wl.list[index].status = newItem.status;
+                    this.wl.list[index].updated_at = newItem.updated_at;
+                    
+                    // 原地更新 DOM
+                    const itemElement = document.querySelector(`[data-id="${item.id}"] .wl-status-badge`);
+                    if (itemElement) {
+                        const status = (newItem.status || '').trim();
+                        const isUpdated = status === '已更新';
+                        const badgeColor = isUpdated ? '#2e7d32' : '#999';
+                        const badgeText = status || '未更新';
+                        
+                        itemElement.style.color = badgeColor;
+                        itemElement.textContent = badgeText;
+                    }
+                }
+            });
+            
+        } catch (error) {
+            console.error('轮询心愿单状态失败:', error);
+            this._wlPollRetryCount = Math.min(this._wlPollRetryCount + 1, 3);
+        } finally {
+            this._wlPollingInFlight = false;
+            this._wlScheduleNextPoll();
         }
     }
     
