@@ -428,12 +428,26 @@ class VideoPlayer {
                     // 修复：打开弹窗时清理输入框和错误提示
                     const wlNoteInput = document.getElementById('wlNoteInput');
                     const wlError = document.getElementById('wlError');
+                    const wlCurrentVideo = document.getElementById('wlCurrentVideo');
                     if (wlNoteInput) wlNoteInput.value = '';
                     if (wlError) wlError.textContent = '';
+                    if (wlCurrentVideo) wlCurrentVideo.value = '';
                     
                     wishlistModal.style.display = 'flex';
                     this.updateWishlistCurrentInput();
                     this.wlLoadList(true);
+                    
+                    // 启动轮询以同步后台状态更新
+                    if (this._wlPollTimer) clearInterval(this._wlPollTimer);
+                    this._wlPollTimer = setInterval(() => {
+                        const modalVisible = wishlistModal && wishlistModal.style.display !== 'none';
+                        if (modalVisible) {
+                            this.wlLoadList(true);
+                        } else {
+                            clearInterval(this._wlPollTimer);
+                            this._wlPollTimer = null;
+                        }
+                    }, 10000);
                 }
             };
         }
@@ -442,6 +456,7 @@ class VideoPlayer {
         if (wishlistClose) {
             wishlistClose.onclick = () => {
                 if (wishlistModal) wishlistModal.style.display = 'none';
+                if (this._wlPollTimer) { clearInterval(this._wlPollTimer); this._wlPollTimer = null; }
             };
         }
         
@@ -450,6 +465,7 @@ class VideoPlayer {
             wishlistModal.onclick = (e) => {
                 if (e.target === wishlistModal) {
                     wishlistModal.style.display = 'none';
+                    if (this._wlPollTimer) { clearInterval(this._wlPollTimer); this._wlPollTimer = null; }
                 }
             };
         }
@@ -458,6 +474,7 @@ class VideoPlayer {
         if (wishlistClose) {
             wishlistClose.onclick = () => {
                 wishlistModal.style.display = 'none';
+                if (this._wlPollTimer) { clearInterval(this._wlPollTimer); this._wlPollTimer = null; }
             };
         }
         
@@ -1652,7 +1669,8 @@ class VideoPlayer {
         const wlCurrentVideo = document.getElementById('wlCurrentVideo');
         if (wlCurrentVideo) {
             const videoId = this.getActiveVideoId();
-            wlCurrentVideo.value = videoId || '无当前视频';
+            wlCurrentVideo.placeholder = videoId || '无当前视频';
+            // 不预填值，保持可编辑
         }
     }
     
@@ -1668,17 +1686,23 @@ class VideoPlayer {
         } else if (this.wl.loading && this.wl.list.length === 0) {
             wlList.innerHTML = '<div style="text-align:center;color:#666;padding:20px;">加载中...</div>';
         } else {
-            // 修复 XSS 风险：转义用户输入
-            wlList.innerHTML = this.wl.list.map(item => `
-                <div class="wl-item" style="border:1px solid #ddd;margin:8px 0;padding:12px;border-radius:4px;">
+            // 修复 XSS 风险：转义用户输入 + 显示状态徽标
+            wlList.innerHTML = this.wl.list.map(item => {
+                const status = (item.status || '').trim();
+                const isUpdated = status === '已更新';
+                const badgeColor = isUpdated ? '#2e7d32' : '#999';
+                const badgeText = status || '未更新';
+                return `
+                <div class="wl-item" style="position:relative;border:1px solid #ddd;margin:8px 0;padding:12px;border-radius:4px;">
                     <div style="font-weight:bold;margin-bottom:4px;">${this.escapeHtml(item.video_id || item.base_video_id)}</div>
                     ${item.note ? `<div style="color:#666;margin-bottom:8px;">${this.escapeHtml(item.note)}</div>` : ''}
                     <div style="font-size:12px;color:#999;">
                         ${new Date(item.created_at).toLocaleString()}
                         <button onclick="window.videoPlayerInstance.wlDelete(${item.id})" style="float:right;background:#ff4444;color:white;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;">删除</button>
                     </div>
-                </div>
-            `).join('');
+                    <span style="position:absolute;top:8px;right:8px;font-size:12px;color:${badgeColor};">${badgeText}</span>
+                </div>`;
+            }).join('');
         }
         
         // 控制加载更多按钮显示
@@ -1751,12 +1775,19 @@ class VideoPlayer {
         const wlNoteInput = document.getElementById('wlNoteInput');
         const wlError = document.getElementById('wlError');
         const wlAddBtn = document.getElementById('wlAddBtn');
+        const wlCurrentVideo = document.getElementById('wlCurrentVideo');
         
-        const videoId = this.getActiveVideoId();
-        if (!videoId) {
+        let inputVal = (wlCurrentVideo && wlCurrentVideo.value ? wlCurrentVideo.value.trim() : '');
+        const placeholderVal = (wlCurrentVideo && wlCurrentVideo.placeholder ? wlCurrentVideo.placeholder.trim() : '');
+        let videoId = inputVal || placeholderVal;
+        
+        if (!videoId || videoId === '无当前视频') {
             if (wlError) wlError.textContent = '无当前视频';
             return;
         }
+        
+        // 统一为大写，避免大小写导致的重复或校验问题
+        videoId = String(videoId).toUpperCase();
         
         const note = wlNoteInput ? wlNoteInput.value.trim() : '';
         if (note.length > 200) {
@@ -1795,6 +1826,7 @@ class VideoPlayer {
             
             this.showMessage('已添加到心愿单');
             if (wlNoteInput) wlNoteInput.value = '';
+            if (wlCurrentVideo) wlCurrentVideo.value = '';
             // 重新加载列表
             this.wlLoadList(true);
             
