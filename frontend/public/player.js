@@ -434,6 +434,7 @@ class VideoPlayer {
                     if (wlCurrentVideo) wlCurrentVideo.value = '';
                     
                     wishlistModal.style.display = 'flex';
+                    document.body.classList.add('modal-open');
                     this.updateWishlistCurrentInput();
                     this.wlLoadList(true);
                     
@@ -446,7 +447,10 @@ class VideoPlayer {
         // 心愿单弹窗关闭事件
         if (wishlistClose) {
             wishlistClose.onclick = () => {
-                if (wishlistModal) wishlistModal.style.display = 'none';
+                if (wishlistModal) {
+                    wishlistModal.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                }
                 this.wlStopPolling();
             };
         }
@@ -456,6 +460,7 @@ class VideoPlayer {
             wishlistModal.onclick = (e) => {
                 if (e.target === wishlistModal) {
                     wishlistModal.style.display = 'none';
+                    document.body.classList.remove('modal-open');
                     this.wlStopPolling();
                 }
             };
@@ -465,6 +470,7 @@ class VideoPlayer {
         if (wishlistClose) {
             wishlistClose.onclick = () => {
                 wishlistModal.style.display = 'none';
+                document.body.classList.remove('modal-open');
                 this.wlStopPolling();
             };
         }
@@ -1668,7 +1674,6 @@ class VideoPlayer {
     // 渲染心愿单列表
     wlRenderList() {
         const wlList = document.getElementById('wlList');
-        const wlLoadMoreBtn = document.getElementById('wlLoadMoreBtn');
         if (!wlList) return;
         
         // 修复 UX 问题：加载中时不显示"暂无心愿单"
@@ -1696,15 +1701,25 @@ class VideoPlayer {
             }).join('');
         }
         
-        // 控制加载更多按钮显示
-        if (wlLoadMoreBtn) {
-            wlLoadMoreBtn.style.display = this.wl.hasMore ? 'block' : 'none';
-            wlLoadMoreBtn.disabled = this.wl.loading;
-            wlLoadMoreBtn.textContent = this.wl.loading ? '加载中...' : '加载更多';
+        // 更新心愿单计数文案
+        this.updateWishlistCountText();
+    }
+    
+    // 更新心愿单计数文案
+    updateWishlistCountText() {
+        const countElement = document.getElementById('wlCountText');
+        if (!countElement) return;
+        
+        const count = this.wl.list.length;
+        if (count > 0) {
+            countElement.textContent = `已有${count}条记录`;
+            countElement.style.display = 'block';
+        } else {
+            countElement.style.display = 'none';
         }
     }
     
-    // 加载心愿单列表
+    // 加载心愿单列表（一次性加载所有记录）
     async wlLoadList(reset = false) {
         if (this.wl.loading) return;
         if (!this.isLoggedIn()) {
@@ -1718,34 +1733,43 @@ class VideoPlayer {
             this.wl.hasMore = true;
         }
         
-        if (!this.wl.hasMore) return;
-        
         this.wl.loading = true;
         this.wlRenderList();
         
         try {
-            const params = new URLSearchParams({ limit: this.wl.limit });
-            if (this.wl.cursor) params.append('cursor', this.wl.cursor);
+            // 循环加载所有分页数据
+            let allItems = reset ? [] : [...this.wl.list];
+            let currentCursor = reset ? null : this.wl.cursor;
             
-            const response = await fetch(`${API_BASE_URL}/api/user/wishlists?${params}`, {
-                headers: { Authorization: `Bearer ${this.userToken}` }
-            });
+            do {
+                const params = new URLSearchParams({ limit: this.wl.limit });
+                if (currentCursor) params.append('cursor', currentCursor);
+                
+                const response = await fetch(`${API_BASE_URL}/api/user/wishlists?${params}`, {
+                    headers: { Authorization: `Bearer ${this.userToken}` }
+                });
+                
+                if (response.status === 401) {
+                    this.doLogout();
+                    this.showMessage('登录已过期，请重新登录', 'error');
+                    return;
+                }
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || '加载失败');
+                }
+                
+                const data = await response.json();
+                allItems = [...allItems, ...data.data];
+                currentCursor = data.page?.next_cursor || null;
+                
+            } while (currentCursor);
             
-            if (response.status === 401) {
-                this.doLogout();
-                this.showMessage('登录已过期，请重新登录', 'error');
-                return;
-            }
-            
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || '加载失败');
-            }
-            
-            const data = await response.json();
-            this.wl.list = reset ? data.data : [...this.wl.list, ...data.data];
-            this.wl.cursor = data.page?.next_cursor || null;
-            this.wl.hasMore = !!data.page?.next_cursor;
+            // 更新状态
+            this.wl.list = allItems;
+            this.wl.cursor = null;
+            this.wl.hasMore = false;
             
         } catch (error) {
             console.error('加载心愿单失败:', error);
@@ -1760,6 +1784,12 @@ class VideoPlayer {
     async wlAdd() {
         if (!this.isLoggedIn()) {
             this.showMessage('请先登录', 'error');
+            return;
+        }
+        
+        // 检查心愿单数量限制（最多10条）
+        if (this.wl.list.length >= 10) {
+            this.showMessage('心愿单最多只能添加10条记录', 'error');
             return;
         }
         
