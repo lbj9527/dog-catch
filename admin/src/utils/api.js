@@ -131,4 +131,18 @@ export const subtitleAPI = {
   }
 }
 
-export default api 
+// 新增：心愿单管理 API（管理端）
+export const wishlistAPI = {
+  // 获取心愿单列表（cursor 分页）
+  getList(params = {}) {
+    // params: { cursor?: string, limit?: number }
+    return api.get('/api/admin/wishlists', { params })
+  },
+
+  // 更新心愿单状态
+  updateStatus(id, status) {
+    return api.patch(`/api/admin/wishlists/${id}`, { status })
+  }
+}
+
+export default api

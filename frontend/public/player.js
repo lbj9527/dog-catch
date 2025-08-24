@@ -20,7 +20,24 @@ class VideoPlayer {
         this.currentLikeStatus = { isLiked: false, likesCount: 0 };
         this.likeDebounceTimer = null;
         
+        // 心愿单相关状态
+        this.wl = {
+            list: [],
+            cursor: null,
+            limit: 10,
+            loading: false,
+            hasMore: true
+        };
+        
         this.init();
+    }
+
+    // XSS 防护：转义 HTML 特殊字符
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     async updateUserEmail() {
@@ -303,6 +320,17 @@ class VideoPlayer {
         const menuSettings = document.getElementById('menuSettings');
         const settingsModal = document.getElementById('settingsModal');
         const settingsClose = document.getElementById('settingsClose');
+        
+        // 心愿单相关元素
+        const menuWishlist = document.getElementById('menuWishlist');
+        const wishlistModal = document.getElementById('wishlistModal');
+        const wishlistClose = document.getElementById('wishlistClose');
+        const wlAddBtn = document.getElementById('wlAddBtn');
+        const wlLoadMoreBtn = document.getElementById('wlLoadMoreBtn');
+        const wlNoteInput = document.getElementById('wlNoteInput');
+        const wlCurrentVideo = document.getElementById('wlCurrentVideo');
+        const wlError = document.getElementById('wlError');
+        const wlList = document.getElementById('wlList');
 
         // whoModal 已移除
 
@@ -390,6 +418,57 @@ class VideoPlayer {
                     settingsModal.style.display = 'none';
                 }
             };
+        }
+        
+        // 心愿单菜单项点击事件
+        if (menuWishlist) {
+            menuWishlist.onclick = () => {
+                if (userMenu) userMenu.style.display = 'none';
+                if (wishlistModal) {
+                    // 修复：打开弹窗时清理输入框和错误提示
+                    const wlNoteInput = document.getElementById('wlNoteInput');
+                    const wlError = document.getElementById('wlError');
+                    if (wlNoteInput) wlNoteInput.value = '';
+                    if (wlError) wlError.textContent = '';
+                    
+                    wishlistModal.style.display = 'flex';
+                    this.updateWishlistCurrentInput();
+                    this.wlLoadList(true);
+                }
+            };
+        }
+        
+        // 心愿单弹窗关闭事件
+        if (wishlistClose) {
+            wishlistClose.onclick = () => {
+                if (wishlistModal) wishlistModal.style.display = 'none';
+            };
+        }
+        
+        // 点击心愿单弹窗外部关闭
+        if (wishlistModal) {
+            wishlistModal.onclick = (e) => {
+                if (e.target === wishlistModal) {
+                    wishlistModal.style.display = 'none';
+                }
+            };
+        }
+        
+        // 心愿单弹窗关闭按钮
+        if (wishlistClose) {
+            wishlistClose.onclick = () => {
+                wishlistModal.style.display = 'none';
+            };
+        }
+        
+        // 添加到心愿单按钮事件
+        if (wlAddBtn) {
+            wlAddBtn.onclick = () => this.wlAdd();
+        }
+        
+        // 加载更多按钮事件
+        if (wlLoadMoreBtn) {
+            wlLoadMoreBtn.onclick = () => this.wlLoadList(false);
         }
         
         // 点击页面其他地方关闭用户菜单
@@ -749,6 +828,13 @@ class VideoPlayer {
         const logged = this.isLoggedIn();
         loginBtn.style.display = logged ? 'none' : '';
         if (userAvatar) userAvatar.style.display = logged ? '' : 'none';
+        
+        // 控制心愿单入口显示
+        const menuWishlist = document.getElementById('menuWishlist');
+        if (menuWishlist) {
+            menuWishlist.style.display = logged ? '' : 'none';
+        }
+        
         if (!logged && REQUIRE_SUBTITLE_LOGIN) {
             this.disableSubtitleUi('登录后可用');
         }
@@ -784,6 +870,16 @@ class VideoPlayer {
         // Reset like state and UI on logout
         this.currentLikeStatus = { isLiked: false, likesCount: 0 };
         this.updateLikeUI();
+        
+        // 重置心愿单状态
+        this.wl = {
+            list: [],
+            cursor: null,
+            limit: 10,
+            loading: false,
+            hasMore: true
+        };
+        
         this.removeAllSubtitleTracks('登录后可用');
         this.disableSubtitleUi('登录后可用');
         this.refreshAuthUi();
@@ -1150,6 +1246,8 @@ class VideoPlayer {
                 subtitleBtn.textContent = '隐藏字幕';
                 // 防抖更新点赞状态
                 this.debouncedFetchLikeStatus();
+                // 更新心愿单当前视频输入框
+                this.updateWishlistCurrentInput();
             }
         } catch (e) {
             console.error('加载字幕失败', e);
@@ -1542,6 +1640,214 @@ class VideoPlayer {
         this.likeDebounceTimer = setTimeout(() => {
             this.fetchLikeStatus();
         }, 300);
+    }
+    
+    // 获取当前激活的视频 ID
+    getActiveVideoId() {
+        return this.currentSubtitleId || this.currentVideoId || '';
+    }
+    
+    // 更新心愿单当前视频输入框
+    updateWishlistCurrentInput() {
+        const wlCurrentVideo = document.getElementById('wlCurrentVideo');
+        if (wlCurrentVideo) {
+            const videoId = this.getActiveVideoId();
+            wlCurrentVideo.value = videoId || '无当前视频';
+        }
+    }
+    
+    // 渲染心愿单列表
+    wlRenderList() {
+        const wlList = document.getElementById('wlList');
+        const wlLoadMoreBtn = document.getElementById('wlLoadMoreBtn');
+        if (!wlList) return;
+        
+        // 修复 UX 问题：加载中时不显示"暂无心愿单"
+        if (this.wl.list.length === 0 && !this.wl.loading) {
+            wlList.innerHTML = '<div style="text-align:center;color:#666;padding:20px;">暂无心愿单</div>';
+        } else if (this.wl.loading && this.wl.list.length === 0) {
+            wlList.innerHTML = '<div style="text-align:center;color:#666;padding:20px;">加载中...</div>';
+        } else {
+            // 修复 XSS 风险：转义用户输入
+            wlList.innerHTML = this.wl.list.map(item => `
+                <div class="wl-item" style="border:1px solid #ddd;margin:8px 0;padding:12px;border-radius:4px;">
+                    <div style="font-weight:bold;margin-bottom:4px;">${this.escapeHtml(item.video_id || item.base_video_id)}</div>
+                    ${item.note ? `<div style="color:#666;margin-bottom:8px;">${this.escapeHtml(item.note)}</div>` : ''}
+                    <div style="font-size:12px;color:#999;">
+                        ${new Date(item.created_at).toLocaleString()}
+                        <button onclick="window.videoPlayerInstance.wlDelete(${item.id})" style="float:right;background:#ff4444;color:white;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;">删除</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // 控制加载更多按钮显示
+        if (wlLoadMoreBtn) {
+            wlLoadMoreBtn.style.display = this.wl.hasMore ? 'block' : 'none';
+            wlLoadMoreBtn.disabled = this.wl.loading;
+            wlLoadMoreBtn.textContent = this.wl.loading ? '加载中...' : '加载更多';
+        }
+    }
+    
+    // 加载心愿单列表
+    async wlLoadList(reset = false) {
+        if (this.wl.loading) return;
+        if (!this.isLoggedIn()) {
+            this.showMessage('请先登录', 'error');
+            return;
+        }
+        
+        if (reset) {
+            this.wl.list = [];
+            this.wl.cursor = null;
+            this.wl.hasMore = true;
+        }
+        
+        if (!this.wl.hasMore) return;
+        
+        this.wl.loading = true;
+        this.wlRenderList();
+        
+        try {
+            const params = new URLSearchParams({ limit: this.wl.limit });
+            if (this.wl.cursor) params.append('cursor', this.wl.cursor);
+            
+            const response = await fetch(`${API_BASE_URL}/api/user/wishlists?${params}`, {
+                headers: { Authorization: `Bearer ${this.userToken}` }
+            });
+            
+            if (response.status === 401) {
+                this.doLogout();
+                this.showMessage('登录已过期，请重新登录', 'error');
+                return;
+            }
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || '加载失败');
+            }
+            
+            const data = await response.json();
+            this.wl.list = reset ? data.data : [...this.wl.list, ...data.data];
+            this.wl.cursor = data.page?.next_cursor || null;
+            this.wl.hasMore = !!data.page?.next_cursor;
+            
+        } catch (error) {
+            console.error('加载心愿单失败:', error);
+            this.showMessage(error.message || '加载心愿单失败', 'error');
+        } finally {
+            this.wl.loading = false;
+            this.wlRenderList();
+        }
+    }
+    
+    // 添加到心愿单
+    async wlAdd() {
+        if (!this.isLoggedIn()) {
+            this.showMessage('请先登录', 'error');
+            return;
+        }
+        
+        const wlNoteInput = document.getElementById('wlNoteInput');
+        const wlError = document.getElementById('wlError');
+        const wlAddBtn = document.getElementById('wlAddBtn');
+        
+        const videoId = this.getActiveVideoId();
+        if (!videoId) {
+            if (wlError) wlError.textContent = '无当前视频';
+            return;
+        }
+        
+        const note = wlNoteInput ? wlNoteInput.value.trim() : '';
+        if (note.length > 200) {
+            if (wlError) wlError.textContent = '备注不能超过200字符';
+            return;
+        }
+        
+        if (wlError) wlError.textContent = '';
+        this.setButtonLoading(wlAddBtn, true, '添加中...');
+        
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/user/wishlists`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${this.userToken}`
+                },
+                body: JSON.stringify({ video_id: videoId, note })
+            });
+            
+            if (response.status === 401) {
+                this.doLogout();
+                this.showMessage('登录已过期，请重新登录', 'error');
+                return;
+            }
+            
+            const responseData = await response.json();
+            
+            if (!response.ok) {
+                // 检查是否为429限流响应
+                if (this.handleRateLimitResponse(response, responseData, wlAddBtn, wlError)) {
+                    return;
+                }
+                throw new Error(responseData.error || '添加失败');
+            }
+            
+            this.showMessage('已添加到心愿单');
+            if (wlNoteInput) wlNoteInput.value = '';
+            // 重新加载列表
+            this.wlLoadList(true);
+            
+        } catch (error) {
+            console.error('添加心愿单失败:', error);
+            const message = error.message || '添加失败';
+            if (wlError) wlError.textContent = message;
+            this.showMessage(message, 'error');
+        } finally {
+            this.setButtonLoading(wlAddBtn, false, '添加到心愿单');
+        }
+    }
+    
+    // 删除心愿单项
+    async wlDelete(id) {
+        if (!this.isLoggedIn()) {
+            this.showMessage('请先登录', 'error');
+            return;
+        }
+        
+        if (!confirm('确定要删除这个心愿单项吗？')) return;
+        
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/user/wishlists/${id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${this.userToken}` }
+            });
+            
+            if (response.status === 401) {
+                this.doLogout();
+                this.showMessage('登录已过期，请重新登录', 'error');
+                return;
+            }
+            
+            const responseData = await response.json();
+            
+            if (!response.ok) {
+                // 修复：为删除操作添加 429 限流错误处理
+                if (response.status === 429 && responseData.retry_after) {
+                    this.showMessage(`操作过于频繁，请 ${responseData.retry_after} 秒后重试`, 'error');
+                    return;
+                }
+                throw new Error(responseData.error || '删除失败');
+            }
+            
+            this.showMessage('已删除');
+            // 重新加载列表
+            this.wlLoadList(true);
+            
+        } catch (error) {
+            console.error('删除心愿单失败:', error);
+            this.showMessage(error.message || '删除失败', 'error');
+        }
     }
 }
 

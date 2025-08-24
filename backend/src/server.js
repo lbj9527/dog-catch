@@ -616,6 +616,11 @@ async function allocateVariantForBase(baseVideoId) {
 
 // 初始化数据库表
 db.serialize(() => {
+    // SQLite 基础设置
+    db.run('PRAGMA foreign_keys = ON');
+    db.run('PRAGMA journal_mode=WAL');
+    db.run('PRAGMA busy_timeout=5000');
+
     // 字幕表
     db.run(`CREATE TABLE IF NOT EXISTS subtitles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -687,6 +692,23 @@ db.serialize(() => {
     // 为 subtitle_likes 表创建唯一索引，确保一个用户对一个字幕版本只能点赞一次
     db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_subtitle_likes_user_video ON subtitle_likes(user_id, video_id)', () => {});
     db.run('CREATE INDEX IF NOT EXISTS idx_subtitle_likes_video ON subtitle_likes(video_id)', () => {});
+    
+    // 新增：心愿单表
+    db.run(`CREATE TABLE IF NOT EXISTS wishlists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        video_id TEXT NOT NULL,
+        base_video_id TEXT NOT NULL,
+        note TEXT,
+        status TEXT NOT NULL DEFAULT '未更新',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        CHECK (status IN ('未更新','已更新')),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_wishlists_user_base ON wishlists(user_id, base_video_id)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_wishlists_user ON wishlists(user_id)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_wishlists_base ON wishlists(base_video_id)', () => {});
     
     // 创建默认管理员账号 (用户名: admin, 密码: admin123)
     const defaultPassword = bcrypt.hashSync('admin123', 10);
@@ -1807,6 +1829,105 @@ app.post('/api/subtitles/like-toggle/:video_id', authenticateUserToken, async (r
     } catch (err) {
         console.error('切换点赞状态失败:', err);
         res.status(500).json({ error: '切换点赞状态失败' });
+    }
+});
+
+// 心愿单 API（用户端）
+app.get('/api/user/wishlists', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = Number(req.user.id);
+        const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+        const cursor = parseInt(req.query.cursor) || 0;
+        const params = [userId];
+        let sql = `SELECT id, user_id, video_id, base_video_id, note, status, created_at, updated_at FROM wishlists WHERE user_id = ?`;
+        if (cursor > 0) { sql += ' AND id < ?'; params.push(cursor); }
+        sql += ' ORDER BY id DESC LIMIT ?'; params.push(limit);
+        const list = await getAllAsync(sql, params);
+        const nextCursor = list.length === limit ? list[list.length - 1].id : null;
+        return res.json({ data: list, page: { cursor: cursor || null, limit, next_cursor: nextCursor } });
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: '获取心愿单失败' });
+    }
+});
+
+app.post('/api/user/wishlists', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = Number(req.user.id);
+        const { video_id, note } = req.body || {};
+        const idRaw = String(video_id || '').toUpperCase().trim();
+        const m = idRaw.match(/^([A-Z]+-\d{2,5})(?:-(\d+))?$/);
+        if (!m) return res.status(400).json({ error: 'video_id 格式不合法' });
+        const baseId = m[1];
+        const videoId = idRaw;
+        if (typeof note !== 'undefined' && typeof note !== 'string') return res.status(400).json({ error: 'note 格式不合法' });
+        const noteTrim = (note || '').trim();
+        if (noteTrim.length > 200) return res.status(400).json({ error: '备注过长（最多200字符）' });
+        const rl = await fixedWindowLimiter(`wl:add:u:${userId}`, 60, 30);
+        if (!rl.allowed) return res.status(429).json({ error: '操作过于频繁，请稍后再试' });
+        const exists = await getAsync('SELECT id FROM wishlists WHERE user_id = ? AND base_video_id = ?', [userId, baseId]);
+        if (exists) return res.status(409).json({ error: '该视频已在心愿单中' });
+        await runAsync('INSERT INTO wishlists (user_id, video_id, base_video_id, note, status) VALUES (?,?,?,?,?)', [userId, videoId, baseId, noteTrim || null, '未更新']);
+        const row = await getAsync('SELECT id, user_id, video_id, base_video_id, note, status, created_at, updated_at FROM wishlists WHERE id = last_insert_rowid()');
+        return res.json({ message: '已添加到心愿单', item: row });
+    } catch (e) {
+        if (String(e && e.message).includes('UNIQUE')) {
+            return res.status(409).json({ error: '该视频已在心愿单中' });
+        }
+        console.error(e);
+        return res.status(500).json({ error: '添加失败' });
+    }
+});
+
+app.delete('/api/user/wishlists/:id', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = Number(req.user.id);
+        const id = parseInt(req.params.id);
+        if (!id) return res.status(400).json({ error: '参数错误' });
+        const rl = await fixedWindowLimiter(`wl:del:u:${userId}`, 60, 30);
+        if (!rl.allowed) return res.status(429).json({ error: '操作过于频繁，请稍后再试' });
+        const row = await getAsync('SELECT id FROM wishlists WHERE id = ? AND user_id = ?', [id, userId]);
+        if (!row) return res.status(404).json({ error: '记录不存在' });
+        await runAsync('DELETE FROM wishlists WHERE id = ?', [id]);
+        return res.json({ message: '删除成功（不会影响后台字幕文件）' });
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: '删除失败' });
+    }
+});
+
+// 心愿单 API（管理端）
+app.get('/api/admin/wishlists', authenticateAdminToken, async (req, res) => {
+    try {
+        const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+        const cursor = parseInt(req.query.cursor) || 0;
+        const params = [];
+        let sql = `SELECT w.id, w.user_id, u.username, u.email, w.video_id, w.base_video_id, w.note, w.status, w.created_at, w.updated_at FROM wishlists w LEFT JOIN users u ON w.user_id = u.id`;
+        if (cursor > 0) { sql += ' WHERE w.id < ?'; params.push(cursor); }
+        sql += ' ORDER BY w.id DESC LIMIT ?'; params.push(limit);
+        const list = await getAllAsync(sql, params);
+        const nextCursor = list.length === limit ? list[list.length - 1].id : null;
+        return res.json({ data: list, page: { cursor: cursor || null, limit, next_cursor: nextCursor } });
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: '获取心愿单列表失败' });
+    }
+});
+
+app.patch('/api/admin/wishlists/:id', authenticateAdminToken, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const { status } = req.body || {};
+        if (!id) return res.status(400).json({ error: '参数错误' });
+        if (!['未更新','已更新'].includes(String(status || ''))) return res.status(400).json({ error: 'status 取值错误' });
+        const row = await getAsync('SELECT id FROM wishlists WHERE id = ?', [id]);
+        if (!row) return res.status(404).json({ error: '记录不存在' });
+        await runAsync('UPDATE wishlists SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, id]);
+        const updated = await getAsync('SELECT id, user_id, video_id, base_video_id, note, status, created_at, updated_at FROM wishlists WHERE id = ?', [id]);
+        return res.json({ message: '更新成功', item: updated });
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: '更新失败' });
     }
 });
 

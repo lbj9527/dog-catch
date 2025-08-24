@@ -31,6 +31,8 @@
             <!-- 用户菜单 -->
             <div id="userMenu" class="user-menu" style="display:none;">
                 <div class="user-menu-item user-email" id="userEmailDisplay">user@example.com</div>
+                <!-- 新增：我的心愿单入口 -->
+                <div class="user-menu-item" id="menuWishlist">我的心愿单</div>
                 <div class="user-menu-item" id="menuSettings">设置</div>
                 <div class="user-menu-item" id="menuLogout">退出登录</div>
                 <div class="user-menu-item" id="menuDeleteAccount">注销账户</div>
@@ -224,6 +226,42 @@
                     <div class="auth-header">
                         <h3 class="auth-title">应用设置 ⚙️</h3>
                         <p class="auth-subtitle">功能开发中，敬请期待...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新增：心愿单弹窗 -->
+    <div id="wishlistModal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:640px;">
+            <div class="modal-header">
+                <span id="wishlistClose" class="close">×</span>
+                <h3>我的心愿单</h3>
+            </div>
+            <div class="modal-body">
+                <div class="auth-panel">
+                    <div class="form">
+                        <div class="form-row">
+                            <label>当前视频</label>
+                            <input id="wlCurrentVideo" type="text" disabled>
+                        </div>
+                        <div class="form-row">
+                            <label>备注</label>
+                            <input id="wlNoteInput" type="text" placeholder="可选，最多200字符">
+                        </div>
+                        <div class="form-row">
+                            <button id="wlAddBtn" class="btn-primary-full" type="button">添加到心愿单</button>
+                        </div>
+                        <div class="form-row">
+                            <div id="wlError" style="color:#e53935; font-size:12px; min-height:16px;"></div>
+                        </div>
+                        <div class="form-row">
+                            <div id="wlList" class="wl-list"></div>
+                        </div>
+                        <div class="form-row" style="text-align:center;">
+                            <button id="wlLoadMoreBtn" type="button">加载更多</button>
+                        </div>
                     </div>
                 </div>
             </div>

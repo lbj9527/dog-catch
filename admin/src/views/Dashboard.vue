@@ -16,7 +16,7 @@
     </div>
 
     <!-- 标签页 -->
-    <el-tabs v-model="activeTab" @tab-change="onTabChange">
+    <el-tabs v-model="activeTab" @tab-click="onTabClick">
       <el-tab-pane label="字幕管理" name="subtitles">
         <!-- 工具栏 -->
         <div class="toolbar">
@@ -237,15 +237,91 @@
       <el-tab-pane label="用户管理" name="users">
         <UserManagement />
       </el-tab-pane>
+
+      <!-- 新增：心愿单管理 -->
+      <el-tab-pane label="心愿单" name="wishlist">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <el-button @click="refreshWishlist" :loading="wishlist.loading">
+              <el-icon><Refresh /></el-icon>
+              刷新
+            </el-button>
+          </div>
+          <div class="toolbar-right">
+            <span style="color:#666">共 {{ wishlist.items.length }} 条</span>
+          </div>
+        </div>
+        <el-card class="table-card">
+          <el-table :data="wishlist.items" v-loading="wishlist.loading" height="400" stripe style="width:100%">
+            <el-table-column prop="id" label="ID" width="80" align="right" />
+            <el-table-column label="用户" min-width="200">
+              <template #default="scope">
+                <div>
+                  <div>{{ scope.row.username || ('用户#' + scope.row.user_id) }}</div>
+                  <div style="color:#999;font-size:12px">{{ scope.row.email || '-' }}</div>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="video_id" label="视频编号" width="200">
+              <template #default="scope">
+                <el-tag>{{ scope.row.video_id }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="base_video_id" label="基础ID" width="160" />
+            <el-table-column prop="note" label="备注" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="status" label="状态" width="120" align="center">
+              <template #default="scope">
+                <el-tag :type="scope.row.status === '已更新' ? 'success' : 'warning'">
+                  {{ scope.row.status }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="created_at" label="创建时间" width="180">
+              <template #default="scope">
+                {{ formatDate(scope.row.created_at) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="updated_at" label="更新时间" width="180">
+              <template #default="scope">
+                {{ formatDate(scope.row.updated_at) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="160" align="center" fixed="right">
+              <template #default="scope">
+                <el-button
+                  size="small"
+                  type="primary"
+                  :loading="wishlist.updatingId === scope.row.id"
+                  @click="toggleWishlistStatus(scope.row)"
+                >
+                  {{ scope.row.status === '已更新' ? '标记未更新' : '标记已更新' }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pagination-wrapper" style="margin-top:16px">
+            <el-button
+              v-if="wishlist.hasMore"
+              @click="loadWishlist(false)"
+              :loading="wishlist.loading"
+              type="primary"
+              plain
+            >
+              加载更多
+            </el-button>
+            <span v-else style="color:#999">没有更多了</span>
+          </div>
+        </el-card>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { subtitleAPI } from '../utils/api'
+import { subtitleAPI, wishlistAPI } from '../utils/api'
 import UploadDialog from '../components/UploadDialog.vue'
 import BatchUploadDialog from '../components/BatchUploadDialog.vue'
 import PreviewDialog from '../components/PreviewDialog.vue'
@@ -256,8 +332,20 @@ const router = useRouter()
 // 新增：标签状态
 defineOptions({ name: 'Dashboard' })
 const activeTab = ref('subtitles')
-const onTabChange = () => {}
 
+// 修复：Element Plus 使用 tab-click 事件，且增加 watch 兜底
+const onTabClick = async (pane) => {
+  const name = pane?.paneName ?? pane?.name ?? ''
+  if (name === 'wishlist' && wishlist.items.length === 0) {
+    await loadWishlist(true)
+  }
+}
+
+watch(activeTab, async (name) => {
+  if (name === 'wishlist' && wishlist.items.length === 0) {
+    await loadWishlist(true)
+  }
+})
 // 响应式数据
 const loading = ref(false)
 const exporting = ref(false)
@@ -276,6 +364,16 @@ const pagination = reactive({
   page: 1,
   limit: 50,
   total: 0
+})
+
+// 新增：心愿单数据（cursor 分页）
+const wishlist = reactive({
+  items: [],
+  nextCursor: null,
+  limit: 50,
+  loading: false,
+  hasMore: true,
+  updatingId: 0
 })
 
 // 当前用户
@@ -319,6 +417,32 @@ const loadData = async () => {
     loading.value = false
   }
 }
+
+// 新增：加载心愿单（cursor）
+const loadWishlist = async (initial = false) => {
+  if (wishlist.loading) return
+  wishlist.loading = true
+  try {
+    if (initial) {
+      wishlist.items = []
+      wishlist.nextCursor = null
+      wishlist.hasMore = true
+    }
+    const params = { limit: wishlist.limit }
+    if (!initial && wishlist.nextCursor) params.cursor = wishlist.nextCursor
+    const res = await wishlistAPI.getList(params)
+    const list = res.data || []
+    wishlist.items.push(...list)
+    wishlist.nextCursor = res.page?.next_cursor || null
+    wishlist.hasMore = !!wishlist.nextCursor
+  } catch (e) {
+    console.error('加载心愿单失败:', e)
+  } finally {
+    wishlist.loading = false
+  }
+}
+
+const refreshWishlist = () => loadWishlist(true)
 
 const handleSearch = () => {
   pagination.page = 1
@@ -387,6 +511,24 @@ const deleteSubtitle = async (row) => {
     if (error !== 'cancel') {
       console.error('删除失败:', error)
     }
+  }
+}
+
+// 新增：切换心愿单状态
+const toggleWishlistStatus = async (row) => {
+  const newStatus = row.status === '已更新' ? '未更新' : '已更新'
+  wishlist.updatingId = row.id
+  try {
+    const res = await wishlistAPI.updateStatus(row.id, newStatus)
+    const updated = res.item || {}
+    row.status = updated.status || newStatus
+    row.updated_at = updated.updated_at || row.updated_at
+    ElMessage.success('更新成功')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error('更新失败')
+  } finally {
+    wishlist.updatingId = 0
   }
 }
 
