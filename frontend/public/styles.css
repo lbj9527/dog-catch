@@ -406,14 +406,12 @@ video::-webkit-media-text-track-display-backdrop {
 }
 
 #wishlistModal #wlList {
-    flex: 1 1 auto;
-    max-height: min(60vh, 520px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-    touch-action: pan-y;
-    padding-right: 6px;
-    padding-bottom: 12px;
+    /* Simplified: let .wlListSection control scrolling */
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+    padding-bottom: 0;
     box-sizing: border-box;
 }
 
@@ -705,4 +703,33 @@ body.modal-open {
 /* 移动端媒体查询内也保持列表占满高度 */
 @media (max-width: 600px) {
   #wishlistModal #wlList { height: 100%; max-height: none; }
+}
+
+/* ===== Wishlist minimal card styling (lightweight, non-intrusive) ===== */
+#wishlistModal #wlList .wl-item {
+  position: relative !important;
+  border: 1px solid #2a2a2a !important;
+  background: #141414 !important;
+  border-radius: 10px !important;
+  margin: 10px 0 !important;
+  padding: 12px !important;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+#wishlistModal #wlList .wl-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+  border-color: #3a3a3a !important;
+}
+
+/* Badge: add soft background and padding, keep original text color from JS */
+#wishlistModal .wl-status-badge {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+/* Close button touch area on small screens */
+@media (max-width: 480px) {
+  #wishlistModal .modal-header .close { padding: 4px 8px; }
 }
