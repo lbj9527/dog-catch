@@ -38,7 +38,23 @@
                 <div class="user-menu-item" id="menuDeleteAccount">注销账户</div>
             </div>
         </div>
+        <!-- 右侧社交面板（桌面端） -->
+        <div id="socialPanel" class="social-panel" style="display:none;" aria-hidden="true">
+            <div class="social-panel-header">
+                <h3 id="socialPanelTitle" class="social-panel-title">社交功能</h3>
+                <button id="socialPanelClose" class="social-panel-close" title="关闭" aria-label="关闭社交面板">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                        <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+            <div id="socialPanelContent" class="social-panel-content"></div>
+        </div>
     </div>
+
+    <!-- 遮罩层（抽屉模式） -->
+    <div id="socialMask" class="social-mask" style="display:none;" aria-hidden="true"></div>
 
     <div class="stage">
         <div class="player-box">
@@ -68,6 +84,42 @@
                     </svg>
                     <span id="likeCount" class="like-count" style="display:none;">0</span>
                 </button>
+                <!-- 社交入口按钮 -->
+                <button id="btnSubComment" class="social-entry-btn" title="字幕评论" aria-label="字幕评论">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <button id="btnUserPlaza" class="social-entry-btn" title="用户广场" aria-label="用户广场">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <button id="btnRealtimeChat" class="social-entry-btn" title="实时聊天" aria-label="实时聊天">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                        <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1.5-2s-1.5.62-1.5 2a2.5 2.5 0 0 0 2.5 2.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M12 6H2a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10l4 4V8a2 2 0 0 0-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <circle cx="18" cy="8" r="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+            <!-- 移动端内联面板容器 -->
+            <div id="mobileInlinePanel" class="mobile-inline-panel" style="display:none;" aria-hidden="true">
+                <div class="social-panel-header">
+                    <h2 class="social-panel-title" id="mobileInlinePanelTitle">社交功能</h2>
+                    <button class="social-panel-close" aria-label="关闭社交面板" title="关闭">
+                        <svg class="social-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+                <div class="mobile-inline-content social-panel-content">
+                    <!-- 移动端社交内容将在这里显示 -->
+                </div>
             </div>
         </div>
     </div>

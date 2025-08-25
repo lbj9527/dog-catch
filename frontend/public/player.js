@@ -29,6 +29,14 @@ class VideoPlayer {
             hasMore: true
         };
         
+        // 社交模式相关状态
+        this.socialState = {
+            isMobile: false,
+            isSocialMode: false,
+            activeFeature: null, // 'subtitle-comment' | 'user-plaza' | 'realtime-chat'
+            isDrawerMode: false
+        };
+        
         this.init();
     }
 
@@ -167,6 +175,8 @@ class VideoPlayer {
         // 设置按钮事件
         this.setupControls();
         this.setupAuthUi();
+        // 初始化社交模式
+        this.initSocialMode();
         // 初始化 hCaptcha（懒加载执行）
         this.initCaptcha();
         // 先校验 token，确保 UI 与权限同步
@@ -2096,6 +2106,419 @@ class VideoPlayer {
         } catch (error) {
             console.error('删除心愿单失败:', error);
             this.showMessage(error.message || '删除失败', 'error');
+        }
+    }
+    
+    // ===== 社交模式相关方法 =====
+    
+    // 初始化社交模式
+    initSocialMode() {
+        this.updateSocialState();
+        this.setupSocialEventListeners();
+        this.updateSocialButtonsState();
+        
+        // 监听窗口大小变化
+        window.addEventListener('resize', () => {
+            this.updateSocialState();
+            this.updateSocialLayout();
+        });
+        
+        // 监听ESC键
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.socialState.isSocialMode) {
+                this.closeSocialMode();
+            }
+        });
+        
+        // 初始化可访问性属性
+        this.currentFocusTrap = null;
+        this.updateAccessibilityAttributes();
+    }
+    
+    // 更新社交状态
+    updateSocialState() {
+        const windowWidth = window.innerWidth;
+        this.socialState.isMobile = windowWidth <= 1024;
+        this.socialState.isDrawerMode = !this.socialState.isMobile && windowWidth < 1280;
+    }
+    
+    // 设置社交事件监听器
+    setupSocialEventListeners() {
+        // 获取社交入口按钮
+        const btnSubComment = document.getElementById('btnSubComment');
+        const btnUserPlaza = document.getElementById('btnUserPlaza');
+        const btnRealtimeChat = document.getElementById('btnRealtimeChat');
+        
+        // 获取关闭按钮和遮罩
+        const socialPanelClose = document.querySelector('.social-panel-close');
+        const socialMask = document.getElementById('socialMask');
+        
+        // 绑定入口按钮事件
+        if (btnSubComment) {
+            btnSubComment.addEventListener('click', () => {
+                this.toggleSocialFeature('subtitle-comment');
+            });
+        }
+        
+        if (btnUserPlaza) {
+            btnUserPlaza.addEventListener('click', () => {
+                this.toggleSocialFeature('user-plaza');
+            });
+        }
+        
+        if (btnRealtimeChat) {
+            btnRealtimeChat.addEventListener('click', () => {
+                this.toggleSocialFeature('realtime-chat');
+            });
+        }
+        
+        // 绑定关闭按钮事件
+        if (socialPanelClose) {
+            socialPanelClose.addEventListener('click', () => {
+                this.closeSocialMode();
+            });
+        }
+        
+        // 绑定遮罩点击事件
+        if (socialMask) {
+            socialMask.addEventListener('click', () => {
+                this.closeSocialMode();
+            });
+        }
+    }
+    
+    // 切换社交功能
+    toggleSocialFeature(feature) {
+        // 检查登录状态
+        if (!this.isLoggedIn()) {
+            this.showMessage('请先登录后使用社交功能', 'warning');
+            return;
+        }
+        
+        // 如果当前功能已激活，则关闭
+        if (this.socialState.activeFeature === feature && this.socialState.isSocialMode) {
+            this.closeSocialMode();
+            return;
+        }
+        
+        // 激活新功能
+        this.socialState.activeFeature = feature;
+        this.socialState.isSocialMode = true;
+        
+        this.updateSocialLayout();
+        this.updateSocialButtonsState();
+        this.updateAccessibilityAttributes();
+        this.loadSocialContent(feature);
+        this.updateAccessibilityAttributes();
+    }
+    
+    // 关闭社交模式
+    closeSocialMode() {
+        this.socialState.isSocialMode = false;
+        this.socialState.activeFeature = null;
+        
+        this.updateSocialLayout();
+        this.updateSocialButtonsState();
+        this.updateAccessibilityAttributes();
+    }
+    
+    // 更新社交布局
+    updateSocialLayout() {
+        const stage = document.querySelector('.stage');
+        const socialPanel = document.getElementById('socialPanel');
+        const socialMask = document.getElementById('socialMask');
+        const mobileInlinePanel = document.getElementById('mobileInlinePanel');
+        
+        if (!stage) return;
+        
+        if (this.socialState.isSocialMode) {
+            if (this.socialState.isMobile) {
+                // 移动端：显示内联面板
+                stage.classList.remove('social-mode', 'parallel-mode', 'drawer-mode');
+                if (mobileInlinePanel) {
+                    mobileInlinePanel.classList.add('active');
+                }
+            } else {
+                // 桌面端：显示右侧面板
+                stage.classList.add('social-mode');
+                
+                if (this.socialState.isDrawerMode) {
+                    stage.classList.add('drawer-mode');
+                    stage.classList.remove('parallel-mode');
+                } else {
+                    stage.classList.add('parallel-mode');
+                    stage.classList.remove('drawer-mode');
+                }
+                
+                // 添加播放器列容器
+                this.wrapPlayerInColumn();
+            }
+        } else {
+            // 关闭社交模式
+            stage.classList.remove('social-mode', 'parallel-mode', 'drawer-mode');
+            
+            if (mobileInlinePanel) {
+                mobileInlinePanel.classList.remove('active');
+            }
+            
+            // 移除播放器列容器
+            this.unwrapPlayerColumn();
+        }
+    }
+    
+    // 包装播放器到列容器中
+    wrapPlayerInColumn() {
+        const stage = document.querySelector('.stage');
+        const playerBox = document.querySelector('.player-box');
+        
+        if (!stage || !playerBox) return;
+        
+        // 检查是否已经包装
+        if (stage.querySelector('.player-column')) return;
+        
+        // 创建播放器列容器
+        const playerColumn = document.createElement('div');
+        playerColumn.className = 'player-column';
+        
+        // 将播放器移动到列容器中
+        playerBox.parentNode.insertBefore(playerColumn, playerBox);
+        playerColumn.appendChild(playerBox);
+    }
+    
+    // 移除播放器列容器
+    unwrapPlayerColumn() {
+        const stage = document.querySelector('.stage');
+        const playerColumn = stage?.querySelector('.player-column');
+        const playerBox = document.querySelector('.player-box');
+        
+        if (!playerColumn || !playerBox) return;
+        
+        // 将播放器移回原位置
+        stage.insertBefore(playerBox, playerColumn);
+        playerColumn.remove();
+    }
+    
+    // 更新社交按钮状态
+    updateSocialButtonsState() {
+        const buttons = {
+            'btnSubComment': 'subtitle-comment',
+            'btnUserPlaza': 'user-plaza',
+            'btnRealtimeChat': 'realtime-chat'
+        };
+        
+        const isLoggedIn = this.isLoggedIn();
+        
+        Object.entries(buttons).forEach(([btnId, feature]) => {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            
+            // 设置禁用状态
+            btn.disabled = !isLoggedIn;
+            
+            // 设置激活状态
+            if (this.socialState.activeFeature === feature && this.socialState.isSocialMode) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+            
+            // 设置ARIA属性
+            btn.setAttribute('aria-pressed', 
+                this.socialState.activeFeature === feature && this.socialState.isSocialMode ? 'true' : 'false'
+            );
+        });
+    }
+    
+    // 加载社交内容
+    loadSocialContent(feature) {
+        const socialPanelTitle = document.querySelector('.social-panel-title');
+        const socialPanelContent = document.querySelector('.social-panel-content');
+        const mobileInlinePanelTitle = document.querySelector('#mobileInlinePanel .social-panel-title');
+        const mobileInlinePanelContent = document.querySelector('#mobileInlinePanel .social-panel-content');
+        
+        let title = '';
+        let content = '';
+        
+        switch (feature) {
+            case 'subtitle-comment':
+                title = '字幕评论';
+                content = this.getSubtitleCommentContent();
+                break;
+            case 'user-plaza':
+                title = '用户广场';
+                content = this.getUserPlazaContent();
+                break;
+            case 'realtime-chat':
+                title = '实时聊天';
+                content = this.getRealtimeChatContent();
+                break;
+        }
+        
+        // 更新桌面端面板
+        if (socialPanelTitle) socialPanelTitle.textContent = title;
+        if (socialPanelContent) socialPanelContent.innerHTML = content;
+        
+        // 更新移动端面板
+        if (mobileInlinePanelTitle) mobileInlinePanelTitle.textContent = title;
+        if (mobileInlinePanelContent) mobileInlinePanelContent.innerHTML = content;
+    }
+    
+    // 获取字幕评论内容
+    getSubtitleCommentContent() {
+        return `
+            <div class="social-placeholder">
+                <div class="placeholder-icon">💬</div>
+                <h3>字幕评论</h3>
+                <p>在这里可以查看和发表字幕相关的评论讨论。</p>
+                <div class="placeholder-features">
+                    <div class="feature-item">📝 发表评论</div>
+                    <div class="feature-item">👍 点赞互动</div>
+                    <div class="feature-item">🔗 分享讨论</div>
+                </div>
+                <p class="placeholder-note">功能开发中，敬请期待...</p>
+            </div>
+        `;
+    }
+    
+    // 获取用户广场内容
+    getUserPlazaContent() {
+        return `
+            <div class="social-placeholder">
+                <div class="placeholder-icon">👥</div>
+                <h3>用户广场</h3>
+                <p>与其他用户交流互动，分享观影心得。</p>
+                <div class="placeholder-features">
+                    <div class="feature-item">👤 用户动态</div>
+                    <div class="feature-item">⭐ 推荐内容</div>
+                    <div class="feature-item">🎯 话题讨论</div>
+                </div>
+                <p class="placeholder-note">功能开发中，敬请期待...</p>
+            </div>
+        `;
+    }
+    
+    // 获取实时聊天内容
+    getRealtimeChatContent() {
+        return `
+            <div class="social-placeholder">
+                <div class="placeholder-icon">💭</div>
+                <h3>实时聊天</h3>
+                <p>与正在观看的用户实时交流讨论。</p>
+                <div class="placeholder-features">
+                    <div class="feature-item">⚡ 实时消息</div>
+                    <div class="feature-item">🎬 同步观影</div>
+                    <div class="feature-item">🎉 表情互动</div>
+                </div>
+                <p class="placeholder-note">功能开发中，敬请期待...</p>
+            </div>
+        `;
+    }
+    
+    // 检查是否已登录
+    isLoggedIn() {
+        return !!this.userToken;
+    }
+    
+    // ===== 可访问性支持方法 =====
+    
+    // 设置焦点陷阱
+    setupFocusTrap(container) {
+        if (!container) return;
+        
+        const focusableElements = container.querySelectorAll(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        
+        if (focusableElements.length === 0) return;
+        
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+        
+        // 监听Tab键
+        const handleTabKey = (e) => {
+            if (e.key !== 'Tab') return;
+            
+            if (e.shiftKey) {
+                // Shift + Tab
+                if (document.activeElement === firstElement) {
+                    e.preventDefault();
+                    lastElement.focus();
+                }
+            } else {
+                // Tab
+                if (document.activeElement === lastElement) {
+                    e.preventDefault();
+                    firstElement.focus();
+                }
+            }
+        };
+        
+        container.addEventListener('keydown', handleTabKey);
+        
+        // 设置初始焦点
+        firstElement.focus();
+        
+        // 返回清理函数
+        return () => {
+            container.removeEventListener('keydown', handleTabKey);
+        };
+    }
+    
+    // 移除焦点陷阱
+    removeFocusTrap() {
+        if (this.currentFocusTrap) {
+            this.currentFocusTrap();
+            this.currentFocusTrap = null;
+        }
+    }
+    
+    // 更新可访问性属性
+    updateAccessibilityAttributes() {
+        const socialPanel = document.getElementById('socialPanel');
+        const mobileInlinePanel = document.getElementById('mobileInlinePanel');
+        const socialMask = document.getElementById('socialMask');
+        
+        if (this.socialState.isSocialMode) {
+            // 设置面板的ARIA属性
+            const activePanel = this.socialState.isMobile ? mobileInlinePanel : socialPanel;
+            if (activePanel) {
+                activePanel.setAttribute('aria-hidden', 'false');
+                activePanel.setAttribute('role', 'dialog');
+                activePanel.setAttribute('aria-modal', 'true');
+                activePanel.setAttribute('aria-labelledby', activePanel.querySelector('.social-panel-title')?.id || '');
+            }
+            
+            // 设置遮罩的ARIA属性
+            if (socialMask && this.socialState.isDrawerMode) {
+                socialMask.setAttribute('aria-hidden', 'false');
+            }
+            
+            // 设置焦点陷阱
+            if (activePanel) {
+                this.currentFocusTrap = this.setupFocusTrap(activePanel);
+            }
+        } else {
+            // 隐藏面板
+            if (socialPanel) {
+                socialPanel.setAttribute('aria-hidden', 'true');
+                socialPanel.removeAttribute('role');
+                socialPanel.removeAttribute('aria-modal');
+                socialPanel.removeAttribute('aria-labelledby');
+            }
+            
+            if (mobileInlinePanel) {
+                mobileInlinePanel.setAttribute('aria-hidden', 'true');
+                mobileInlinePanel.removeAttribute('role');
+                mobileInlinePanel.removeAttribute('aria-modal');
+                mobileInlinePanel.removeAttribute('aria-labelledby');
+            }
+            
+            if (socialMask) {
+                socialMask.setAttribute('aria-hidden', 'true');
+            }
+            
+            // 移除焦点陷阱
+            this.removeFocusTrap();
         }
     }
 }
