@@ -761,3 +761,61 @@ body.modal-open {
 #wishlistModal #wlList .wl-item { margin: 8px 0 !important; }
 #wishlistModal #wlList .wl-item:first-child { margin-top: 4px !important; }
 /* keep last-child rule as is to avoid extra bottom gap */
+
+/* ===== 简化修复方案：心愿单UI优化 ===== */
+
+/* 1. 信息行布局：左右对齐 */
+.wl-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* 2. 蓝色按钮样式 */
+#wishlistModal #wlAddBtn {
+  background-color: #2f77ff !important;
+  color: white !important;
+  border: none !important;
+  transition: all 0.2s ease;
+}
+
+#wishlistModal #wlAddBtn:hover {
+  background-color: #2a69ff !important;
+  box-shadow: 0 2px 8px rgba(47, 119, 255, 0.3);
+}
+
+#wishlistModal #wlAddBtn:active {
+  background-color: #2258e6 !important;
+  transform: translateY(1px);
+}
+
+#wishlistModal #wlAddBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 3. 滚动条美化 */
+#wishlistModal .wlListSection {
+  scrollbar-width: thin;
+  scrollbar-color: #4a4a4a #141414;
+}
+
+#wishlistModal .wlListSection::-webkit-scrollbar {
+  width: 8px;
+}
+
+#wishlistModal .wlListSection::-webkit-scrollbar-track {
+  background: #141414;
+  border-radius: 4px;
+}
+
+#wishlistModal .wlListSection::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#wishlistModal .wlListSection::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a;
+}
