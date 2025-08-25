@@ -1900,8 +1900,46 @@ app.delete('/api/user/wishlists/:id', authenticateUserToken, async (req, res) =>
 app.get('/api/admin/wishlists', authenticateAdminToken, async (req, res) => {
     try {
         const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+        const page = parseInt(req.query.page) || 0;
         const cursor = parseInt(req.query.cursor) || 0;
         const search = (req.query.search || '').trim();
+        
+        // 页码分页模式
+        if (page > 0) {
+            const offset = (page - 1) * limit;
+            const params = [];
+            let sql = `SELECT w.id, w.user_id, u.username, u.email, w.video_id, w.base_video_id, w.note, w.status, w.created_at, w.updated_at FROM wishlists w LEFT JOIN users u ON w.user_id = u.id`;
+            let countSql = `SELECT COUNT(1) as total FROM wishlists w LEFT JOIN users u ON w.user_id = u.id`;
+            
+            const conditions = [];
+            if (search && search.length <= 50) {
+                conditions.push('(u.username LIKE ? COLLATE NOCASE OR u.email LIKE ? COLLATE NOCASE)');
+                const searchPattern = `%${search}%`;
+                params.push(searchPattern, searchPattern);
+            }
+            
+            if (conditions.length > 0) {
+                const whereClause = ' WHERE ' + conditions.join(' AND ');
+                sql += whereClause;
+                countSql += whereClause;
+            }
+            
+            sql += ' ORDER BY w.id DESC LIMIT ? OFFSET ?';
+            params.push(limit, offset);
+            
+            const [list, countResult] = await Promise.all([
+                getAllAsync(sql, params),
+                getAsync(countSql, search && search.length <= 50 ? [search, search] : [])
+            ]);
+            
+            const total = countResult ? countResult.total : 0;
+            return res.json({ 
+                data: list, 
+                pagination: { page, limit, total } 
+            });
+        }
+        
+        // 原有cursor分页模式（向后兼容）
         const params = [];
         let sql = `SELECT w.id, w.user_id, u.username, u.email, w.video_id, w.base_video_id, w.note, w.status, w.created_at, w.updated_at FROM wishlists w LEFT JOIN users u ON w.user_id = u.id`;
         

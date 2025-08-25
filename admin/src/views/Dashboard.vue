@@ -308,17 +308,16 @@
               </template>
             </el-table-column>
           </el-table>
-          <div class="pagination-wrapper" style="margin-top:16px">
-            <el-button
-              v-if="wishlist.hasMore"
-              @click="loadWishlist(false)"
-              :loading="wishlist.loading"
-              type="primary"
-              plain
-            >
-              加载更多
-            </el-button>
-            <span v-else style="color:#999">没有更多了</span>
+          <div class="pagination-wrapper" style="margin-top:16px; text-align: center;">
+            <el-pagination
+              :current-page="wishlist.page"
+              :page-size="wishlist.limit"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="wishlist.total"
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleWishlistSizeChange"
+              @current-change="handleWishlistCurrentChange"
+            />
           </div>
         </el-card>
       </el-tab-pane>
@@ -346,7 +345,7 @@ const activeTab = ref('subtitles')
 const onTabClick = async (pane) => {
   const name = pane?.paneName ?? pane?.name ?? ''
   if (name === 'wishlist' && wishlist.items.length === 0) {
-    await loadWishlist(true)
+    await loadWishlistPage()
   }
 }
 
@@ -375,7 +374,7 @@ const pagination = reactive({
   total: 0
 })
 
-// 新增：心愿单数据（cursor 分页）
+// 新增：心愿单数据（页码分页）
 const wishlist = reactive({
   items: [],
   nextCursor: null,
@@ -383,7 +382,10 @@ const wishlist = reactive({
   loading: false,
   hasMore: true,
   updatingId: 0,
-  searchQuery: ''
+  searchQuery: '',
+  // 页码分页字段
+  page: 1,
+  total: 0
 })
 
 // 当前用户
@@ -428,24 +430,19 @@ const loadData = async () => {
   }
 }
 
-// 新增：加载心愿单（cursor）
-const loadWishlist = async (initial = false) => {
+// 新增：加载心愿单（页码分页）
+const loadWishlistPage = async () => {
   if (wishlist.loading) return
   wishlist.loading = true
   try {
-    if (initial) {
-      wishlist.items = []
-      wishlist.nextCursor = null
-      wishlist.hasMore = true
+    const params = { 
+      page: wishlist.page, 
+      limit: wishlist.limit 
     }
-    const params = { limit: wishlist.limit }
-    if (!initial && wishlist.nextCursor) params.cursor = wishlist.nextCursor
     if (wishlist.searchQuery.trim()) params.search = wishlist.searchQuery.trim()
     const res = await wishlistAPI.getList(params)
-    const list = res.data || []
-    wishlist.items.push(...list)
-    wishlist.nextCursor = res.page?.next_cursor || null
-    wishlist.hasMore = !!wishlist.nextCursor
+    wishlist.items = res.data || []
+    wishlist.total = res.pagination?.total || 0
   } catch (e) {
     console.error('加载心愿单失败:', e)
   } finally {
@@ -453,10 +450,25 @@ const loadWishlist = async (initial = false) => {
   }
 }
 
-const refreshWishlist = () => loadWishlist(true)
+const refreshWishlist = () => {
+  wishlist.page = 1
+  loadWishlistPage()
+}
 
 const handleWishlistSearch = () => {
-  loadWishlist(true)
+  wishlist.page = 1
+  loadWishlistPage()
+}
+
+const handleWishlistSizeChange = (limit) => {
+  wishlist.limit = limit
+  wishlist.page = 1
+  loadWishlistPage()
+}
+
+const handleWishlistCurrentChange = (page) => {
+  wishlist.page = page
+  loadWishlistPage()
 }
 
 const handleSearch = () => {
@@ -662,7 +674,7 @@ const formatFileSize = (bytes) => {
 
 const formatDate = (dateString) => new Date(dateString).toLocaleString('zh-CN')
 
-onMounted(() => { loadData() })
+onMounted(() => { loadData(); loadWishlistPage() })
 </script>
 
 <style scoped>
