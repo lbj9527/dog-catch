@@ -68,9 +68,41 @@
                     </svg>
                     <span id="likeCount" class="like-count" style="display:none;">0</span>
                 </button>
+                <button id="btnSubComment" class="social-entry-btn" title="字幕评论">
+                    <span class="entry-icon">💬</span>
+                    <span class="entry-text">字幕评论</span>
+                </button>
+                <button id="btnUserPlaza" class="social-entry-btn" title="用户广场">
+                    <span class="entry-icon">👥</span>
+                    <span class="entry-text">用户广场</span>
+                </button>
+                <button id="btnRealtimeChat" class="social-entry-btn" title="实时聊天">
+                    <span class="entry-icon">💭</span>
+                    <span class="entry-text">实时聊天</span>
+                </button>
+            </div>
+            
+            <!-- 移动端内联功能区 -->
+            <div id="mobileInlineArea" class="mobile-inline-area">
+                <div class="mobile-content-area"></div>
+            </div>
+        </div>
+        
+        <!-- 右侧社交面板 -->
+        <div id="socialPanel" class="social-panel">
+            <div class="social-panel-header">
+                <button id="closeSocialBtn" class="close-social-btn" title="关闭">
+                    <span class="close-icon">✕</span>
+                </button>
+            </div>
+            <div class="social-panel-content">
+                <!-- 内容将通过JS动态加载 -->
             </div>
         </div>
     </div>
+    
+    <!-- 半透明遮罩层 -->
+    <div id="socialMask" class="social-mask"></div>
 
     
 

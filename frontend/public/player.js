@@ -1,26 +1,12 @@
-// 播放器主逻辑
-const API_BASE_URL = new URLSearchParams(location.search).get('api') || (window.PLAYER_CONFIG && window.PLAYER_CONFIG.API_BASE_URL) || 'https://api.sub-dog.top';
-const REQUIRE_SUBTITLE_LOGIN = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.SUBTITLE_NEED_LOGIN) !== false;
-const ALLOW_PLAY_WITHOUT_LOGIN = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.ALLOW_PLAY_WITHOUT_LOGIN) !== false;
-const CAPTCHA_SITE_KEY = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.CAPTCHA_SITE_KEY) || '10000000-ffff-ffff-ffff-000000000001';
-const ENABLE_CAPTCHA = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.CAPTCHA_ENABLED) === true;
 class VideoPlayer {
     constructor() {
-        this.player = null;
-        this.currentVideoUrl = '';
-        this.currentVideoId = '';
         this.qualities = [];
-        this.subtitleUrl = '';
-        this.subtitleVariants = [];
-        this.currentSubtitleId = '';
-        this.userToken = (sessionStorage.getItem('user_token') || localStorage.getItem('user_token') || '');
-        this.hcaptchaWidgetId = null;
-        
-        // 点赞相关属性
+        this.userToken = '';
         this.currentLikeStatus = { isLiked: false, likesCount: 0 };
-        this.likeDebounceTimer = null;
-        
-        // 心愿单相关状态
+        this.currentSubtitleId = '';
+        this.currentVideoId = '';
+        this.currentVideoUrl = '';
+        this.subtitleUrl = '';
         this.wl = {
             list: [],
             cursor: null,
@@ -28,875 +14,11 @@ class VideoPlayer {
             loading: false,
             hasMore: true
         };
-        
-        this.init();
-    }
-
-    // XSS 防护：转义 HTML 特殊字符
-    escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    async updateUserEmail() {
-        const userEmailDisplay = document.getElementById('userEmailDisplay');
-        if (userEmailDisplay) {
-            try {
-                const email = await this.getUserEmailFromAPI();
-                userEmailDisplay.textContent = email || 'user@example.com';
-            } catch (error) {
-                console.error('获取用户邮箱失败:', error);
-                userEmailDisplay.textContent = 'user@example.com';
-            }
-        }
-    }
-
-    async getUserEmailFromAPI() {
-        try {
-            if (!this.userToken) return null;
-            
-            const response = await fetch(`${API_BASE_URL}/api/user/verify`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${this.userToken}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                return data.user?.email;
-            } else {
-                console.error('获取用户信息失败:', response.status);
-                return null;
-            }
-        } catch (error) {
-            console.error('API请求失败:', error);
-            return null;
-        }
-    }
-    
-    // 初始化 hCaptcha（invisible）
-    initCaptcha() {
-        try {
-            if (!ENABLE_CAPTCHA) return;
-            if (!window.hcaptcha) return;
-            const container = document.getElementById('hcap') || (() => { const d=document.createElement('div'); d.id='hcap'; d.style.display='none'; document.body.appendChild(d); return d; })();
-            if (this.hcaptchaWidgetId === null) {
-                this.hcaptchaWidgetId = window.hcaptcha.render(container, { sitekey: CAPTCHA_SITE_KEY, size: 'invisible' });
-            }
-        } catch {}
-    }
-
-    async getCaptchaTokenIfAvailable() {
-        try {
-            if (!ENABLE_CAPTCHA) return '';
-            if (!window.hcaptcha) return '';
-            if (this.hcaptchaWidgetId === null) this.initCaptcha();
-            if (typeof window.hcaptcha.execute !== 'function') return '';
-            await window.hcaptcha.execute(this.hcaptchaWidgetId);
-            const token = window.hcaptcha.getResponse(this.hcaptchaWidgetId) || '';
-            try { window.hcaptcha.reset(this.hcaptchaWidgetId); } catch {}
-            return token;
-        } catch { return ''; }
-    }
-
-    // 处理429限流响应的统一方法
-    handleRateLimitResponse(response, responseData, buttonElement, errorElement) {
-        if (response.status !== 429) return false;
-        
-        const retryAfter = parseInt(response.headers.get('Retry-After')) || 
-                          (responseData && responseData.retry_after) || 30;
-        const scope = responseData && responseData.scope || 'request';
-        
-        // 显示限流错误信息
-        const message = responseData && responseData.error || 
-                       `请求过于频繁，请等待 ${retryAfter} 秒后重试`;
-        if (errorElement) errorElement.textContent = message;
-        this.showMessage(message, 'error');
-        
-        // 禁用按钮并开始倒计时
-        if (buttonElement) {
-            this.startRateLimitCountdown(buttonElement, retryAfter);
-        }
-        
-        return true;
-    }
-    
-    // 限流倒计时功能
-    startRateLimitCountdown(buttonElement, seconds) {
-        if (!buttonElement) return;
-        
-        const originalText = buttonElement.textContent;
-        buttonElement.disabled = true;
-        
-        let remaining = seconds;
-        const updateButton = () => {
-            if (remaining > 0) {
-                buttonElement.textContent = `请等待 ${remaining} 秒`;
-                remaining--;
-                setTimeout(updateButton, 1000);
-            } else {
-                buttonElement.textContent = originalText;
-                buttonElement.disabled = false;
-            }
-        };
-        
-        updateButton();
-    }
-    
-    // 初始化播放器
-    async init() {
-        // 解析URL参数
-        const params = this.parseUrlParams();
-        if (!params.src) {
-            this.showMessage('缺少视频源参数', 'error');
-            return;
-        }
-        
-        this.currentVideoUrl = params.src;
-        this.currentVideoId = params.video || '';
-        
-        // 设置页面标题
-        const title = params.title || 'Subtitle Dog';
-        document.getElementById('title').textContent = title;
-        document.title = title;
-        
-        // 设置按钮事件
-        this.setupControls();
-        this.setupAuthUi();
-        // 初始化 hCaptcha（懒加载执行）
-        this.initCaptcha();
-        // 先校验 token，确保 UI 与权限同步
-        await this.verifyTokenAndSyncUI();
-        await this.refreshAuthUi();
-        
-        // 初始化Video.js播放器
-        this.initVideoJs();
-        
-        // 处理视频源（播放不需要登录）
-        if (params.type === 'hls' || this.currentVideoUrl.includes('.m3u8')) {
-            this.handleHLSVideo();
-        } else {
-            this.handleMP4Video();
-        }
-        
-        // 加载字幕（仅登录后尝试）
-        if (this.currentVideoId) {
-            if (!REQUIRE_SUBTITLE_LOGIN || this.isLoggedIn()) {
-                this.loadSubtitleVariants();
-            } else {
-                this.disableSubtitleUi('登录后可用');
-            }
-        }
-        
-        // 初始化自适应播放器尺寸
-        this.initAdaptivePlayerSize();
-    }
-    
-    isLoggedIn() { return !!this.userToken; }
-    
-    // 自适应播放器尺寸相关方法
-    initAdaptivePlayerSize() {
-        // 初始测量和设置
-        this.updatePlayerSize();
-        
-        // 监听窗口大小变化
-        let resizeTimer = null;
-        window.addEventListener('resize', () => {
-            if (resizeTimer) clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(() => {
-                this.updatePlayerSize();
-            }, 100); // 防抖100ms
-        });
-    }
-    
-    updatePlayerSize() {
-        const playerBox = document.querySelector('.player-box');
-        const likeControls = document.querySelector('.like-controls');
-        
-        if (!playerBox) return;
-        
-        // 测量播放器顶部距离
-        const playerRect = playerBox.getBoundingClientRect();
-        const topReserve = Math.max(playerRect.top, 60); // 最小保留60px顶部空间
-        
-        // 测量点赞按钮高度和位置
-        let bottomReserve = 60; // 默认底部保留60px
-        if (likeControls) {
-            const likeRect = likeControls.getBoundingClientRect();
-            const likeHeight = likeRect.height || 40;
-            bottomReserve = Math.max(likeHeight + 20, 60); // 点赞按钮高度+20px间距，最小60px
-        }
-        
-        // 计算可用高度并确保点赞按钮可见
-        const viewportHeight = window.innerHeight;
-        const availableHeight = viewportHeight - topReserve - bottomReserve;
-        const minPlayerHeight = 200; // 播放器最小高度
-        
-        // 如果可用高度太小，调整底部保留空间
-        if (availableHeight < minPlayerHeight) {
-            bottomReserve = Math.max(viewportHeight - topReserve - minPlayerHeight, 40);
-        }
-        
-        // 更新CSS变量
-        playerBox.style.setProperty('--player-reserve-top', `${topReserve}px`);
-        playerBox.style.setProperty('--player-reserve-bottom', `${bottomReserve}px`);
-        
-        // 检查点赞按钮是否在视口内可见
-        if (likeControls) {
-            setTimeout(() => {
-                const updatedLikeRect = likeControls.getBoundingClientRect();
-                const isLikeVisible = updatedLikeRect.bottom <= viewportHeight && updatedLikeRect.top >= 0;
-                
-                // 如果点赞按钮不可见，进一步调整
-                if (!isLikeVisible && updatedLikeRect.bottom > viewportHeight) {
-                    const overflow = updatedLikeRect.bottom - viewportHeight;
-                    const newBottomReserve = bottomReserve + overflow + 10; // 额外10px缓冲
-                    playerBox.style.setProperty('--player-reserve-bottom', `${newBottomReserve}px`);
-                }
-            }, 50); // 等待CSS重新计算
-        }
-    }
-
-    async accountExists(identifier) {
-        try {
-            const token = await this.getCaptchaTokenIfAvailable();
-            const headers = { 'Content-Type': 'application/json' };
-            if (token) headers['x-captcha-token'] = token;
-            const r = await fetch(`${API_BASE_URL}/api/user/exist`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({ identifier, captchaToken: token })
-            });
-            const j = await r.json();
-            if (!r.ok) throw new Error(j.error || '检查失败');
-            return !!j.exists;
-        } catch (e) {
-            return false;
-        }
-    }
-
-    // 新增：运行时校验当前 token 是否有效
-    async verifyTokenAndSyncUI() {
-        if (!this.isLoggedIn()) return;
-        try {
-            const r = await fetch(`${API_BASE_URL}/api/user/verify`, { headers: { Authorization: `Bearer ${this.userToken}` } });
-            if (!r.ok) throw new Error('unauthorized');
-        } catch (_) {
-            this.doLogout();
-            this.showMessage('登录已过期，请重新登录', 'error');
-        }
-    }
-
-    // 按钮加载状态管理
-    setButtonLoading(buttonEl, on, text = '请稍后…') {
-        if (!buttonEl) return;
-        if (on) {
-            if (!buttonEl.dataset.originalText) buttonEl.dataset.originalText = buttonEl.textContent || '';
-            buttonEl.textContent = text;
-            buttonEl.disabled = true;
-            buttonEl.classList.add('btn-loading');
-        } else {
-            buttonEl.disabled = false;
-            buttonEl.classList.remove('btn-loading');
-            const orig = buttonEl.dataset.originalText;
-            if (typeof orig !== 'undefined') { 
-                buttonEl.textContent = orig; 
-                delete buttonEl.dataset.originalText; 
-            }
-        }
-    }
-
-    // 表单加载状态管理（同时控制按钮和输入框）
-    setFormLoading(formSelector, on, buttonText = '请稍后…') {
-        const form = document.querySelector(formSelector);
-        if (!form) return;
-        
-        const inputs = form.querySelectorAll('input[type="email"], input[type="password"], input[type="text"]');
-        const buttons = form.querySelectorAll('button');
-        
-        inputs.forEach(input => {
-            input.disabled = on;
-        });
-        
-        buttons.forEach(button => {
-            this.setButtonLoading(button, on, buttonText);
-        });
-    }
-
-    // 解析URL参数
-    parseUrlParams() {
-        const urlParams = new URLSearchParams(window.location.search);
-        return {
-            src: urlParams.get('src'),
-            type: urlParams.get('type'),
-            title: urlParams.get('title'),
-            referer: urlParams.get('referer'),
-            video: urlParams.get('video')
-        };
-    }
-    
-    // 设置控制按钮
-    setupControls() {
-        // 复制链接（已移除按钮，无需绑定）
-        
-        // 字幕开关
-        const subtitleBtn = document.getElementById('subtitleToggle');
-        subtitleBtn.disabled = true; // 初始禁用，等字幕加载成功后启用
-        subtitleBtn.textContent = '显示字幕';
-        subtitleBtn.onclick = () => {
-            if (subtitleBtn.disabled) return;
-            this.toggleSubtitle();
-        };
-        
-        // 清晰度选择
-        document.getElementById('qualitySelect').onchange = (e) => {
-            if (e.target.value) {
-                this.switchQuality(e.target.value);
-            }
-        };
-        
-        // 字幕选择（样式与清晰度一致）
-        const subtitleSelectEl = document.getElementById('subtitleSelect');
-        if (subtitleSelectEl) {
-            subtitleSelectEl.onchange = (e) => {
-                const videoId = e.target.value;
-                if (videoId) {
-                    this.switchSubtitleVariant(videoId);
-                }
-            };
-        }
-        
-        // 点赞按钮
-        this.setupLikeButton();
-        
-        // 设置fallback链接
-        document.getElementById('fallbackLink').href = this.currentVideoUrl;
-    }
-
-    setupAuthUi() {
-        const loginBtn = document.getElementById('loginBtn');
-        const userAvatar = document.getElementById('userAvatar');
-        const userMenu = document.getElementById('userMenu');
-        const menuLogout = document.getElementById('menuLogout');
-        const menuDeleteAccount = document.getElementById('menuDeleteAccount');
-        const menuSettings = document.getElementById('menuSettings');
-        const settingsModal = document.getElementById('settingsModal');
-        const settingsClose = document.getElementById('settingsClose');
-        
-        // 心愿单相关元素
-        const menuWishlist = document.getElementById('menuWishlist');
-        const wishlistModal = document.getElementById('wishlistModal');
-        const wishlistClose = document.getElementById('wishlistClose');
-        const wlAddBtn = document.getElementById('wlAddBtn');
-        const wlLoadMoreBtn = document.getElementById('wlLoadMoreBtn');
-        const wlNoteInput = document.getElementById('wlNoteInput');
-        const wlCurrentVideo = document.getElementById('wlCurrentVideo');
-        const wlError = document.getElementById('wlError');
-        const wlList = document.getElementById('wlList');
-
-        // whoModal 已移除
-
-        const loginModal = document.getElementById('loginModal');
-        const loginClose = document.getElementById('loginClose');
-        const loginPassword = document.getElementById('loginPassword');
-        const loginEmail = document.getElementById('loginEmail');
-        const btnDoLogin = document.getElementById('btnDoLogin');
-        const gotoRegister = document.getElementById('gotoRegister');
-        const gotoReset = document.getElementById('gotoReset');
-        const loginError = document.getElementById('loginError');
-
-        const regModal = document.getElementById('registerModal');
-        const regClose = document.getElementById('regClose');
-        const regUsername = document.getElementById('regUsername');
-        const regEmail = document.getElementById('regEmail');
-        const regPassword = document.getElementById('regPassword');
-        const regCode = document.getElementById('regCode');
-        const btnSendRegCode = document.getElementById('btnSendRegCode');
-        const gotoLogin = document.getElementById('gotoLogin');
-        const gotoLogin2 = document.getElementById('gotoLogin2');
-        const btnStartRegister = document.getElementById('btnStartRegister');
-        const btnConfirmRegister = document.getElementById('btnConfirmRegister');
-        const regError = document.getElementById('regError');
-        const regCodeRow = document.getElementById('regCodeRow');
-        const regStep1Buttons = document.getElementById('regStep1Buttons');
-        const regStep2Buttons = document.getElementById('regStep2Buttons');
-
-        // 主按钮：直接打开登录
-        loginBtn.onclick = () => { if (!this.isLoggedIn()) { loginModal.style.display='flex'; if (loginError) loginError.textContent=''; } };
-        
-        // 用户头像点击事件
-        if (userAvatar) {
-            userAvatar.onclick = (e) => {
-                e.stopPropagation();
-                if (userMenu) {
-                    userMenu.style.display = userMenu.style.display === 'none' || !userMenu.style.display ? 'block' : 'none';
-                }
-            };
-        }
-        
-        // 用户菜单项点击事件
-        if (menuLogout) {
-            menuLogout.onclick = async () => {
-                if (userMenu) userMenu.style.display = 'none';
-                this.doLogout();
-                await this.refreshAuthUi();
-            };
-        }
-        
-        if (menuDeleteAccount) {
-            menuDeleteAccount.onclick = async () => {
-                if (userMenu) userMenu.style.display = 'none';
-                if (!this.isLoggedIn()) return;
-                if (!confirm('确定要注销当前账号吗？此操作不可恢复')) return;
-                try {
-                    const r = await fetch(`${API_BASE_URL}/api/user/me`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${this.userToken}` } });
-                    const j = await r.json();
-                    if (!r.ok) throw new Error(j.error || '注销失败');
-                    this.doLogout();
-                    this.showMessage('账号已注销');
-                } catch (e) { this.showMessage(e.message || '注销失败', 'error'); }
-            };
-        }
-        
-        // 设置菜单项点击事件
-        if (menuSettings) {
-            menuSettings.onclick = () => {
-                if (userMenu) userMenu.style.display = 'none';
-                if (settingsModal) settingsModal.style.display = 'flex';
-            };
-        }
-        
-        // 设置弹窗关闭事件
-        if (settingsClose) {
-            settingsClose.onclick = () => {
-                if (settingsModal) settingsModal.style.display = 'none';
-            };
-        }
-        
-        // 点击设置弹窗外部关闭
-        if (settingsModal) {
-            settingsModal.onclick = (e) => {
-                if (e.target === settingsModal) {
-                    settingsModal.style.display = 'none';
-                }
-            };
-        }
-        
-        // 心愿单菜单项点击事件
-        if (menuWishlist) {
-            menuWishlist.onclick = () => {
-                if (userMenu) userMenu.style.display = 'none';
-                if (wishlistModal) {
-                    // 修复：打开弹窗时清理输入框和错误提示
-                    const wlNoteInput = document.getElementById('wlNoteInput');
-                    const wlError = document.getElementById('wlError');
-                    const wlCurrentVideo = document.getElementById('wlCurrentVideo');
-                    if (wlNoteInput) wlNoteInput.value = '';
-                    if (wlError) wlError.textContent = '';
-                    if (wlCurrentVideo) wlCurrentVideo.value = '';
-                    
-                    wishlistModal.style.display = 'flex';
-                    document.body.classList.add('modal-open');
-                    this.updateWishlistCurrentInput();
-                    this.wlLoadList(true);
-                    
-                    // 启动轻量级轮询以同步后台状态更新
-                     this.wlStartPolling();
-                }
-            };
-        }
-        
-        // 心愿单弹窗关闭事件
-        if (wishlistClose) {
-            wishlistClose.onclick = () => {
-                if (wishlistModal) {
-                    wishlistModal.style.display = 'none';
-                    document.body.classList.remove('modal-open');
-                }
-                this.wlStopPolling();
-            };
-        }
-        
-        // 点击心愿单弹窗外部关闭
-        if (wishlistModal) {
-            wishlistModal.onclick = (e) => {
-                if (e.target === wishlistModal) {
-                    wishlistModal.style.display = 'none';
-                    document.body.classList.remove('modal-open');
-                    this.wlStopPolling();
-                }
-            };
-        }
-        
-        // 心愿单弹窗关闭按钮
-        if (wishlistClose) {
-            wishlistClose.onclick = () => {
-                wishlistModal.style.display = 'none';
-                document.body.classList.remove('modal-open');
-                this.wlStopPolling();
-            };
-        }
-        
-        // 添加到心愿单按钮事件
-        if (wlAddBtn) {
-            wlAddBtn.onclick = () => this.wlAdd();
-        }
-        
-        // 加载更多按钮事件
-        if (wlLoadMoreBtn) {
-            wlLoadMoreBtn.onclick = () => this.wlLoadList(false);
-        }
-        
-        // 点击页面其他地方关闭用户菜单
-        document.addEventListener('click', (e) => {
-            if (userMenu && !userAvatar.contains(e.target) && !userMenu.contains(e.target)) {
-                userMenu.style.display = 'none';
-            }
-        });
-
-        // who 流程已移除
-
-        // 登录弹窗
-        loginClose.onclick = () => { loginModal.style.display='none'; if (loginError) loginError.textContent=''; };
-        btnDoLogin.onclick = async () => {
-            // 立即开启加载状态：禁用按钮与输入框，按钮显示请稍后
-            this.setFormLoading('#loginModal .form', true, '请稍后…');
-            
-            try {
-                const email = (loginEmail.value || '').trim();
-                const password = loginPassword.value;
-                const remember = !!document.getElementById('loginRemember')?.checked;
-                
-                // 前端校验（在加载状态开启后）
-                if (!email || !password) {
-                    throw new Error('请输入邮箱和密码');
-                }
-                
-                const token = await this.getCaptchaTokenIfAvailable();
-                const headers = { 'Content-Type':'application/json' };
-                if (token) headers['x-captcha-token'] = token;
-                const r = await fetch(`${API_BASE_URL}/api/user/login/password`, { method:'POST', headers, body: JSON.stringify({ email, password, captchaToken: token }) });
-                const j = await r.json();
-                if (!r.ok) {
-                    // 检查是否为429限流响应
-                    if (this.handleRateLimitResponse(r, j, btnDoLogin, loginError)) {
-                        return; // 已处理限流响应，直接返回
-                    }
-                    throw new Error(j.error || '登录失败');
-                }
-                this.userToken = j.token || '';
-                if (this.userToken) {
-                    if (remember) {
-                        localStorage.setItem('user_token', this.userToken);
-                        try { sessionStorage.removeItem('user_token'); } catch {}
-                    } else {
-                        try { sessionStorage.setItem('user_token', this.userToken); } catch {}
-                        localStorage.removeItem('user_token');
-                    }
-                }
-                this.showMessage('登录成功');
-                loginModal.style.display='none';
-                if (loginError) loginError.textContent='';
-                await this.refreshAuthUi();
-                if (this.currentVideoId) this.loadSubtitleVariants();
-            } catch (e) {
-                const msg = e && e.message ? e.message : '登录失败';
-                if (loginError) loginError.textContent = msg;
-                this.showMessage(msg, 'error');
-            } finally {
-                // 恢复表单状态
-                this.setFormLoading('#loginModal .form', false);
-            }
-        };
-        gotoRegister.onclick = () => { loginModal.style.display='none'; if (loginError) loginError.textContent=''; regModal.style.display='flex'; };
-        if (gotoReset) gotoReset.onclick = () => {
-            if (loginError) loginError.textContent='';
-            loginModal.style.display='none';
-            const resetModal = document.getElementById('resetModal');
-            const resetCodeRow = document.getElementById('resetCodeRow');
-            const resetPwdRow = document.getElementById('resetPwdRow');
-            const resetSubmitRow = document.getElementById('resetSubmitRow');
-            // 直接展示完整步骤：验证码、新密码与提交
-            if (resetCodeRow) resetCodeRow.style.display='';
-            if (resetPwdRow) resetPwdRow.style.display='';
-            if (resetSubmitRow) resetSubmitRow.style.display='';
-            resetModal.style.display='flex';
-        };
-
-        // 注册弹窗
-        regClose.onclick = () => { regModal.style.display='none'; };
-        btnSendRegCode.onclick = async () => {
-            const email = (regEmail.value || '').trim();
-            if (!email) return this.showMessage('请输入邮箱', 'error');
-            try {
-                const exists = await this.accountExists(email);
-                if (exists) {
-                    this.showMessage('该邮箱已注册，请直接登录', 'error');
-                    return;
-                }
-                const token = await this.getCaptchaTokenIfAvailable();
-                const headers = { 'Content-Type':'application/json' };
-                if (token) headers['x-captcha-token'] = token;
-                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers, body: JSON.stringify({ email, purpose:'register', captchaToken: token }) });
-                const j = await r.json();
-                if (!r.ok) {
-                    // 检查是否为429限流响应
-                    if (this.handleRateLimitResponse(r, j, btnSendRegCode, null)) {
-                        return; // 已处理限流响应，直接返回
-                    }
-                    throw new Error(j.error || '发送失败');
-                }
-                this.showMessage('验证码已发送');
-                // 点击“重新发送”后立即进入倒计时
-                if (typeof startCountdown === 'function') startCountdown(btnSendRegCode, 60);
-            } catch (e) { this.showMessage(e.message || '发送失败', 'error'); }
-        };
-        // 注册 Step1：请求验证码并显示 Step2
-        btnStartRegister.onclick = async () => {
-            if (regError) regError.textContent = '';
-            const username = (regUsername.value || '').trim();
-            const email = (regEmail.value || '').trim();
-            const password = regPassword.value;
-            if (!username || !email || !password) { if (regError) regError.textContent = '请完整填写昵称、邮箱与密码'; return; }
-            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { if (regError) regError.textContent = '邮箱格式不正确'; return; }
-            if (password.length < 6) { if (regError) regError.textContent = '密码长度至少6位'; return; }
-            try {
-                // 串行查重（避免并发执行 invisible hCaptcha 导致 token 冲突）
-                const emailExists = await this.accountExists(email);
-                if (emailExists) { if (regError) regError.textContent = '该邮箱已注册，请直接登录'; return; }
-                const usernameExists = await this.accountExists(username);
-                if (usernameExists) { if (regError) regError.textContent = '该昵称已被占用，请更换'; return; }
-
-                const token = await this.getCaptchaTokenIfAvailable();
-                const headers = { 'Content-Type':'application/json' };
-                if (token) headers['x-captcha-token'] = token;
-                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers, body: JSON.stringify({ email, purpose:'register', captchaToken: token }) });
-                const j = await r.json();
-                if (!r.ok) {
-                    // 检查是否为429限流响应
-                    if (this.handleRateLimitResponse(r, j, btnStartRegister, regError)) {
-                        return; // 已处理限流响应，直接返回
-                    }
-                    throw new Error(j.error || '验证码发送失败');
-                }
-                this.showMessage('验证码已发送');
-                // 与点击“获取验证码”一致：自动开始倒计时（本地实现，避免依赖稍后定义的函数表达式）
-                if (btnSendRegCode) {
-                    const i18n = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.I18N) || {};
-                    const renderSent = typeof i18n.sentWithCountdown === 'function' ? i18n.sentWithCountdown : (s)=>`已发送(${s}s)`;
-                    const renderResend = i18n.resendAfter || '重新发送';
-                    let remain = 60;
-                    btnSendRegCode.disabled = true;
-                    btnSendRegCode.textContent = renderSent(remain);
-                    const t = setInterval(() => {
-                        remain -= 1;
-                        if (remain <= 0) {
-                            clearInterval(t);
-                            btnSendRegCode.disabled = false;
-                            btnSendRegCode.textContent = renderResend;
-                            return;
-                        }
-                        btnSendRegCode.textContent = renderSent(remain);
-                    }, 1000);
-                }
-                // 显示 Step2
-                regCodeRow.style.display = '';
-                regStep1Buttons.style.display = 'none';
-                regStep2Buttons.style.display = '';
-            } catch (e) {
-                if (regError) regError.textContent = e && e.message ? e.message : '验证码发送失败';
-            }
-        };
-
-        // 注册 Step2：提交注册
-        btnConfirmRegister.onclick = async () => {
-            if (regError) regError.textContent = '';
-            const username = (regUsername.value || '').trim();
-            const email = (regEmail.value || '').trim();
-            const password = regPassword.value;
-            const code = (regCode.value || '').trim();
-            if (!username || !email || !password || !code) { if (regError) regError.textContent = '请填写完整信息与验证码'; return; }
-            try {
-                const token = await this.getCaptchaTokenIfAvailable();
-                const headers = { 'Content-Type':'application/json' };
-                if (token) headers['x-captcha-token'] = token;
-                const r = await fetch(`${API_BASE_URL}/api/user/register`, { method:'POST', headers, body: JSON.stringify({ username, email, password, code, captchaToken: token }) });
-                const j = await r.json();
-                if (!r.ok) {
-                    // 检查是否为429限流响应
-                    if (this.handleRateLimitResponse(r, j, btnConfirmRegister, regError)) {
-                        return; // 已处理限流响应，直接返回
-                    }
-                    throw new Error(j.error || '注册失败');
-                }
-                this.showMessage('注册成功，请登录');
-                regModal.style.display='none';
-                // 打开登录并预填邮箱
-                loginModal.style.display = 'flex';
-                if (loginError) loginError.textContent = '';
-                loginEmail.value = email;
-                try { loginPassword.value = ''; } catch {}
-            } catch (e) {
-                if (regError) regError.textContent = e && e.message ? e.message : '注册失败';
-            }
-        };
-        gotoLogin.onclick = () => { regModal.style.display='none'; loginModal.style.display='flex'; if (loginError) loginError.textContent=''; };
-        if (gotoLogin2) gotoLogin2.onclick = () => { regModal.style.display='none'; loginModal.style.display='flex'; if (loginError) loginError.textContent=''; };
-
-        // 忘记密码弹窗绑定
-        const resetModal = document.getElementById('resetModal');
-        const resetClose = document.getElementById('resetClose');
-        const resetEmail = document.getElementById('resetEmail');
-        const resetCodeRow = document.getElementById('resetCodeRow');
-        const resetPwdRow = document.getElementById('resetPwdRow');
-        const resetSubmitRow = document.getElementById('resetSubmitRow');
-        const resetNextRow = document.getElementById('resetNextRow');
-        const btnResetNext = document.getElementById('btnResetNext');
-        const btnSendResetCode = document.getElementById('btnSendResetCode');
-        const btnConfirmReset = document.getElementById('btnConfirmReset');
-        const resetError = document.getElementById('resetError');
-        const resetGotoLogin = document.getElementById('resetGotoLogin');
-
-        if (resetClose) resetClose.onclick = () => { 
-            resetModal.style.display='none'; 
-            if (resetError) resetError.textContent=''; 
-            // 返回登录弹窗
-            loginModal.style.display='flex';
-            if (loginError) loginError.textContent='';
-        };
-        if (resetGotoLogin) resetGotoLogin.onclick = () => { resetModal.style.display='none'; loginModal.style.display='flex'; if (loginError) loginError.textContent=''; };
-        // 兼容：若仍存在“确定”按钮（旧缓存），点击后与直接进入第二步逻辑一致
-        if (btnResetNext) btnResetNext.onclick = async () => {
-            if (resetError) resetError.textContent = '';
-            const email = (resetEmail.value || '').trim();
-            if (!email) { if (resetError) resetError.textContent = '请输入邮箱'; return; }
-            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { if (resetError) resetError.textContent = '邮箱格式不正确'; return; }
-            // 开启加载态
-            const setButtonLoading = (buttonEl, on, text='请稍后…') => {
-                if (!buttonEl) return;
-                if (on) {
-                    if (!buttonEl.dataset.originalText) buttonEl.dataset.originalText = buttonEl.textContent || '';
-                    buttonEl.textContent = text;
-                    buttonEl.disabled = true;
-                    buttonEl.classList.add('btn-loading');
-                } else {
-                    buttonEl.disabled = false;
-                    buttonEl.classList.remove('btn-loading');
-                    const orig = buttonEl.dataset.originalText;
-                    if (typeof orig !== 'undefined') { buttonEl.textContent = orig; delete buttonEl.dataset.originalText; }
-                }
-            };
-            setButtonLoading(btnResetNext, true);
-            try {
-                const token = await this.getCaptchaTokenIfAvailable();
-                const headers = { 'Content-Type':'application/json' };
-                if (token) headers['x-captcha-token'] = token;
-                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers, body: JSON.stringify({ email, purpose:'reset', captchaToken: token }) });
-                const j = await r.json();
-                if (!r.ok) {
-                    // 检查是否为429限流响应
-                    if (this.handleRateLimitResponse(r, j, btnResetNext, resetError)) {
-                        return; // 已处理限流响应，直接返回
-                    }
-                    throw new Error(j.error || '发送验证码失败');
-                }
-                this.showMessage('验证码已发送');
-                // 展示第二步输入区域
-                if (resetCodeRow) resetCodeRow.style.display='';
-                if (resetPwdRow) resetPwdRow.style.display='';
-                if (resetSubmitRow) resetSubmitRow.style.display='';
-                if (resetNextRow) resetNextRow.style.display='none';
-                // 若存在“获取验证码”按钮，则启动倒计时（用于重发）
-                if (btnSendResetCode) {
-                    startCountdown(btnSendResetCode, 60);
-                }
-            } catch (e) {
-                if (resetError) resetError.textContent = e && e.message ? e.message : '发送验证码失败';
-                // 失败恢复按钮
-                setButtonLoading(btnResetNext, false);
-            }
-        };
-
-        // 通用倒计时函数
-        const startCountdown = (buttonEl, seconds = 60) => {
-            const i18n = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.I18N) || {};
-            const renderSent = typeof i18n.sentWithCountdown === 'function' ? i18n.sentWithCountdown : (s)=>`已发送(${s}s)`;
-            const renderResend = i18n.resendAfter || '重新发送';
-            let remain = seconds;
-            buttonEl.disabled = true;
-            buttonEl.textContent = renderSent(remain);
-            const t = setInterval(() => {
-                remain -= 1;
-                if (remain <= 0) {
-                    clearInterval(t);
-                    buttonEl.disabled = false;
-                    buttonEl.textContent = renderResend;
-                    return;
-                }
-                buttonEl.textContent = renderSent(remain);
-            }, 1000);
-        };
-
-        if (btnSendRegCode) btnSendRegCode.addEventListener('click', () => startCountdown(btnSendRegCode, 60));
-
-        if (btnSendResetCode) btnSendResetCode.onclick = async () => {
-            if (resetError) resetError.textContent = '';
-            const email = (resetEmail.value || '').trim();
-            if (!email) { if (resetError) resetError.textContent = '请输入邮箱'; return; }
-            try {
-                const token = await this.getCaptchaTokenIfAvailable();
-                const headers = { 'Content-Type':'application/json' };
-                if (token) headers['x-captcha-token'] = token;
-                const r = await fetch(`${API_BASE_URL}/api/user/email-code`, { method:'POST', headers, body: JSON.stringify({ email, purpose:'reset', captchaToken: token }) });
-                const j = await r.json();
-                if (!r.ok) {
-                    // 检查是否为429限流响应
-                    if (this.handleRateLimitResponse(r, j, btnSendResetCode, resetError)) {
-                        return; // 已处理限流响应，直接返回
-                    }
-                    throw new Error(j.error || '发送验证码失败');
-                }
-                this.showMessage('验证码已发送');
-                resetCodeRow.style.display='';
-                resetPwdRow.style.display='';
-                resetSubmitRow.style.display='';
-                startCountdown(btnSendResetCode, 60);
-            } catch (e) {
-                if (resetError) resetError.textContent = e && e.message ? e.message : '发送验证码失败';
-            }
-        };
-
-        if (btnConfirmReset) btnConfirmReset.onclick = async () => {
-            if (resetError) resetError.textContent = '';
-            const email = (resetEmail.value || '').trim();
-            const code = (document.getElementById('resetCode').value || '').trim();
-            const newPassword = (document.getElementById('resetPassword').value || '');
-            if (!email || !code || !newPassword) { if (resetError) resetError.textContent = '请完整填写邮箱、验证码与新密码'; return; }
-            if (newPassword.length < 6) { if (resetError) resetError.textContent = '新密码至少6位'; return; }
-            // 表单级加载态：在发起请求前启用，禁用表单并将按钮文案替换为“请稍后…”
-            this.setFormLoading('#resetModal .form', true, '请稍后…');
-            try {
-                const token = await this.getCaptchaTokenIfAvailable();
-                const headers = { 'Content-Type':'application/json' };
-                if (token) headers['x-captcha-token'] = token;
-                const r = await fetch(`${API_BASE_URL}/api/user/password/reset-confirm`, { method:'POST', headers, body: JSON.stringify({ email, code, new_password: newPassword, captchaToken: token }) });
-                const j = await r.json();
-                if (!r.ok) throw new Error(j.error || '重置失败');
-                this.showMessage('密码已重置，请登录');
-                resetModal.style.display='none';
-                loginModal.style.display='flex';
-                loginEmail.value = email;
-                try { loginPassword.value = ''; } catch {}
-            } catch (e) {
-                if (resetError) resetError.textContent = e && e.message ? e.message : '重置失败';
-            } finally {
-                // 无论成功失败，恢复表单状态
-                this.setFormLoading('#resetModal .form', false);
-            }
+        // 社交模式UI状态
+        this.uiState = {
+            isSocialMode: false,
+            activeFeature: null, // 'subcomment', 'userplaza', 'realtimechat'
+            isMobile: false
         };
     }
 
@@ -2098,6 +1220,172 @@ class VideoPlayer {
             this.showMessage(error.message || '删除失败', 'error');
         }
     }
+
+    // 社交模式相关方法
+    setupSocialMode() {
+        // 绑定社交功能按钮事件
+        const btnSubComment = document.getElementById('btnSubComment');
+        const btnUserPlaza = document.getElementById('btnUserPlaza');
+        const btnRealtimeChat = document.getElementById('btnRealtimeChat');
+        const closeSocialBtn = document.getElementById('closeSocialBtn');
+        const socialMask = document.getElementById('socialMask');
+
+        if (btnSubComment) {
+            btnSubComment.addEventListener('click', () => this.toggleSocialFeature('subcomment'));
+        }
+        if (btnUserPlaza) {
+            btnUserPlaza.addEventListener('click', () => this.toggleSocialFeature('userplaza'));
+        }
+        if (btnRealtimeChat) {
+            btnRealtimeChat.addEventListener('click', () => this.toggleSocialFeature('realtimechat'));
+        }
+        if (closeSocialBtn) {
+            closeSocialBtn.addEventListener('click', () => this.closeSocialMode());
+        }
+        if (socialMask) {
+            socialMask.addEventListener('click', () => this.closeSocialMode());
+        }
+
+        // ESC键关闭社交模式
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.uiState.isSocialMode) {
+                this.closeSocialMode();
+            }
+        });
+
+        // 窗口大小变化监听
+        window.addEventListener('resize', () => {
+            this.checkMobileMode();
+        });
+
+        // 初始化移动端检测
+        this.checkMobileMode();
+    }
+
+    checkMobileMode() {
+        this.uiState.isMobile = window.innerWidth <= 1024;
+    }
+
+    toggleSocialFeature(feature) {
+        if (this.uiState.isMobile) {
+            this.toggleMobileInlineArea(feature);
+        } else {
+            this.toggleDesktopSocialMode(feature);
+        }
+    }
+
+    toggleDesktopSocialMode(feature) {
+        const stage = document.querySelector('.stage');
+        const socialPanel = document.getElementById('socialPanel');
+        const socialMask = document.getElementById('socialMask');
+        
+        if (this.uiState.isSocialMode && this.uiState.activeFeature === feature) {
+            // 关闭当前功能
+            this.closeSocialMode();
+        } else {
+            // 开启或切换功能
+            this.uiState.isSocialMode = true;
+            this.uiState.activeFeature = feature;
+            
+            // 检查是否为drawer模式（<1280px）
+            const isDrawerMode = window.innerWidth < 1280;
+            
+            if (isDrawerMode) {
+                stage.classList.add('social-drawer-mode');
+                socialMask.classList.add('active');
+            } else {
+                stage.classList.add('social-side-mode');
+            }
+            
+            socialPanel.classList.add('active');
+            this.loadSocialContent(feature);
+            this.updateSocialButtonsState();
+        }
+    }
+
+    toggleMobileInlineArea(feature) {
+        const mobileInlineArea = document.getElementById('mobileInlineArea');
+        
+        if (this.uiState.activeFeature === feature && mobileInlineArea.classList.contains('active')) {
+            // 关闭当前功能
+            this.closeMobileInlineArea();
+        } else {
+            // 开启或切换功能
+            this.uiState.activeFeature = feature;
+            mobileInlineArea.classList.add('active');
+            this.loadMobileInlineContent(feature);
+            this.updateSocialButtonsState();
+        }
+    }
+
+    closeSocialMode() {
+        const stage = document.querySelector('.stage');
+        const socialPanel = document.getElementById('socialPanel');
+        const socialMask = document.getElementById('socialMask');
+        
+        this.uiState.isSocialMode = false;
+        this.uiState.activeFeature = null;
+        
+        stage.classList.remove('social-side-mode', 'social-drawer-mode');
+        socialPanel.classList.remove('active');
+        socialMask.classList.remove('active');
+        
+        this.updateSocialButtonsState();
+    }
+
+    closeMobileInlineArea() {
+        const mobileInlineArea = document.getElementById('mobileInlineArea');
+        
+        this.uiState.activeFeature = null;
+        mobileInlineArea.classList.remove('active');
+        
+        this.updateSocialButtonsState();
+    }
+
+    updateSocialButtonsState() {
+        const buttons = {
+            'subcomment': document.getElementById('btnSubComment'),
+            'userplaza': document.getElementById('btnUserPlaza'),
+            'realtimechat': document.getElementById('btnRealtimeChat')
+        };
+        
+        Object.keys(buttons).forEach(key => {
+            const btn = buttons[key];
+            if (btn) {
+                if (this.uiState.activeFeature === key) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            }
+        });
+    }
+
+    loadSocialContent(feature) {
+        const contentArea = document.querySelector('.social-panel-content');
+        if (!contentArea) return;
+        
+        const contentMap = {
+            'subcomment': '<div class="placeholder-content"><h3>字幕评论</h3><p>这里将显示字幕相关的评论和讨论内容...</p></div>',
+            'userplaza': '<div class="placeholder-content"><h3>用户广场</h3><p>这里将显示用户交流和社区内容...</p></div>',
+            'realtimechat': '<div class="placeholder-content"><h3>实时聊天</h3><p>这里将显示实时聊天功能...</p></div>'
+        };
+        
+        contentArea.innerHTML = contentMap[feature] || '';
+    }
+
+    loadMobileInlineContent(feature) {
+        const contentArea = document.querySelector('.mobile-content-area');
+        if (!contentArea) return;
+        
+        const contentMap = {
+            'subcomment': '<div class="mobile-placeholder-content"><h4>字幕评论</h4><p>移动端字幕评论功能...</p></div>',
+            'userplaza': '<div class="mobile-placeholder-content"><h4>用户广场</h4><p>移动端用户广场功能...</p></div>',
+            'realtimechat': '<div class="mobile-placeholder-content"><h4>实时聊天</h4><p>移动端实时聊天功能...</p></div>'
+        };
+        
+        contentArea.innerHTML = contentMap[feature] || '';
+    }
 }
 
 // 页面加载完成后初始化播放器
@@ -2107,6 +1395,8 @@ document.addEventListener('DOMContentLoaded', () => {
         try { window.videoPlayerInstance.destroy(); } catch {}
     }
     window.videoPlayerInstance = new VideoPlayer();
+    // 初始化社交模式功能
+    window.videoPlayerInstance.setupSocialMode();
 });
 
 // 页面卸载时清理资源
