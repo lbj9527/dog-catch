@@ -3,12 +3,13 @@
     <!-- 头部 -->
     <div class="header">
       <div class="header-left">
-        <h1>管理系统</h1>
-        <p>字幕与用户管理</p>
+        <span class="main-title">管理系统</span>
+        <span class="separator">|</span>
+        <span class="sub-title">字幕与用户管理</span>
       </div>
       <div class="header-right">
-        <span>欢迎，{{ currentUser.username }}</span>
-        <el-button @click="handleLogout" type="danger" plain>
+        <span class="welcome-text">欢迎，{{ currentUser.username }}</span>
+        <el-button @click="handleLogout" type="danger" plain size="small">
           <el-icon><SwitchButton /></el-icon>
           退出登录
         </el-button>
@@ -728,7 +729,13 @@ onMounted(() => { loadData(); loadWishlistPage() })
 <style scoped>
 /* 保留原样式 */
 .dashboard-container { padding: 20px; background-color: #f5f5f5; min-height: 100vh; }
-.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: white; padding: 6px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); min-height: 40px; }
+.header-left { display: flex; align-items: center; gap: 8px; }
+.main-title { font-size: 18px; font-weight: bold; color: #303133; }
+.separator { color: #dcdfe6; margin: 0 4px; }
+.sub-title { font-size: 14px; color: #606266; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.welcome-text { font-size: 14px; color: #606266; }
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: white; padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
 .toolbar-left { display: flex; gap: 10px; }
 .stats-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 20px; }
