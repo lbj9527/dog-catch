@@ -733,3 +733,31 @@ body.modal-open {
 @media (max-width: 480px) {
   #wishlistModal .modal-header .close { padding: 4px 8px; }
 }
+
+/* ===== Wishlist modal: user-confirmed adjustments (1-4) ===== */
+/* 1) Header height ~x2 */
+#wishlistModal .modal-header { padding: 12px 16px; }
+#wishlistModal .modal-header .close { padding: 4px 10px; }
+@media (max-width: 480px) {
+  #wishlistModal .modal-header { padding: 10px 12px; }
+}
+
+/* 2) Form spacing and layout */
+#wishlistModal .wlFormSection { padding: 14px 12px 8px; gap: 12px; }
+#wishlistModal .wlFormSection .row-compact { grid-template-columns: 88px 1fr; gap: 8px; }
+#wishlistModal .form-row.row-compact label { color: #ddd; }
+#wishlistModal .form-row.row-compact input { padding: 10px 12px; }
+
+/* 3) Status text: no background, smaller font */
+#wishlistModal .wl-status-badge {
+  background: transparent !important;
+  border: none !important;
+  font-size: 0.67em;
+  padding: 0 !important;
+}
+
+/* 4) Tighten spacing between form and list */
+#wishlistModal #wlCountText { margin-bottom: 2px; }
+#wishlistModal #wlList .wl-item { margin: 8px 0 !important; }
+#wishlistModal #wlList .wl-item:first-child { margin-top: 4px !important; }
+/* keep last-child rule as is to avoid extra bottom gap */
