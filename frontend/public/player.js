@@ -1586,10 +1586,11 @@ class VideoPlayer {
     }
     
     // 获取点赞状态
-    async fetchLikeStatus() {
+    async fetchLikeStatus(silent = true) {
         const activeId = this.currentSubtitleId || this.currentVideoId;
         if (!activeId) return;
-        
+
+        const likeBtn = document.getElementById('likeButton');
         try {
             const base = (API_BASE_URL || (window.PLAYER_CONFIG?.API_BASE_URL || '')).replace(/\/$/, '');
             const headers = this.userToken ? { Authorization: `Bearer ${this.userToken}` } : {};
@@ -1606,7 +1607,10 @@ class VideoPlayer {
                 this.updateLikeUI();
                 // 同步更新下拉框对应项的点赞数
                 this.updateSubtitleOptionLikeCount(activeId, this.currentLikeStatus.likesCount);
-                this.showMessage(this.currentLikeStatus.isLiked ? window.PLAYER_CONFIG.I18N.like.likeSuccess : window.PLAYER_CONFIG.I18N.like.unlikeSuccess, 'success');
+                // 只有在非静默模式下才显示成功提示
+                if (!silent) {
+                    this.showMessage(this.currentLikeStatus.isLiked ? window.PLAYER_CONFIG.I18N.like.likeSuccess : window.PLAYER_CONFIG.I18N.like.unlikeSuccess, 'success');
+                }
             } else if (response.status === 401) {
                 this.showMessage(window.PLAYER_CONFIG.I18N.like.loginExpired, 'error');
             } else {
