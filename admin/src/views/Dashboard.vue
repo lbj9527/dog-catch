@@ -277,7 +277,29 @@
               </template>
             </el-table-column>
             <el-table-column prop="base_video_id" label="基础ID" width="160" />
-            <el-table-column prop="note" label="备注" min-width="200" show-overflow-tooltip />
+            <el-table-column label="备注" min-width="200">
+              <template #default="scope">
+                <div v-if="!scope.row.note || !scope.row.note.trim()" style="color: #ccc;">-</div>
+                <el-popover
+                  v-else
+                  trigger="click"
+                  placement="right"
+                  :width="480"
+                  popper-class="note-popover"
+                >
+                  <template #reference>
+                    <div class="note-clamp-2" role="button" tabindex="0">
+                      {{ scope.row.note }}
+                      <el-link v-if="isLongText(scope.row.note)" type="primary" size="small" style="margin-left: 8px;">查看全部</el-link>
+                    </div>
+                  </template>
+                  <div class="note-full-content">{{ scope.row.note }}</div>
+                  <div class="popover-actions">
+                    <el-button size="small" plain @click="copyText(scope.row.note)">复制备注</el-button>
+                  </div>
+                </el-popover>
+              </template>
+            </el-table-column>
             <el-table-column prop="status" label="状态" width="120" align="center">
               <template #default="scope">
                 <el-tag :type="scope.row.status === '已更新' ? 'success' : 'warning'">
@@ -559,6 +581,32 @@ const toggleWishlistStatus = async (row) => {
   }
 }
 
+// 备注相关方法
+const isLongText = (text) => {
+  return !!text && text.trim().length > 50
+}
+
+const copyText = async (text) => {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text)
+      ElMessage.success('复制成功')
+    } else {
+      // 回退方案
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+      ElMessage.success('复制成功')
+    }
+  } catch (error) {
+    console.error('复制失败:', error)
+    ElMessage.error('复制失败')
+  }
+}
+
 // 选择相关
 const onSelectionChange = (rows) => {
   const ids = new Set(rows.map(r => r.video_id))
@@ -692,4 +740,42 @@ onMounted(() => { loadData(); loadWishlistPage() })
 .table-card { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
 .action-buttons { display: flex; gap: 5px; justify-content: center; }
 .pagination-wrapper { display: flex; justify-content: center; margin-top: 20px; }
+
+/* 备注相关样式 */
+.note-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.note-clamp-2:hover {
+  color: #409EFF;
+}
+
+/* Popover 样式 */
+:deep(.note-popover) {
+  max-width: 640px;
+}
+
+:deep(.note-popover .note-full-content) {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+  color: #333;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+:deep(.note-popover .popover-actions) {
+  margin-top: 12px;
+  text-align: right;
+  border-top: 1px solid #ebeef5;
+  padding-top: 8px;
+}
 </style>
