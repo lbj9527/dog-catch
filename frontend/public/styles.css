@@ -94,27 +94,29 @@ body {
 }
 
 /* 点赞按钮样式（统一为外置到播放器下方左侧） */
-.like-controls {
+.player-box > .like-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     position: absolute;
-    bottom: -48px;
     left: 0;
+    bottom: 0;
+    transform: translateY(100%);
     z-index: 100;
     pointer-events: auto;
 }
 
 /* 移动端覆盖：保持外置 */
 @media (max-width: 767px) {
-    .like-controls {
-        bottom: -40px;
-        left: 0;
+    .player-box > .like-controls {
+        gap: 6px;
     }
 }
 
 /* 平板端覆盖：保持外置 */
 @media (min-width: 768px) and (max-width: 1023px) {
-    .like-controls {
-        bottom: -44px;
-        left: 0;
+    .player-box > .like-controls {
+        gap: 8px;
     }
 }
 
@@ -160,6 +162,11 @@ body {
 @media (min-width: 1024px) and (max-width: 1439px) {
     .stage {
         max-width: 960px;
+    }
+    
+    /* 非社交模式下放宽播放器容器限制 */
+    .stage:not(.social-mode) {
+        max-width: clamp(960px, 92vw, 1400px);
     }
 }
 
@@ -842,7 +849,6 @@ body.modal-open {
     backdrop-filter: blur(4px);
     font-size: 14px;
     user-select: none;
-    margin-left: 8px;
 }
 
 .social-entry-btn:hover {
