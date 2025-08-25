@@ -76,7 +76,12 @@ body {
 /* 播放器容器样式调整：允许外部控件溢出显示，并为底部外置控件预留空间 */
 .player-box {
     position: relative;
-    width: min(100%, calc((100vh - 84px) * (16 / 9))); /* 方案B：按视口高度反推宽度 */
+    /* CSS变量定义，提供默认值 */
+    --player-reserve-top: 84px;
+    --player-reserve-bottom: 56px;
+    --player-max-h: calc(100vh - var(--player-reserve-top) - var(--player-reserve-bottom));
+    
+    width: min(100%, calc(var(--player-max-h) * (16 / 9))); /* 使用CSS变量计算宽度 */
     height: auto;
     aspect-ratio: 16 / 9;
     background: #000;
@@ -84,8 +89,8 @@ body {
     overflow: visible; /* 原为 hidden，改为 visible 以便将点赞按钮放在容器外部 */
     margin-left: auto;
     margin-right: auto;
-    max-height: calc(100vh - 84px); /* 头部(~64px) + 外边距/内边距(~20px) */
-    margin-bottom: 56px; /* 为底部外置的点赞按钮预留空间，避免与播放器重叠 */
+    max-height: var(--player-max-h); /* 使用CSS变量设置最大高度 */
+    margin-bottom: var(--player-reserve-bottom); /* 使用CSS变量设置底部边距 */
 }
 
 /* 点赞按钮样式（统一为外置到播放器下方左侧） */
@@ -148,7 +153,7 @@ body {
 /* 响应式设计 */
 @media (min-width: 1440px) {
     .stage {
-        max-width: 1280px;
+        max-width: 1400px; /* 放宽最大宽度以适应大屏 */
     }
 }
 

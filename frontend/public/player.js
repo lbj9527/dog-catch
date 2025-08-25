@@ -191,9 +191,75 @@ class VideoPlayer {
                 this.disableSubtitleUi('登录后可用');
             }
         }
+        
+        // 初始化自适应播放器尺寸
+        this.initAdaptivePlayerSize();
     }
     
     isLoggedIn() { return !!this.userToken; }
+    
+    // 自适应播放器尺寸相关方法
+    initAdaptivePlayerSize() {
+        // 初始测量和设置
+        this.updatePlayerSize();
+        
+        // 监听窗口大小变化
+        let resizeTimer = null;
+        window.addEventListener('resize', () => {
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                this.updatePlayerSize();
+            }, 100); // 防抖100ms
+        });
+    }
+    
+    updatePlayerSize() {
+        const playerBox = document.querySelector('.player-box');
+        const likeControls = document.querySelector('.like-controls');
+        
+        if (!playerBox) return;
+        
+        // 测量播放器顶部距离
+        const playerRect = playerBox.getBoundingClientRect();
+        const topReserve = Math.max(playerRect.top, 60); // 最小保留60px顶部空间
+        
+        // 测量点赞按钮高度和位置
+        let bottomReserve = 60; // 默认底部保留60px
+        if (likeControls) {
+            const likeRect = likeControls.getBoundingClientRect();
+            const likeHeight = likeRect.height || 40;
+            bottomReserve = Math.max(likeHeight + 20, 60); // 点赞按钮高度+20px间距，最小60px
+        }
+        
+        // 计算可用高度并确保点赞按钮可见
+        const viewportHeight = window.innerHeight;
+        const availableHeight = viewportHeight - topReserve - bottomReserve;
+        const minPlayerHeight = 200; // 播放器最小高度
+        
+        // 如果可用高度太小，调整底部保留空间
+        if (availableHeight < minPlayerHeight) {
+            bottomReserve = Math.max(viewportHeight - topReserve - minPlayerHeight, 40);
+        }
+        
+        // 更新CSS变量
+        playerBox.style.setProperty('--player-reserve-top', `${topReserve}px`);
+        playerBox.style.setProperty('--player-reserve-bottom', `${bottomReserve}px`);
+        
+        // 检查点赞按钮是否在视口内可见
+        if (likeControls) {
+            setTimeout(() => {
+                const updatedLikeRect = likeControls.getBoundingClientRect();
+                const isLikeVisible = updatedLikeRect.bottom <= viewportHeight && updatedLikeRect.top >= 0;
+                
+                // 如果点赞按钮不可见，进一步调整
+                if (!isLikeVisible && updatedLikeRect.bottom > viewportHeight) {
+                    const overflow = updatedLikeRect.bottom - viewportHeight;
+                    const newBottomReserve = bottomReserve + overflow + 10; // 额外10px缓冲
+                    playerBox.style.setProperty('--player-reserve-bottom', `${newBottomReserve}px`);
+                }
+            }, 50); // 等待CSS重新计算
+        }
+    }
 
     async accountExists(identifier) {
         try {
