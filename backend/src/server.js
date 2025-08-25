@@ -1901,10 +1901,28 @@ app.get('/api/admin/wishlists', authenticateAdminToken, async (req, res) => {
     try {
         const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
         const cursor = parseInt(req.query.cursor) || 0;
+        const search = (req.query.search || '').trim();
         const params = [];
         let sql = `SELECT w.id, w.user_id, u.username, u.email, w.video_id, w.base_video_id, w.note, w.status, w.created_at, w.updated_at FROM wishlists w LEFT JOIN users u ON w.user_id = u.id`;
-        if (cursor > 0) { sql += ' WHERE w.id < ?'; params.push(cursor); }
-        sql += ' ORDER BY w.id DESC LIMIT ?'; params.push(limit);
+        
+        const conditions = [];
+        if (cursor > 0) {
+            conditions.push('w.id < ?');
+            params.push(cursor);
+        }
+        if (search && search.length <= 50) {
+            conditions.push('(u.username LIKE ? COLLATE NOCASE OR u.email LIKE ? COLLATE NOCASE)');
+            const searchPattern = `%${search}%`;
+            params.push(searchPattern, searchPattern);
+        }
+        
+        if (conditions.length > 0) {
+            sql += ' WHERE ' + conditions.join(' AND ');
+        }
+        
+        sql += ' ORDER BY w.id DESC LIMIT ?';
+        params.push(limit);
+        
         const list = await getAllAsync(sql, params);
         const nextCursor = list.length === limit ? list[list.length - 1].id : null;
         return res.json({ data: list, page: { cursor: cursor || null, limit, next_cursor: nextCursor } });

@@ -248,6 +248,15 @@
             </el-button>
           </div>
           <div class="toolbar-right">
+            <el-input
+              v-model="wishlist.searchQuery"
+              placeholder="搜索用户名或邮箱..."
+              prefix-icon="Search"
+              style="width: 300px; margin-right: 16px"
+              @input="handleWishlistSearch"
+              @keyup.enter="handleWishlistSearch"
+              clearable
+            />
             <span style="color:#666">共 {{ wishlist.items.length }} 条</span>
           </div>
         </div>
@@ -373,7 +382,8 @@ const wishlist = reactive({
   limit: 50,
   loading: false,
   hasMore: true,
-  updatingId: 0
+  updatingId: 0,
+  searchQuery: ''
 })
 
 // 当前用户
@@ -430,6 +440,7 @@ const loadWishlist = async (initial = false) => {
     }
     const params = { limit: wishlist.limit }
     if (!initial && wishlist.nextCursor) params.cursor = wishlist.nextCursor
+    if (wishlist.searchQuery.trim()) params.search = wishlist.searchQuery.trim()
     const res = await wishlistAPI.getList(params)
     const list = res.data || []
     wishlist.items.push(...list)
@@ -443,6 +454,10 @@ const loadWishlist = async (initial = false) => {
 }
 
 const refreshWishlist = () => loadWishlist(true)
+
+const handleWishlistSearch = () => {
+  loadWishlist(true)
+}
 
 const handleSearch = () => {
   pagination.page = 1
