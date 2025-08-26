@@ -900,7 +900,7 @@ body.modal-open {
 }
 
 /* 桌面端社交模式布局 */
-@media (min-width: 801px) {
+@media (min-width: 881px) {
     .stage.social-mode {
         display: flex;
         gap: 16px;
@@ -931,7 +931,7 @@ body.modal-open {
     overflow: hidden;
 }
 
-@media (min-width: 801px) {
+@media (min-width: 881px) {
     .stage.social-mode .social-panel {
         display: flex;
         margin-top: 0; /* 统一与播放器顶部对齐，忽略移动端内联面板的默认 margin */
@@ -1015,7 +1015,7 @@ body.modal-open {
     transition: max-height 0.3s ease-out;
 }
 
-@media (min-width: 801px) {
+@media (min-width: 881px) {
     /* 桌面并排模式下，去除内联面板的顶部外边距 */
     .stage.social-mode .mobile-inline-panel {
         display: flex;      /* 覆盖初始 display:none */
@@ -1141,7 +1141,7 @@ body.modal-open {
 /* ===== 社交模式动画效果 ===== */
 
 /* 右侧面板进入动画（并排模式） */
-@media (min-width: 801px) {
+@media (min-width: 881px) {
     .social-panel.animate-in {
         animation: slideInFromRight 0.3s ease-out both;
     }
@@ -1173,7 +1173,7 @@ body.modal-open {
 }
 
 /* 播放器列宽度调整动画 */
-@media (min-width: 801px) {
+@media (min-width: 881px) {
     .stage.social-mode .player-column {
         /* 进入并排模式时让布局瞬时稳定：去掉宽度过渡 */
         transition: none;

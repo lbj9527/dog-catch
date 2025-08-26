@@ -2187,7 +2187,7 @@ class VideoPlayer {
     // 更新社交状态
     updateSocialState() {
         const windowWidth = window.innerWidth;
-        this.socialState.isMobile = windowWidth <= 800;
+        this.socialState.isMobile = windowWidth <= 880;
         // 桌面端始终禁用抽屉模式，统一为并排模式
         this.socialState.isDrawerMode = false;
     }
