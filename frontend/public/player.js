@@ -232,7 +232,11 @@ class VideoPlayer {
         
         // 测量播放器顶部距离
         const playerRect = playerBox.getBoundingClientRect();
-        const topReserve = Math.max(playerRect.top, 60);
+        let minTopReserve = 60;
+        if (stage && stage.classList.contains('mobile-immersive') && window.innerWidth <= 1024) {
+            minTopReserve = 16;
+        }
+        const topReserve = Math.max(playerRect.top, minTopReserve);
         
         // 测量点赞按钮高度
         let likeHeight = 40;
@@ -2298,6 +2302,9 @@ class VideoPlayer {
             if (this.socialState.isMobile) {
                 // 移动端：显示内联面板
                 stage.classList.remove('social-mode', 'parallel-mode');
+                stage.classList.add('mobile-immersive');
+                // 立即将 --app-header 置 0，避免保留顶部空白
+                document.documentElement.style.setProperty('--app-header', '0px');
                 if (mobileInlinePanel) {
                     mobileInlinePanel.classList.add('active');
                     // 确保面板位于播放器容器内
@@ -2351,6 +2358,11 @@ class VideoPlayer {
         } else {
             // 关闭社交模式
             stage.classList.remove('social-mode', 'parallel-mode');
+            stage.classList.remove('mobile-immersive');
+            // 恢复 --app-header 为实际头部高度
+            const headerEl = document.querySelector('.header');
+            const _h = headerEl ? Math.ceil(headerEl.getBoundingClientRect().height) : 0;
+            document.documentElement.style.setProperty('--app-header', `${_h}px`);
             
             if (mobileInlinePanel) {
                 mobileInlinePanel.classList.remove('active');

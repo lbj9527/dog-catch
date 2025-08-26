@@ -1015,6 +1015,32 @@ body.modal-open {
     transition: max-height 0.3s ease-out;
 }
 
+/* 移动端沉浸式体验：隐藏顶部工具栏、播放器顶部对齐、社交面板无边框 */
+@media (max-width: 1024px) {
+    .stage.mobile-immersive .header {
+        display: none;
+    }
+    
+    .stage.mobile-immersive .player-box {
+        margin-top: 0;
+        --player-reserve-top: 16px; /* 确保播放器移到最顶部时预留少量空间 */
+    }
+    
+    .stage.mobile-immersive .mobile-inline-panel {
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        backdrop-filter: none;
+        background: rgba(20, 20, 20, 1); /* 去掉透明效果 */
+        margin-top: 8px; /* 减少与点赞按钮的间距 */
+    }
+    
+    .stage.mobile-immersive .mobile-inline-panel .social-panel-header {
+        border-bottom: none;
+        background: transparent;
+    }
+}
+
 @media (min-width: 881px) {
     /* 桌面并排模式下，去除内联面板的顶部外边距 */
     .stage.social-mode .mobile-inline-panel {
