@@ -1315,3 +1315,35 @@ body.modal-open {
         transform: translateY(-50%) translateX(100%);
     }
 }
+
+/* ==== 社交模式桌面端覆盖：消除横向滚动、保证播放器完整显示、左右 8px 留白、右侧 600px 固定宽度 ==== */
+@media (min-width: 1025px) {
+  .stage.social-mode {
+    box-sizing: border-box; /* 避免 100% + padding 产生超宽 */
+    width: 100%;
+    padding: 0 8px;       /* 两侧 8px 极小留白 */
+    overflow-x: hidden;   /* 兜底去除偶发 1px 横向滚动 */
+  }
+
+  .stage.social-mode .player-column {
+    flex: 1 1 auto;       /* 让左侧列按剩余空间自适应 */
+    min-width: 0;         /* 防止内容撑破列导致溢出 */
+    max-width: none;      /* 显式移除旧的 max-width 限制 */
+  }
+
+  .stage.social-mode.parallel-mode .player-column {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;      /* 覆盖掉 calc(100% - 600px - gap) 的计算上限 */
+  }
+
+  .stage.social-mode.parallel-mode .social-panel {
+    flex: 0 0 600px;      /* 固定宽度 600px 的 Flex 子项 */
+  }
+
+  .stage.social-mode .player-box {
+    margin-left: 0;       /* 列内左对齐，避免列内居中产生的“虚空” */
+    margin-right: 0;
+    width: 100%;          /* 填满左侧列，配合 aspect-ratio 自适应高度 */
+  }
+}
