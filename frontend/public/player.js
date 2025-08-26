@@ -2139,7 +2139,8 @@ class VideoPlayer {
     updateSocialState() {
         const windowWidth = window.innerWidth;
         this.socialState.isMobile = windowWidth <= 1024;
-        this.socialState.isDrawerMode = !this.socialState.isMobile && windowWidth < 1280;
+        // 桌面端始终禁用抽屉模式，统一为并排模式
+        this.socialState.isDrawerMode = false;
     }
     
     // 设置社交事件监听器
@@ -2239,16 +2240,10 @@ class VideoPlayer {
                     mobileInlinePanel.classList.add('active');
                 }
             } else {
-                // 桌面端：显示右侧面板
+                // 桌面端：显示右侧面板（强制并排模式）
                 stage.classList.add('social-mode');
-                
-                if (this.socialState.isDrawerMode) {
-                    stage.classList.add('drawer-mode');
-                    stage.classList.remove('parallel-mode');
-                } else {
-                    stage.classList.add('parallel-mode');
-                    stage.classList.remove('drawer-mode');
-                }
+                stage.classList.add('parallel-mode');
+                stage.classList.remove('drawer-mode');
                 
                 // 添加播放器列容器
                 this.wrapPlayerInColumn();

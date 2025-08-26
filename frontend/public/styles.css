@@ -909,7 +909,8 @@ body.modal-open {
     }
     
     .stage.social-mode.parallel-mode .player-column {
-        max-width: calc(100% - clamp(320px, 36vw, 480px) - 16px);
+        /* 右侧面板固定600px，左侧区域自适应 */
+        max-width: calc(100% - 600px - 16px);
     }
     
     .stage.social-mode.drawer-mode .player-column {
@@ -934,7 +935,10 @@ body.modal-open {
     }
     
     .stage.social-mode.parallel-mode .social-panel {
-        width: clamp(320px, 36vw, 480px);
+        /* 固定并排面板宽度为600px，且可滚动 */
+        width: 600px;
+        min-width: 600px;
+        max-width: 600px;
         height: fit-content;
         max-height: calc(100vh - 120px);
         position: relative;
@@ -943,11 +947,14 @@ body.modal-open {
     }
     
     .stage.social-mode.drawer-mode .social-panel {
+        /* 抽屉模式在当前方案中不会启用，保留原样以兼容旧逻辑 */
         position: fixed;
         top: 50%;
         right: 16px;
         transform: translateY(-50%) translateX(0);
-        width: clamp(320px, 36vw, 480px);
+        width: 600px;
+        min-width: 600px;
+        max-width: 600px;
         max-height: calc(100vh - 120px);
         z-index: 1001;
         transition: transform 0.3s ease-out;
