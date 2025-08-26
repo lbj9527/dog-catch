@@ -226,48 +226,97 @@ class VideoPlayer {
     updatePlayerSize() {
         const playerBox = document.querySelector('.player-box');
         const likeControls = document.querySelector('.like-controls');
+        const stage = document.querySelector('.stage');
         
         if (!playerBox) return;
         
         // 测量播放器顶部距离
         const playerRect = playerBox.getBoundingClientRect();
-        const topReserve = Math.max(playerRect.top, 60); // 最小保留60px顶部空间
+        const topReserve = Math.max(playerRect.top, 60);
         
-        // 测量点赞按钮高度和位置
-        let bottomReserve = 60; // 默认底部保留60px
+        // 测量点赞按钮高度
+        let likeHeight = 40;
         if (likeControls) {
             const likeRect = likeControls.getBoundingClientRect();
-            const likeHeight = likeRect.height || 40;
-            bottomReserve = Math.max(likeHeight + 20, 60); // 点赞按钮高度+20px间距，最小60px
+            likeHeight = likeRect.height || 40;
         }
         
-        // 计算可用高度并确保点赞按钮可见
         const viewportHeight = window.innerHeight;
-        const availableHeight = viewportHeight - topReserve - bottomReserve;
-        const minPlayerHeight = 200; // 播放器最小高度
+        const isDesktopParallel = !!stage && stage.classList.contains('parallel-mode') && window.innerWidth >= 1025;
         
-        // 如果可用高度太小，调整底部保留空间
-        if (availableHeight < minPlayerHeight) {
-            bottomReserve = Math.max(viewportHeight - topReserve - minPlayerHeight, 40);
-        }
-        
-        // 更新CSS变量
-        playerBox.style.setProperty('--player-reserve-top', `${topReserve}px`);
-        playerBox.style.setProperty('--player-reserve-bottom', `${bottomReserve}px`);
-        
-        // 检查点赞按钮是否在视口内可见
-        if (likeControls) {
-            setTimeout(() => {
-                const updatedLikeRect = likeControls.getBoundingClientRect();
-                const isLikeVisible = updatedLikeRect.bottom <= viewportHeight && updatedLikeRect.top >= 0;
-                
-                // 如果点赞按钮不可见，进一步调整
-                if (!isLikeVisible && updatedLikeRect.bottom > viewportHeight) {
-                    const overflow = updatedLikeRect.bottom - viewportHeight;
-                    const newBottomReserve = bottomReserve + overflow + 10; // 额外10px缓冲
-                    playerBox.style.setProperty('--player-reserve-bottom', `${newBottomReserve}px`);
-                }
-            }, 50); // 等待CSS重新计算
+        if (isDesktopParallel) {
+            // 并排模式：高度主导策略
+            // 1. 计算可用高度（为点赞按钮预留空间）
+            const likeAreaHeight = likeHeight + 20; // 点赞区 + 间距
+            const availableHeight = viewportHeight - topReserve - likeAreaHeight - 20; // 额外20px缓冲
+            const minPlayerHeight = 200;
+            
+            // 2. 播放器高度：尽可能占满可用高度
+            const targetHeight = Math.max(minPlayerHeight, availableHeight);
+            
+            // 3. 按16:9推导宽度
+            const targetWidth = targetHeight * (16 / 9);
+            
+            // 4. 检查宽度是否超出左侧可用空间
+            const stageWidth = stage.getBoundingClientRect().width;
+            const maxLeftWidth = stageWidth - 600 - 16; // 减去右侧面板宽度和间距
+            
+            let finalHeight, finalWidth;
+            if (targetWidth <= maxLeftWidth) {
+                // 宽度未超限，使用高度主导的结果
+                finalHeight = targetHeight;
+                finalWidth = targetWidth;
+            } else {
+                // 宽度超限，改为宽度主导
+                finalWidth = maxLeftWidth;
+                finalHeight = finalWidth * (9 / 16);
+            }
+            
+            // 5. 设置CSS变量
+            playerBox.style.setProperty('--player-reserve-top', `${topReserve}px`);
+            playerBox.style.setProperty('--player-reserve-bottom', `${likeAreaHeight}px`);
+            playerBox.style.setProperty('--player-max-h', `${finalHeight}px`);
+            
+            // 6. 如果采用了宽度主导，需要额外设置宽度约束
+            if (targetWidth > maxLeftWidth) {
+                playerBox.style.setProperty('--player-max-w', `${finalWidth}px`);
+            } else {
+                playerBox.style.removeProperty('--player-max-w');
+            }
+            
+        } else {
+            // 非并排模式：保持原有逻辑
+            let bottomReserve = 60;
+            if (likeControls) {
+                const likeRect = likeControls.getBoundingClientRect();
+                const likeHeight = likeRect.height || 40;
+                bottomReserve = Math.max(likeHeight + 20, 60);
+            }
+            
+            const availableHeight = viewportHeight - topReserve - bottomReserve;
+            const minPlayerHeight = 200;
+            
+            if (availableHeight < minPlayerHeight) {
+                bottomReserve = Math.max(viewportHeight - topReserve - minPlayerHeight, 40);
+            }
+            
+            playerBox.style.setProperty('--player-reserve-top', `${topReserve}px`);
+            playerBox.style.setProperty('--player-reserve-bottom', `${bottomReserve}px`);
+            playerBox.style.removeProperty('--player-max-w'); // 清除宽度约束
+            
+            // 检查点赞按钮可见性
+            if (likeControls) {
+                setTimeout(() => {
+                    const updatedLikeRect = likeControls.getBoundingClientRect();
+                    const isLikeVisible = updatedLikeRect.bottom <= viewportHeight && updatedLikeRect.top >= 0;
+                    
+                    if (!isLikeVisible && updatedLikeRect.bottom > viewportHeight) {
+                        const overflow = updatedLikeRect.bottom - viewportHeight;
+                        const newBottomReserve = bottomReserve + overflow + 10;
+                        playerBox.style.setProperty('--player-reserve-bottom', `${newBottomReserve}px`);
+                    }
+                }, 50);
+            }
         }
     }
 

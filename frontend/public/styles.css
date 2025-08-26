@@ -86,8 +86,9 @@ body {
     --player-reserve-top: 84px;
     --player-reserve-bottom: 56px;
     --player-max-h: calc(100vh - var(--player-reserve-top) - var(--player-reserve-bottom));
+    --player-max-w: none; /* 新增：宽度约束变量 */
     
-    width: min(100%, calc(var(--player-max-h) * (16 / 9))); /* 使用CSS变量计算宽度 */
+    width: min(100%, var(--player-max-w, calc(var(--player-max-h) * (16 / 9))));
     height: auto;
     aspect-ratio: 16 / 9;
     background: #000;
