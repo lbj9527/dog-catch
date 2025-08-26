@@ -1134,7 +1134,7 @@ body.modal-open {
 
 /* 右侧面板进入动画（并排模式） */
 @media (min-width: 1025px) {
-    .stage.social-mode.parallel-mode .social-panel {
+    .social-panel.animate-in {
         animation: slideInFromRight 0.3s ease-out both;
     }
     

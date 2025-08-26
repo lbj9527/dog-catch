@@ -2243,6 +2243,10 @@ class VideoPlayer {
                     if (playerBox && !playerBox.contains(mobileInlinePanel)) {
                         playerBox.appendChild(mobileInlinePanel);
                     }
+                    // 清理桌面并排动画状态并取消任何待执行的入场动画
+                    mobileInlinePanel.classList.remove('animate-in', 'slide-out');
+                    if (this._socialAnimateInRaf1) { cancelAnimationFrame(this._socialAnimateInRaf1); this._socialAnimateInRaf1 = null; }
+                    if (this._socialAnimateInRaf2) { cancelAnimationFrame(this._socialAnimateInRaf2); this._socialAnimateInRaf2 = null; }
                 }
                 // 移动端不需要列包装
                 this.unwrapPlayerColumn();
@@ -2263,6 +2267,24 @@ class VideoPlayer {
                     if (playerColumn && mobileInlinePanel.previousElementSibling !== playerColumn) {
                         stage.insertBefore(mobileInlinePanel, playerColumn.nextSibling);
                     }
+                    // 清理可能残留的退出动画类
+                    mobileInlinePanel.classList.remove('slide-out');
+                    // 取消尚未执行的入场动画调度
+                    if (this._socialAnimateInRaf1) { cancelAnimationFrame(this._socialAnimateInRaf1); this._socialAnimateInRaf1 = null; }
+                    if (this._socialAnimateInRaf2) { cancelAnimationFrame(this._socialAnimateInRaf2); this._socialAnimateInRaf2 = null; }
+                    // 错峰触发入场动画：等待两帧，确保布局稳定后再添加 animate-in
+                    if (!mobileInlinePanel.classList.contains('animate-in')) {
+                        this._socialAnimateInRaf1 = requestAnimationFrame(() => {
+                            this._socialAnimateInRaf1 = null;
+                            this._socialAnimateInRaf2 = requestAnimationFrame(() => {
+                                this._socialAnimateInRaf2 = null;
+                                const stillDesktopParallel = stage.classList.contains('parallel-mode') && !this.socialState.isMobile && this.socialState.isSocialMode;
+                                if (stillDesktopParallel && mobileInlinePanel.parentElement === stage) {
+                                    mobileInlinePanel.classList.add('animate-in');
+                                }
+                            });
+                        });
+                    }
                 }
             }
         } else {
@@ -2275,6 +2297,10 @@ class VideoPlayer {
                 if (playerBox && !playerBox.contains(mobileInlinePanel)) {
                     playerBox.appendChild(mobileInlinePanel);
                 }
+                // 清理动画状态并取消调度
+                mobileInlinePanel.classList.remove('animate-in', 'slide-out');
+                if (this._socialAnimateInRaf1) { cancelAnimationFrame(this._socialAnimateInRaf1); this._socialAnimateInRaf1 = null; }
+                if (this._socialAnimateInRaf2) { cancelAnimationFrame(this._socialAnimateInRaf2); this._socialAnimateInRaf2 = null; }
             }
             
             // 移除播放器列容器
