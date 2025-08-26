@@ -1135,7 +1135,7 @@ body.modal-open {
 /* 右侧面板进入动画（并排模式） */
 @media (min-width: 1025px) {
     .stage.social-mode.parallel-mode .social-panel {
-        animation: slideInFromRight 0.3s ease-out;
+        animation: slideInFromRight 0.3s ease-out both;
     }
     
     /* 面板退出时的动画（通过JavaScript控制） */
@@ -1167,8 +1167,8 @@ body.modal-open {
 /* 播放器列宽度调整动画 */
 @media (min-width: 1025px) {
     .stage.social-mode .player-column {
-        /* 降低过渡复杂度：移除对 flex 的过渡，避免回流抖动 */
-        transition: max-width 0.3s ease-out;
+        /* 进入并排模式时让布局瞬时稳定：去掉宽度过渡 */
+        transition: none;
     }
 }
 
