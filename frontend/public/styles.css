@@ -931,13 +931,13 @@ body.modal-open {
     }
     
     .stage.social-mode.parallel-mode .social-panel {
-        /* 固定并排面板宽度为600px，且可滚动 */
+        /* 固定并排面板宽度为600px，顶部粘性，并充满可视高度 */
         width: 600px;
         min-width: 600px;
         max-width: 600px;
-        height: fit-content;
-        max-height: calc(100vh - 120px);
-        position: relative;
+        position: sticky;
+        top: 16px;
+        height: calc(100vh - 32px);
         transform: translateX(0);
         transition: transform 0.3s ease-out;
     }
