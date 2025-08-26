@@ -2150,9 +2150,8 @@ class VideoPlayer {
         const btnUserPlaza = document.getElementById('btnUserPlaza');
         const btnRealtimeChat = document.getElementById('btnRealtimeChat');
         
-        // 获取关闭按钮和遮罩
+        // 获取关闭按钮
         const socialPanelClose = document.querySelector('.social-panel-close');
-        const socialMask = document.getElementById('socialMask');
         
         // 绑定入口按钮事件
         if (btnSubComment) {
@@ -2176,13 +2175,6 @@ class VideoPlayer {
         // 绑定关闭按钮事件
         if (socialPanelClose) {
             socialPanelClose.addEventListener('click', () => {
-                this.closeSocialMode();
-            });
-        }
-        
-        // 绑定遮罩点击事件
-        if (socialMask) {
-            socialMask.addEventListener('click', () => {
                 this.closeSocialMode();
             });
         }
@@ -2210,7 +2202,6 @@ class VideoPlayer {
         this.updateSocialButtonsState();
         this.updateAccessibilityAttributes();
         this.loadSocialContent(feature);
-        this.updateAccessibilityAttributes();
     }
     
     // 关闭社交模式
@@ -2226,7 +2217,6 @@ class VideoPlayer {
     // 更新社交布局
     updateSocialLayout() {
         const stage = document.querySelector('.stage');
-        const socialMask = document.getElementById('socialMask');
         const mobileInlinePanel = document.getElementById('mobileInlinePanel');
         const playerBox = document.querySelector('.player-box');
         
@@ -2235,7 +2225,7 @@ class VideoPlayer {
         if (this.socialState.isSocialMode) {
             if (this.socialState.isMobile) {
                 // 移动端：显示内联面板
-                stage.classList.remove('social-mode', 'parallel-mode', 'drawer-mode');
+                stage.classList.remove('social-mode', 'parallel-mode');
                 if (mobileInlinePanel) {
                     mobileInlinePanel.classList.add('active');
                     // 确保面板位于播放器容器内
@@ -2248,7 +2238,6 @@ class VideoPlayer {
             } else {
                 // 桌面端：并排显示右侧面板
                 stage.classList.add('social-mode', 'parallel-mode');
-                stage.classList.remove('drawer-mode');
                 
                 // 添加播放器列容器
                 this.wrapPlayerInColumn();
@@ -2267,7 +2256,7 @@ class VideoPlayer {
             }
         } else {
             // 关闭社交模式
-            stage.classList.remove('social-mode', 'parallel-mode', 'drawer-mode');
+            stage.classList.remove('social-mode', 'parallel-mode');
             
             if (mobileInlinePanel) {
                 mobileInlinePanel.classList.remove('active');
@@ -2485,7 +2474,6 @@ class VideoPlayer {
     // 更新可访问性属性
     updateAccessibilityAttributes() {
         const mobileInlinePanel = document.getElementById('mobileInlinePanel');
-        const socialMask = document.getElementById('socialMask');
         
         if (this.socialState.isSocialMode) {
             // 统一使用 mobileInlinePanel 作为活动面板
@@ -2495,11 +2483,6 @@ class VideoPlayer {
                 activePanel.setAttribute('role', 'dialog');
                 activePanel.setAttribute('aria-modal', 'true');
                 activePanel.setAttribute('aria-labelledby', activePanel.querySelector('.social-panel-title')?.id || '');
-            }
-            
-            // 设置遮罩的ARIA属性（抽屉模式保留兼容）
-            if (socialMask && this.socialState.isDrawerMode) {
-                socialMask.setAttribute('aria-hidden', 'false');
             }
             
             // 设置焦点陷阱
@@ -2513,10 +2496,6 @@ class VideoPlayer {
                 mobileInlinePanel.removeAttribute('role');
                 mobileInlinePanel.removeAttribute('aria-modal');
                 mobileInlinePanel.removeAttribute('aria-labelledby');
-            }
-            
-            if (socialMask) {
-                socialMask.setAttribute('aria-hidden', 'true');
             }
             
             // 移除焦点陷阱

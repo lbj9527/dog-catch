@@ -905,16 +905,11 @@ body.modal-open {
     .stage.social-mode .player-column {
         flex: 1;
         min-width: 0;
-        transition: all 0.3s ease-out;
     }
     
     .stage.social-mode.parallel-mode .player-column {
         /* 右侧面板固定600px，左侧区域自适应 */
         max-width: calc(100% - 600px - 16px);
-    }
-    
-    .stage.social-mode.drawer-mode .player-column {
-        max-width: 100%;
     }
 }
 
@@ -945,21 +940,6 @@ body.modal-open {
         position: relative;
         transform: translateX(0);
         transition: transform 0.3s ease-out;
-    }
-    
-    .stage.social-mode.drawer-mode .social-panel {
-        /* 抽屉模式在当前方案中不会启用，保留原样以兼容旧逻辑 */
-        position: fixed;
-        top: 50%;
-        right: 16px;
-        transform: translateY(-50%) translateX(0);
-        width: 600px;
-        min-width: 600px;
-        max-width: 600px;
-        max-height: calc(100vh - 120px);
-        z-index: 1001;
-        transition: transform 0.3s ease-out;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     }
 }
 
@@ -1011,26 +991,7 @@ body.modal-open {
     color: #ccc;
 }
 
-/* 遮罩层 */
-.social-mask {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.45);
-    z-index: 1000;
-    opacity: 0;
-    transition: opacity 0.3s ease-out;
-}
-
-@media (min-width: 1025px) {
-    .stage.social-mode.drawer-mode .social-mask {
-        display: block;
-        opacity: 1;
-    }
-}
+/* 遮罩层（已移除抽屉模式，不再需要） */
 
 /* 移动端内联面板 */
 .mobile-inline-panel {
@@ -1168,13 +1129,9 @@ body.modal-open {
 
 /* ===== 社交模式动画效果 ===== */
 
-/* 右侧面板进入动画 */
+/* 右侧面板进入动画（并排模式） */
 @media (min-width: 1025px) {
     .stage.social-mode.parallel-mode .social-panel {
-        animation: slideInFromRight 0.3s ease-out;
-    }
-    
-    .stage.social-mode.drawer-mode .social-panel {
         animation: slideInFromRight 0.3s ease-out;
     }
     
@@ -1182,15 +1139,6 @@ body.modal-open {
     .social-panel.slide-out {
         animation: slideOutToRight 0.3s ease-out forwards;
     }
-}
-
-/* 遮罩淡入淡出动画 */
-.social-mask.fade-in {
-    animation: fadeIn 0.3s ease-out;
-}
-
-.social-mask.fade-out {
-    animation: fadeOut 0.3s ease-out forwards;
 }
 
 /* 移动端内联面板展开收起动画 */
@@ -1283,38 +1231,7 @@ body.modal-open {
     }
 }
 
-/* 抽屉模式面板特殊动画 */
-@media (min-width: 1025px) {
-    .stage.social-mode.drawer-mode .social-panel {
-        transform: translateY(-50%) translateX(100%);
-    }
-    
-    .stage.social-mode.drawer-mode .social-panel.slide-in {
-        animation: drawerSlideIn 0.3s ease-out forwards;
-    }
-    
-    .stage.social-mode.drawer-mode .social-panel.slide-out {
-        animation: drawerSlideOut 0.3s ease-out forwards;
-    }
-}
-
-@keyframes drawerSlideIn {
-    from {
-        transform: translateY(-50%) translateX(100%);
-    }
-    to {
-        transform: translateY(-50%) translateX(0);
-    }
-}
-
-@keyframes drawerSlideOut {
-    from {
-        transform: translateY(-50%) translateX(0);
-    }
-    to {
-        transform: translateY(-50%) translateX(100%);
-    }
-}
+/* 抽屉模式相关动画已移除 */
 
 /* ==== 社交模式桌面端覆盖：消除横向滚动、保证播放器完整显示、左右 8px 留白、右侧 600px 固定宽度 ==== */
 @media (min-width: 1025px) {
