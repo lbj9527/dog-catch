@@ -303,6 +303,7 @@ class VideoPlayer {
             playerBox.style.setProperty('--player-reserve-top', `${topReserve}px`);
             playerBox.style.setProperty('--player-reserve-bottom', `${bottomReserve}px`);
             playerBox.style.removeProperty('--player-max-w'); // 清除宽度约束
+            playerBox.style.removeProperty('--player-max-h'); // 清除高度约束，避免并排模式残留
             
             // 检查点赞按钮可见性
             if (likeControls) {
@@ -2366,6 +2367,17 @@ class VideoPlayer {
             // 移除播放器列容器
             this.unwrapPlayerColumn();
         }
+
+        // 布局变化后，下一帧重新计算播放器尺寸（双RAF确保布局稳定）
+        if (this._rafUpdateSize1) { cancelAnimationFrame(this._rafUpdateSize1); this._rafUpdateSize1 = null; }
+        if (this._rafUpdateSize2) { cancelAnimationFrame(this._rafUpdateSize2); this._rafUpdateSize2 = null; }
+        this._rafUpdateSize1 = requestAnimationFrame(() => {
+            this._rafUpdateSize1 = null;
+            this._rafUpdateSize2 = requestAnimationFrame(() => {
+                this._rafUpdateSize2 = null;
+                this.updatePlayerSize();
+            });
+        });
     }
     
     // 包装播放器到列容器中
