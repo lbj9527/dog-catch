@@ -939,7 +939,8 @@ body.modal-open {
         top: 16px;
         height: calc(100vh - 32px);
         transform: translateX(0);
-        transition: transform 0.3s ease-out;
+        /* 移除 transform 过渡，避免与关键帧并发导致抖动 */
+        will-change: transform;
     }
 }
 
@@ -1166,7 +1167,8 @@ body.modal-open {
 /* 播放器列宽度调整动画 */
 @media (min-width: 1025px) {
     .stage.social-mode .player-column {
-        transition: max-width 0.3s ease-out, flex 0.3s ease-out;
+        /* 降低过渡复杂度：移除对 flex 的过渡，避免回流抖动 */
+        transition: max-width 0.3s ease-out;
     }
 }
 
