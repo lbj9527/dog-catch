@@ -1009,7 +1009,9 @@ body.modal-open {
 @media (min-width: 1025px) {
     /* 桌面并排模式下，去除内联面板的顶部外边距 */
     .stage.social-mode .mobile-inline-panel {
+        display: flex;      /* 覆盖初始 display:none */
         margin-top: 0;
+        max-height: none;   /* 关键：清除移动端 max-height:0 的限制，否则高度被压成 0 */
     }
 }
 
