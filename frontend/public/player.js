@@ -2186,8 +2186,19 @@ class VideoPlayer {
     
     // 更新社交状态
     updateSocialState() {
-        const windowWidth = window.innerWidth;
-        this.socialState.isMobile = windowWidth <= 880;
+        // 基于设备特征检测移动设备，而非窗口宽度
+        const userAgent = navigator.userAgent.toLowerCase();
+        const isMobileUA = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
+        const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
+        const hasTouchSupport = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        const isModernMobile = navigator.userAgentData && navigator.userAgentData.mobile;
+        
+        // 排除桌面操作系统
+        const isDesktopOS = /windows|mac os|linux/i.test(userAgent) && !/mobile/i.test(userAgent);
+        
+        // 综合判断：必须是移动设备且不是桌面操作系统
+        this.socialState.isMobile = (isMobileUA || isModernMobile || (hasCoarsePointer && hasTouchSupport)) && !isDesktopOS;
+        
         // 桌面端始终禁用抽屉模式，统一为并排模式
         this.socialState.isDrawerMode = false;
     }
