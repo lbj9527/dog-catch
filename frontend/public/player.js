@@ -232,10 +232,7 @@ class VideoPlayer {
         
         // 测量播放器顶部距离
         const playerRect = playerBox.getBoundingClientRect();
-        let minTopReserve = 60;
-        if (stage && stage.classList.contains('mobile-immersive') && window.innerWidth <= 1024) {
-            minTopReserve = 16;
-        }
+        const minTopReserve = 60;
         const topReserve = Math.max(playerRect.top, minTopReserve);
         
         // 测量点赞按钮高度
@@ -2308,9 +2305,10 @@ class VideoPlayer {
                 document.documentElement.style.setProperty('--app-header', '0px');
                 if (mobileInlinePanel) {
                     mobileInlinePanel.classList.add('active');
-                    // 确保面板位于播放器容器内
-                    if (playerBox && !playerBox.contains(mobileInlinePanel)) {
-                        playerBox.appendChild(mobileInlinePanel);
+                    // 确保面板位于点赞按钮下方
+                    const likeControls = document.querySelector('.like-controls');
+                    if (likeControls && likeControls.parentNode && !likeControls.nextElementSibling || likeControls.nextElementSibling !== mobileInlinePanel) {
+                        likeControls.parentNode.insertBefore(mobileInlinePanel, likeControls.nextSibling);
                     }
                     // 清理桌面并排动画状态并取消任何待执行的入场动画
                     mobileInlinePanel.classList.remove('animate-in', 'slide-out');
@@ -2368,9 +2366,10 @@ class VideoPlayer {
             
             if (mobileInlinePanel) {
                 mobileInlinePanel.classList.remove('active');
-                // 默认回归到播放器容器内
-                if (playerBox && !playerBox.contains(mobileInlinePanel)) {
-                    playerBox.appendChild(mobileInlinePanel);
+                // 默认回归到点赞按钮下方的隐藏状态
+                const likeControls = document.querySelector('.like-controls');
+                if (likeControls && likeControls.parentNode && (!likeControls.nextElementSibling || likeControls.nextElementSibling !== mobileInlinePanel)) {
+                    likeControls.parentNode.insertBefore(mobileInlinePanel, likeControls.nextSibling);
                 }
                 // 清理动画状态并取消调度
                 mobileInlinePanel.classList.remove('animate-in', 'slide-out');

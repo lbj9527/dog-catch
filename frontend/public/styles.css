@@ -1021,6 +1021,10 @@ body.modal-open {
         display: none;
     }
     
+    body.mobile-immersive .stage {
+        padding-top: 16px; /* 整体上移到网页顶部，保留16px间距 */
+    }
+    
     .stage.mobile-immersive .player-box {
         margin-top: 0;
         --player-reserve-top: 16px; /* 确保播放器移到最顶部时预留少量空间 */
