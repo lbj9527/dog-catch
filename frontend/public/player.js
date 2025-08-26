@@ -2222,6 +2222,17 @@ class VideoPlayer {
         
         if (!stage) return;
         
+        // 依据视口状态切换类名，避免桌面端被移动端样式覆盖
+        if (mobileInlinePanel) {
+            if (this.socialState.isMobile) {
+                mobileInlinePanel.classList.add('mobile-inline-panel');
+            } else {
+                mobileInlinePanel.classList.remove('mobile-inline-panel');
+                mobileInlinePanel.classList.remove('slide-up');
+                mobileInlinePanel.classList.remove('slide-down');
+            }
+        }
+        
         if (this.socialState.isSocialMode) {
             if (this.socialState.isMobile) {
                 // 移动端：显示内联面板
