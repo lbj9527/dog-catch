@@ -2239,6 +2239,11 @@ class VideoPlayer {
                 if (mobileInlinePanel) {
                     mobileInlinePanel.classList.add('active');
                 }
+                // 确保桌面端面板回到 header
+                const header = document.querySelector('.header');
+                if (socialPanel && header && !header.contains(socialPanel)) {
+                    header.appendChild(socialPanel);
+                }
             } else {
                 // 桌面端：显示右侧面板（强制并排模式）
                 stage.classList.add('social-mode');
@@ -2247,6 +2252,11 @@ class VideoPlayer {
                 
                 // 添加播放器列容器
                 this.wrapPlayerInColumn();
+                
+                // 将社交面板移动到 stage 内，保证并排布局生效
+                if (socialPanel && !stage.contains(socialPanel)) {
+                    stage.appendChild(socialPanel);
+                }
             }
         } else {
             // 关闭社交模式
@@ -2254,6 +2264,12 @@ class VideoPlayer {
             
             if (mobileInlinePanel) {
                 mobileInlinePanel.classList.remove('active');
+            }
+            
+            // 确保社交面板回到 header
+            const header = document.querySelector('.header');
+            if (socialPanel && header && !header.contains(socialPanel)) {
+                header.appendChild(socialPanel);
             }
             
             // 移除播放器列容器
