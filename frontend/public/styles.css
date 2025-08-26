@@ -1017,7 +1017,7 @@ body.modal-open {
 
 /* 移动端沉浸式体验：隐藏顶部工具栏、播放器顶部对齐、社交面板无边框 */
 @media (max-width: 1024px) {
-    .stage.mobile-immersive .header {
+    body.mobile-immersive .header {
         display: none;
     }
     

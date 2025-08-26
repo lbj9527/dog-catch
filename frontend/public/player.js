@@ -2303,6 +2303,7 @@ class VideoPlayer {
                 // 移动端：显示内联面板
                 stage.classList.remove('social-mode', 'parallel-mode');
                 stage.classList.add('mobile-immersive');
+                document.body.classList.add('mobile-immersive');
                 // 立即将 --app-header 置 0，避免保留顶部空白
                 document.documentElement.style.setProperty('--app-header', '0px');
                 if (mobileInlinePanel) {
@@ -2359,6 +2360,7 @@ class VideoPlayer {
             // 关闭社交模式
             stage.classList.remove('social-mode', 'parallel-mode');
             stage.classList.remove('mobile-immersive');
+            document.body.classList.remove('mobile-immersive');
             // 恢复 --app-header 为实际头部高度
             const headerEl = document.querySelector('.header');
             const _h = headerEl ? Math.ceil(headerEl.getBoundingClientRect().height) : 0;
