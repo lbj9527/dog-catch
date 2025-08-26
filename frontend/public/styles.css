@@ -1238,7 +1238,7 @@ body.modal-open {
   .stage.social-mode {
     box-sizing: border-box; /* 避免 100% + padding 产生超宽 */
     width: 100%;
-    padding: 0 8px;       /* 两侧 8px 极小留白 */
+    padding: 16px;
     overflow-x: hidden;   /* 兜底去除偶发 1px 横向滚动 */
   }
 
@@ -1251,7 +1251,7 @@ body.modal-open {
   .stage.social-mode.parallel-mode .player-column {
     flex: 1 1 auto;
     min-width: 0;
-    max-width: none;      /* 覆盖掉 calc(100% - 600px - gap) 的计算上限 */
+    max-width: calc(100% - 600px - 16px);
   }
 
   .stage.social-mode.parallel-mode .social-panel {
