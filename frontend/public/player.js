@@ -2547,6 +2547,22 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.videoPlayerInstance && typeof window.videoPlayerInstance.destroy === 'function') {
         try { window.videoPlayerInstance.destroy(); } catch {}
     }
+
+    // 动态测量头部高度并写入 CSS 变量 --app-header
+    const headerEl = document.querySelector('.header');
+    const updateAppHeaderVar = () => {
+        const h = headerEl ? Math.ceil(headerEl.getBoundingClientRect().height) : 0; // 含边框，向上取整避免 1px 截断
+        document.documentElement.style.setProperty('--app-header', `${h}px`);
+    };
+    updateAppHeaderVar();
+    
+    // 监听头部高度变化：响应式换行、控件显示/隐藏、窗口缩放
+    if (window.ResizeObserver && headerEl) {
+        const ro = new ResizeObserver(() => updateAppHeaderVar());
+        ro.observe(headerEl);
+    }
+    window.addEventListener('resize', updateAppHeaderVar);
+
     window.videoPlayerInstance = new VideoPlayer();
 });
 
