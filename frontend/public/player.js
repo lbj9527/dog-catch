@@ -2255,9 +2255,13 @@ class VideoPlayer {
                 
                 if (mobileInlinePanel) {
                     mobileInlinePanel.classList.remove('active');
-                    // 将面板移动到 stage 内，保证并排布局
-                    if (!stage.contains(mobileInlinePanel)) {
+                    // 确保面板成为 .stage 的直接子项，且位于 .player-column 之后
+                    if (mobileInlinePanel.parentElement !== stage) {
                         stage.appendChild(mobileInlinePanel);
+                    }
+                    const playerColumn = stage.querySelector('.player-column');
+                    if (playerColumn && mobileInlinePanel.previousElementSibling !== playerColumn) {
+                        stage.insertBefore(mobileInlinePanel, playerColumn.nextSibling);
                     }
                 }
             }
