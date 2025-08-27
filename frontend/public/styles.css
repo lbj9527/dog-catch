@@ -1055,9 +1055,23 @@ body.modal-open {
 }
 
 @media (max-width: 1024px) {
+    .mobile-inline-panel {
+        transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+        opacity: 0;
+    }
+    
     .mobile-inline-panel.active {
-        display: block;
-        max-height: 400px;
+        opacity: 1;
+        display: block; /* 修复：激活时需要可见 */
+        max-height: 400px; /* 修复：从0展开到可见高度 */
+    }
+    
+    .mobile-inline-panel.slide-up {
+        animation: slideUp 0.3s ease-out;
+    }
+    
+    .mobile-inline-panel.slide-down {
+        animation: slideDown 0.3s ease-out forwards;
     }
 }
 
