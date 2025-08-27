@@ -2307,7 +2307,7 @@ class VideoPlayer {
                     mobileInlinePanel.classList.add('active');
                     // 确保面板位于点赞按钮下方
                     const likeControls = document.querySelector('.like-controls');
-                    if (likeControls && likeControls.parentNode && !likeControls.nextElementSibling || likeControls.nextElementSibling !== mobileInlinePanel) {
+                    if (likeControls && likeControls.parentNode && (!likeControls.nextElementSibling || likeControls.nextElementSibling !== mobileInlinePanel)) {
                         likeControls.parentNode.insertBefore(mobileInlinePanel, likeControls.nextSibling);
                     }
                     // 清理桌面并排动画状态并取消任何待执行的入场动画
