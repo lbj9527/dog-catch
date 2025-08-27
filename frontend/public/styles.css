@@ -1002,88 +1002,22 @@ body.modal-open {
 
 /* 遮罩层（已移除抽屉模式，不再需要） */
 
-/* 移动端内联面板 */
-.mobile-inline-panel {
-    display: none;
-    background: rgba(20, 20, 20, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    margin-top: 16px;
-    backdrop-filter: blur(8px);
-    overflow: hidden;
-    max-height: 0;
-    transition: max-height 0.3s ease-out;
-}
+/* 移动端内联面板样式已移除 */
 
-/* 移动端沉浸式体验：隐藏顶部工具栏、播放器顶部对齐、社交面板无边框 */
-@media (max-width: 1024px) {
-    body.mobile-immersive .header {
-        display: none;
-    }
-    
-    body.mobile-immersive .stage {
-        padding-top: 16px; /* 整体上移到网页顶部，保留16px间距 */
-    }
-    
-    .stage.mobile-immersive .player-box {
-        margin-top: 0;
-        --player-reserve-top: 16px; /* 确保播放器移到最顶部时预留少量空间 */
-    }
-    
-    .stage.mobile-immersive .mobile-inline-panel {
-        border: none;
-        border-radius: 0;
-        box-shadow: none;
-        backdrop-filter: none;
-        background: rgba(20, 20, 20, 1); /* 去掉透明效果 */
-        margin-top: 8px; /* 减少与点赞按钮的间距 */
-    }
-    
-    .stage.mobile-immersive .mobile-inline-panel .social-panel-header {
-        border-bottom: none;
-        background: transparent;
-    }
-}
+/* 移动端沉浸式体验样式已移除 */
 
+/* 桌面端社交面板样式保留但移除移动端引用 */
 @media (min-width: 881px) {
-    /* 桌面并排模式下，去除内联面板的顶部外边距 */
-    .stage.social-mode .mobile-inline-panel {
-        display: flex;      /* 覆盖初始 display:none */
+    .stage.social-mode .social-panel {
+        display: flex;
         margin-top: 0;
-        max-height: none;   /* 关键：清除移动端 max-height:0 的限制，否则高度被压成 0 */
+        max-height: none;
     }
 }
 
-@media (max-width: 1024px) {
-    .mobile-inline-panel {
-        transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
-        opacity: 0;
-    }
-    
-    .mobile-inline-panel.active {
-        opacity: 1;
-        display: block; /* 修复：激活时需要可见 */
-        max-height: 400px; /* 修复：从0展开到可见高度 */
-    }
-    
-    .mobile-inline-panel.slide-up {
-        animation: slideUp 0.3s ease-out;
-    }
-    
-    .mobile-inline-panel.slide-down {
-        animation: slideDown 0.3s ease-out forwards;
-    }
-}
+/* 移动端内联面板动画样式已移除 */
 
-.mobile-inline-panel .social-panel-header {
-    padding: 12px 16px;
-}
-
-.mobile-inline-panel .social-panel-content {
-    padding: 12px 16px;
-    max-height: 300px;
-    overflow-y: auto;
-}
+/* 移动端内联面板内容样式已移除 */
 
 /* 移动端社交入口按钮适配 */
 @media (max-width: 767px) {
@@ -1196,25 +1130,7 @@ body.modal-open {
     }
 }
 
-/* 移动端内联面板展开收起动画 */
-@media (max-width: 1024px) {
-    .mobile-inline-panel {
-        transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
-        opacity: 0;
-    }
-    
-    .mobile-inline-panel.active {
-        opacity: 1;
-    }
-    
-    .mobile-inline-panel.slide-up {
-        animation: slideUp 0.3s ease-out;
-    }
-    
-    .mobile-inline-panel.slide-down {
-        animation: slideDown 0.3s ease-out forwards;
-    }
-}
+/* 移动端内联面板展开收起动画已移除 */
 
 /* 播放器列宽度调整动画 */
 @media (min-width: 881px) {

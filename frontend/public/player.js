@@ -2242,7 +2242,7 @@ class VideoPlayer {
         }
     }
     
-    // 切换社交功能
+    // 切换社交功能（移动端仅检查登录，不触发UI变化）
     toggleSocialFeature(feature) {
         // 检查登录状态
         if (!this.isLoggedIn()) {
@@ -2250,13 +2250,19 @@ class VideoPlayer {
             return;
         }
         
-        // 如果当前功能已激活，则关闭
+        // 移动端：仅显示消息，不触发界面变化
+        if (this.socialState.isMobile) {
+            this.showMessage('移动端社交功能正在开发中', 'info');
+            return;
+        }
+        
+        // 桌面端：如果当前功能已激活，则关闭
         if (this.socialState.activeFeature === feature && this.socialState.isSocialMode) {
             this.closeSocialMode();
             return;
         }
         
-        // 激活新功能
+        // 桌面端：激活新功能
         this.socialState.activeFeature = feature;
         this.socialState.isSocialMode = true;
         
@@ -2276,101 +2282,54 @@ class VideoPlayer {
         this.updateAccessibilityAttributes();
     }
     
-    // 更新社交布局
+    // 更新社交布局（仅保留桌面端功能）
     updateSocialLayout() {
         const stage = document.querySelector('.stage');
-        const mobileInlinePanel = document.getElementById('mobileInlinePanel');
-        const playerBox = document.querySelector('.player-box');
         
         if (!stage) return;
         
-        // 依据视口状态切换类名，避免桌面端被移动端样式覆盖
-        if (mobileInlinePanel) {
-            if (this.socialState.isMobile) {
-                mobileInlinePanel.classList.add('mobile-inline-panel');
-            } else {
-                mobileInlinePanel.classList.remove('mobile-inline-panel');
-                mobileInlinePanel.classList.remove('slide-up');
-                mobileInlinePanel.classList.remove('slide-down');
-            }
-        }
-        
-        if (this.socialState.isSocialMode) {
-            if (this.socialState.isMobile) {
-                // 移动端：显示内联面板
-                stage.classList.remove('social-mode', 'parallel-mode');
-                stage.classList.add('mobile-immersive');
-                document.body.classList.add('mobile-immersive');
-                // 立即将 --app-header 置 0，避免保留顶部空白
-                document.documentElement.style.setProperty('--app-header', '0px');
-                if (mobileInlinePanel) {
-                    mobileInlinePanel.classList.add('active');
-                    // 确保面板位于点赞按钮下方
-                    const likeControls = document.querySelector('.like-controls');
-                    if (likeControls && likeControls.parentNode && (!likeControls.nextElementSibling || likeControls.nextElementSibling !== mobileInlinePanel)) {
-                        likeControls.parentNode.insertBefore(mobileInlinePanel, likeControls.nextSibling);
-                    }
-                    // 清理桌面并排动画状态并取消任何待执行的入场动画
-                    mobileInlinePanel.classList.remove('animate-in', 'slide-out');
-                    if (this._socialAnimateInRaf1) { cancelAnimationFrame(this._socialAnimateInRaf1); this._socialAnimateInRaf1 = null; }
-                    if (this._socialAnimateInRaf2) { cancelAnimationFrame(this._socialAnimateInRaf2); this._socialAnimateInRaf2 = null; }
+        if (this.socialState.isSocialMode && !this.socialState.isMobile) {
+            // 仅桌面端：并排显示右侧面板
+            stage.classList.add('social-mode', 'parallel-mode');
+            
+            // 添加播放器列容器
+            this.wrapPlayerInColumn();
+            
+            const mobileInlinePanel = document.getElementById('mobileInlinePanel');
+            if (mobileInlinePanel) {
+                // 确保面板成为 .stage 的直接子项，且位于 .player-column 之后
+                if (mobileInlinePanel.parentElement !== stage) {
+                    stage.appendChild(mobileInlinePanel);
                 }
-                // 移动端不需要列包装
-                this.unwrapPlayerColumn();
-            } else {
-                // 桌面端：并排显示右侧面板
-                stage.classList.add('social-mode', 'parallel-mode');
-                
-                // 添加播放器列容器
-                this.wrapPlayerInColumn();
-                
-                if (mobileInlinePanel) {
-                    mobileInlinePanel.classList.remove('active');
-                    // 确保面板成为 .stage 的直接子项，且位于 .player-column 之后
-                    if (mobileInlinePanel.parentElement !== stage) {
-                        stage.appendChild(mobileInlinePanel);
-                    }
-                    const playerColumn = stage.querySelector('.player-column');
-                    if (playerColumn && mobileInlinePanel.previousElementSibling !== playerColumn) {
-                        stage.insertBefore(mobileInlinePanel, playerColumn.nextSibling);
-                    }
-                    // 清理可能残留的退出动画类
-                    mobileInlinePanel.classList.remove('slide-out');
-                    // 取消尚未执行的入场动画调度
-                    if (this._socialAnimateInRaf1) { cancelAnimationFrame(this._socialAnimateInRaf1); this._socialAnimateInRaf1 = null; }
-                    if (this._socialAnimateInRaf2) { cancelAnimationFrame(this._socialAnimateInRaf2); this._socialAnimateInRaf2 = null; }
-                    // 错峰触发入场动画：等待两帧，确保布局稳定后再添加 animate-in
-                    if (!mobileInlinePanel.classList.contains('animate-in')) {
-                        this._socialAnimateInRaf1 = requestAnimationFrame(() => {
-                            this._socialAnimateInRaf1 = null;
-                            this._socialAnimateInRaf2 = requestAnimationFrame(() => {
-                                this._socialAnimateInRaf2 = null;
-                                const stillDesktopParallel = stage.classList.contains('parallel-mode') && !this.socialState.isMobile && this.socialState.isSocialMode;
-                                if (stillDesktopParallel && mobileInlinePanel.parentElement === stage) {
-                                    mobileInlinePanel.classList.add('animate-in');
-                                }
-                            });
+                const playerColumn = stage.querySelector('.player-column');
+                if (playerColumn && mobileInlinePanel.previousElementSibling !== playerColumn) {
+                    stage.insertBefore(mobileInlinePanel, playerColumn.nextSibling);
+                }
+                // 清理可能残留的退出动画类
+                mobileInlinePanel.classList.remove('slide-out');
+                // 取消尚未执行的入场动画调度
+                if (this._socialAnimateInRaf1) { cancelAnimationFrame(this._socialAnimateInRaf1); this._socialAnimateInRaf1 = null; }
+                if (this._socialAnimateInRaf2) { cancelAnimationFrame(this._socialAnimateInRaf2); this._socialAnimateInRaf2 = null; }
+                // 错峰触发入场动画：等待两帧，确保布局稳定后再添加 animate-in
+                if (!mobileInlinePanel.classList.contains('animate-in')) {
+                    this._socialAnimateInRaf1 = requestAnimationFrame(() => {
+                        this._socialAnimateInRaf1 = null;
+                        this._socialAnimateInRaf2 = requestAnimationFrame(() => {
+                            this._socialAnimateInRaf2 = null;
+                            const stillDesktopParallel = stage.classList.contains('parallel-mode') && !this.socialState.isMobile && this.socialState.isSocialMode;
+                            if (stillDesktopParallel && mobileInlinePanel.parentElement === stage) {
+                                mobileInlinePanel.classList.add('animate-in');
+                            }
                         });
-                    }
+                    });
                 }
             }
         } else {
-            // 关闭社交模式
+            // 关闭社交模式或移动端（移动端不再有UI变化）
             stage.classList.remove('social-mode', 'parallel-mode');
-            stage.classList.remove('mobile-immersive');
-            document.body.classList.remove('mobile-immersive');
-            // 恢复 --app-header 为实际头部高度
-            const headerEl = document.querySelector('.header');
-            const _h = headerEl ? Math.ceil(headerEl.getBoundingClientRect().height) : 0;
-            document.documentElement.style.setProperty('--app-header', `${_h}px`);
             
+            const mobileInlinePanel = document.getElementById('mobileInlinePanel');
             if (mobileInlinePanel) {
-                mobileInlinePanel.classList.remove('active');
-                // 默认回归到点赞按钮下方的隐藏状态
-                const likeControls = document.querySelector('.like-controls');
-                if (likeControls && likeControls.parentNode && (!likeControls.nextElementSibling || likeControls.nextElementSibling !== mobileInlinePanel)) {
-                    likeControls.parentNode.insertBefore(mobileInlinePanel, likeControls.nextSibling);
-                }
                 // 清理动画状态并取消调度
                 mobileInlinePanel.classList.remove('animate-in', 'slide-out');
                 if (this._socialAnimateInRaf1) { cancelAnimationFrame(this._socialAnimateInRaf1); this._socialAnimateInRaf1 = null; }
@@ -2456,10 +2415,11 @@ class VideoPlayer {
         });
     }
     
-    // 加载社交内容
+    // 加载社交内容（仅桌面端）
     loadSocialContent(feature) {
-        const mobileInlinePanelTitle = document.querySelector('#mobileInlinePanel .social-panel-title');
-        const mobileInlinePanelContent = document.querySelector('#mobileInlinePanel .social-panel-content');
+        // 移动端不再有内联面板，仅处理桌面端
+        const socialPanelTitle = document.querySelector('.stage .social-panel .social-panel-title');
+        const socialPanelContent = document.querySelector('.stage .social-panel .social-panel-content');
         
         let title = '';
         let content = '';
@@ -2479,9 +2439,9 @@ class VideoPlayer {
                 break;
         }
         
-        // 统一更新唯一的社交面板（mobileInlinePanel）
-        if (mobileInlinePanelTitle) mobileInlinePanelTitle.textContent = title;
-        if (mobileInlinePanelContent) mobileInlinePanelContent.innerHTML = content;
+        // 仅更新桌面端社交面板
+        if (socialPanelTitle) socialPanelTitle.textContent = title;
+        if (socialPanelContent) socialPanelContent.innerHTML = content;
     }
     
     // 获取字幕评论内容
