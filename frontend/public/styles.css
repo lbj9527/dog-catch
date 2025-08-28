@@ -114,9 +114,9 @@ body {
     /* 允许内容换行，为社交面板预留空间 */
     flex-wrap: wrap;
     width: 100%;
-    /* 新增：作为社交面板的定位上下文，并为绝对定位面板预留空间 */
+    /* 作为社交面板的定位上下文 */
     position: absolute;
-    padding-bottom: 5px; /* 与面板的 margin 对齐，避免视觉拥挤 */
+    padding-bottom: 1px; /* 与面板 1px 间距对齐 */
 }
 
 /* 移动端覆盖：保持外置 */
@@ -941,15 +941,15 @@ body.modal-open {
 @media (max-width: 880px) {
   .stage.social-mode .social-panel.mobile-inline {
     display: block;
-    margin: 5px 0 0 0; /* 与按钮的垂直间距改为5px */
+    margin: 1px 0 0 0; /* 与播放器保持 1px 间距 */
   }
 }
 
 /* 兜底：一旦 JS 赋予 mobile-inline，则无条件以内联方式显示，覆盖桌面样式残留 */
 .stage.social-mode .social-panel.mobile-inline {
     display: block;
-    margin: 5px 0 0 0; /* 与按钮的垂直间距改为5px */
-    /* 修复：使用绝对定位避免影响父容器布局 */
+    margin: 1px 0 0 0; /* 与播放器保持 1px 间距 */
+    /* 采用绝对定位，参考上下文改为 player-box（其为定位元素） */
     position: absolute;
     top: 100%;
     left: 0;
@@ -1270,4 +1270,6 @@ body.modal-open {
   .header.hidden-on-mobile-social {
     display: none !important;
   }
+  /* 移动端社交模式：隐藏整个按钮行（包含点赞与社交入口按钮） */
+  .stage.social-mode.is-mobile-active .player-box > .like-controls { display: none !important; }
 }

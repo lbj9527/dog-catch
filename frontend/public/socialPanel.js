@@ -221,14 +221,14 @@ export class SocialPanel {
   }
 
   _mountMobile(stage, el) {
-    // 移动端：挂载到社交按钮下方
-    const buttonsContainer = document.querySelector(this.buttonsContainerSelector);
-    if (!buttonsContainer) {
-      // 兜底：如果没有按钮容器，仍作为 stage 的子元素显示
+    // 移动端：挂载到播放器容器下方（而非按钮容器），以便在隐藏按钮行时保持面板位置
+    const playerBox = document.querySelector(this.playerBoxSelector);
+    if (!playerBox) {
+      // 兜底：如果没有播放器容器，仍作为 stage 的子元素显示
       if (el.parentElement !== stage) stage.appendChild(el);
     } else {
-      if (el.parentElement !== buttonsContainer) {
-        buttonsContainer.appendChild(el);
+      if (el.parentElement !== playerBox) {
+        playerBox.appendChild(el);
       }
     }
 
