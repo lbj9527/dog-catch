@@ -201,7 +201,7 @@ body {
 @media (max-width: 767px) {
     .stage {
         max-width: 100%;
-        padding: 8px;
+        padding: 1px; /* 原为 8px，改为移动端统一左右页边距 1px */
     }
     
     .header {
