@@ -106,8 +106,16 @@ export class SocialPanel {
         });
       }
     } else {
-      // 移动端无动画
+      // 移动端：使用轻量级滑入淡入动画
       el.classList.remove('animate-in', 'slide-out');
+      // 确保初始状态为关闭（translateY/opacity 初始值由 CSS 提供）
+      el.classList.remove('is-open');
+      // 读取一次布局以确保过渡生效
+      void el.offsetWidth;
+      // 下一帧添加打开类，触发过渡
+      requestAnimationFrame(() => {
+        el.classList.add('is-open');
+      });
     }
   }
 
@@ -135,15 +143,19 @@ export class SocialPanel {
         this._setMobileHeaderHidden(false);
       }, 300);
     } else {
-      // 移动端：无动画，直接隐藏
-      el.classList.remove('mobile-inline');
-      stage.classList.remove('social-mode');
-      stage.classList.remove('is-mobile-active');
-      el.setAttribute('aria-hidden', 'true');
-      // 兜底还原（一般移动端不会包裹）
-      this._unwrapPlayerColumn(stage);
-      // 恢复顶部 header
-      this._setMobileHeaderHidden(false);
+      // 移动端：滑出淡出动画后再隐藏
+      el.classList.remove('is-open');
+      this._animTimer = setTimeout(() => {
+        this._animTimer = null;
+        el.classList.remove('mobile-inline');
+        stage.classList.remove('social-mode');
+        stage.classList.remove('is-mobile-active');
+        el.setAttribute('aria-hidden', 'true');
+        // 兜底还原（一般移动端不会包裹）
+        this._unwrapPlayerColumn(stage);
+        // 恢复顶部 header
+        this._setMobileHeaderHidden(false);
+      }, 220); // 与 CSS 过渡时间对齐
     }
   }
 
