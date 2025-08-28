@@ -114,6 +114,9 @@ body {
     /* 允许内容换行，为社交面板预留空间 */
     flex-wrap: wrap;
     width: 100%;
+    /* 新增：作为社交面板的定位上下文，并为绝对定位面板预留空间 */
+    position: absolute;
+    padding-bottom: 12px; /* 与面板的 margin 对齐，避免视觉拥挤 */
 }
 
 /* 移动端覆盖：保持外置 */
@@ -946,12 +949,16 @@ body.modal-open {
 .stage.social-mode .social-panel.mobile-inline {
     display: block;
     margin: 12px 0 0 0;
-    width: 100%; /* 在按钮容器中占满一行 */
+    /* 修复：使用绝对定位避免影响父容器布局 */
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    width: auto;
     min-width: 0;
     max-width: none;
-    position: static;
     height: auto;
-    flex: 0 0 100%; /* 作为flex子项时强制占据整行 */
+    z-index: 1000;
     box-sizing: border-box;
 }
 
