@@ -74,6 +74,19 @@ export class SocialPanel {
     if (this.contentEl) this.contentEl.innerHTML = html;
   }
 
+  // 新增：通知播放器更新尺寸
+  _notifyPlayerSizeUpdate() {
+    // 双RAF确保DOM布局稳定后再更新播放器尺寸
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        // 找到 VideoPlayer 实例并调用 updatePlayerSize
+        if (window.videoPlayerInstance && typeof window.videoPlayerInstance.updatePlayerSize === 'function') {
+          window.videoPlayerInstance.updatePlayerSize();
+        }
+      });
+    });
+  }
+
   // 内部：切换移动端社交模式时顶部 header 的显示隐藏
   _setMobileHeaderHidden(hidden) {
     const pageHeader = document.querySelector('.header');
@@ -141,21 +154,25 @@ export class SocialPanel {
         // 确保恢复顶部 header
         stage.classList.remove('is-mobile-active');
         this._setMobileHeaderHidden(false);
+        // 通知播放器更新尺寸
+        this._notifyPlayerSizeUpdate();
       }, 300);
     } else {
       // 移动端：滑出淡出动画后再隐藏
       el.classList.remove('is-open');
       this._animTimer = setTimeout(() => {
-        this._animTimer = null;
-        el.classList.remove('mobile-inline');
-        stage.classList.remove('social-mode');
-        stage.classList.remove('is-mobile-active');
-        el.setAttribute('aria-hidden', 'true');
-        // 兜底还原（一般移动端不会包裹）
-        this._unwrapPlayerColumn(stage);
-        // 恢复顶部 header
-        this._setMobileHeaderHidden(false);
-      }, 220); // 与 CSS 过渡时间对齐
+          this._animTimer = null;
+          el.classList.remove('mobile-inline');
+          stage.classList.remove('social-mode');
+          stage.classList.remove('is-mobile-active');
+          el.setAttribute('aria-hidden', 'true');
+          // 兜底还原（一般移动端不会包裹）
+          this._unwrapPlayerColumn(stage);
+          // 恢复顶部 header
+          this._setMobileHeaderHidden(false);
+          // 通知播放器更新尺寸
+          this._notifyPlayerSizeUpdate();
+        }, 220); // 与 CSS 过渡时间对齐
     }
   }
 
