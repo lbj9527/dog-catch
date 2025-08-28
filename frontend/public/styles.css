@@ -108,7 +108,7 @@ body {
     position: absolute;
     left: 0;
     bottom: 0;
-    transform: translateY(100%);
+    transform: translateY(calc(100% + 10px));
     z-index: 100;
     pointer-events: auto;
     /* 允许内容换行，为社交面板预留空间 */
