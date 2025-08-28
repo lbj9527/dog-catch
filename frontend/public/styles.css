@@ -931,6 +931,14 @@ body.modal-open {
     overflow: hidden;
 }
 
+/* 移动端：内联显示于按钮下方，无动画 */
+@media (max-width: 880px) {
+  .stage.social-mode .social-panel.mobile-inline {
+    display: block;
+    margin: 12px 0 0 0; /* 与按钮有间距 */
+  }
+}
+
 @media (min-width: 881px) {
     .stage.social-mode .social-panel {
         display: flex;
