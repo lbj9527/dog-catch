@@ -111,6 +111,9 @@ body {
     transform: translateY(100%);
     z-index: 100;
     pointer-events: auto;
+    /* 允许内容换行，为社交面板预留空间 */
+    flex-wrap: wrap;
+    width: 100%;
 }
 
 /* 移动端覆盖：保持外置 */
@@ -943,11 +946,13 @@ body.modal-open {
 .stage.social-mode .social-panel.mobile-inline {
     display: block;
     margin: 12px 0 0 0;
-    width: auto;
+    width: 100%; /* 在按钮容器中占满一行 */
     min-width: 0;
     max-width: none;
     position: static;
     height: auto;
+    flex: 0 0 100%; /* 作为flex子项时强制占据整行 */
+    box-sizing: border-box;
 }
 
 @media (min-width: 881px) {
