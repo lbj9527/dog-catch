@@ -1263,7 +1263,7 @@ body.modal-open {
   .stage.social-mode.is-mobile-active {
     /* 占据全宽，顶部贴合状态栏 */
     margin-top: 0;
-    padding-top: max(env(safe-area-inset-top), 0px);
+    padding-top: 0; /* 原为 max(env(safe-area-inset-top), 0px)，现按你的需求设为 0 */
   }
   .stage.social-mode.is-mobile-active ~ .header,
   .stage.social-mode.is-mobile-active + .header,
