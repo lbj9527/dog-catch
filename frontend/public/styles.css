@@ -116,7 +116,7 @@ body {
     width: 100%;
     /* 新增：作为社交面板的定位上下文，并为绝对定位面板预留空间 */
     position: absolute;
-    padding-bottom: 12px; /* 与面板的 margin 对齐，避免视觉拥挤 */
+    padding-bottom: 5px; /* 与面板的 margin 对齐，避免视觉拥挤 */
 }
 
 /* 移动端覆盖：保持外置 */
@@ -941,14 +941,14 @@ body.modal-open {
 @media (max-width: 880px) {
   .stage.social-mode .social-panel.mobile-inline {
     display: block;
-    margin: 12px 0 0 0; /* 与按钮有间距 */
+    margin: 5px 0 0 0; /* 与按钮的垂直间距改为5px */
   }
 }
 
 /* 兜底：一旦 JS 赋予 mobile-inline，则无条件以内联方式显示，覆盖桌面样式残留 */
 .stage.social-mode .social-panel.mobile-inline {
     display: block;
-    margin: 12px 0 0 0;
+    margin: 5px 0 0 0; /* 与按钮的垂直间距改为5px */
     /* 修复：使用绝对定位避免影响父容器布局 */
     position: absolute;
     top: 100%;
