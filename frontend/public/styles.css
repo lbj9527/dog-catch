@@ -939,13 +939,22 @@ body.modal-open {
   }
 }
 
+/* 兜底：一旦 JS 赋予 mobile-inline，则无条件以内联方式显示，覆盖桌面样式残留 */
+.stage.social-mode .social-panel.mobile-inline {
+    display: block;
+    margin: 12px 0 0 0;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    position: static;
+    height: auto;
+}
+
 @media (min-width: 881px) {
-    .stage.social-mode .social-panel {
+    /* 桌面端仅在并排模式下显示社交面板 */
+    .stage.social-mode.parallel-mode .social-panel {
         display: flex;
         margin-top: 0; /* 统一与播放器顶部对齐，忽略移动端内联面板的默认 margin */
-    }
-    
-    .stage.social-mode.parallel-mode .social-panel {
         /* 固定并排面板宽度为600px，顶部粘性，并充满可视高度 */
         width: 600px;
         min-width: 600px;
@@ -1014,14 +1023,6 @@ body.modal-open {
 
 /* 移动端沉浸式体验样式已移除 */
 
-/* 桌面端社交面板样式保留但移除移动端引用 */
-@media (min-width: 881px) {
-    .stage.social-mode .social-panel {
-        display: flex;
-        margin-top: 0;
-        max-height: none;
-    }
-}
 
 /* 移动端内联面板动画样式已移除 */
 

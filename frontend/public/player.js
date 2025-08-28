@@ -2199,19 +2199,25 @@ class VideoPlayer {
     
     // 更新社交状态
     updateSocialState() {
-        // 基于设备特征检测移动设备，而非窗口宽度
-        const userAgent = navigator.userAgent.toLowerCase();
+        // 基于设备特征检测移动设备，而非仅依赖窗口宽度/UA
+        const uaRaw = navigator.userAgent;
+        const userAgent = uaRaw.toLowerCase();
         const isMobileUA = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
         const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
         const hasTouchSupport = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-        const isModernMobile = navigator.userAgentData && navigator.userAgentData.mobile;
-        
-        // 排除桌面操作系统
-        const isDesktopOS = /windows|mac os|linux/i.test(userAgent) && !/mobile/i.test(userAgent);
-        
-        // 综合判断：必须是移动设备且不是桌面操作系统
-        this.socialState.isMobile = (isMobileUA || isModernMobile || (hasCoarsePointer && hasTouchSupport)) && !isDesktopOS;
-        
+        const isModernMobile = (navigator.userAgentData && navigator.userAgentData.mobile) === true;
+
+        // iPadOS 在“请求桌面站点”时 UA 伪装为 macOS，但可通过 maxTouchPoints 识别
+        const iPadOSDesktopUA = /mac os/i.test(uaRaw) && (navigator.maxTouchPoints || 0) > 1;
+        // 视口兜底：窄视口一律按移动端处理，避免 UA/指针特征误判
+        const isSmallViewport = window.matchMedia('(max-width: 880px)').matches;
+
+        // 排除桌面操作系统（排除 iPadOS 桌面 UA 伪装）
+        const isDesktopOS = /windows|mac os|linux/i.test(userAgent) && !/mobile/i.test(userAgent) && !iPadOSDesktopUA;
+
+        // 综合判断：满足任一移动特征，或窄视口，且不属于真实桌面 OS
+        this.socialState.isMobile = (isMobileUA || isModernMobile || (hasCoarsePointer && hasTouchSupport) || iPadOSDesktopUA || isSmallViewport) && !isDesktopOS;
+
         // 桌面端始终禁用抽屉模式，统一为并排模式
         this.socialState.isDrawerMode = false;
     }
@@ -2245,6 +2251,8 @@ class VideoPlayer {
     
     // 切换社交功能（移动端也显示面板，但无动画）
     toggleSocialFeature(feature) {
+        // 每次操作前刷新设备状态，确保最新布局判定
+        this.updateSocialState();
         // 检查登录状态
         if (!this.isLoggedIn()) {
             this.showMessage('请先登录后使用社交功能', 'warning');
