@@ -74,6 +74,20 @@ export class SocialPanel {
     if (this.contentEl) this.contentEl.innerHTML = html;
   }
 
+  // 内部：切换移动端社交模式时顶部 header 的显示隐藏
+  _setMobileHeaderHidden(hidden) {
+    const pageHeader = document.querySelector('.header');
+    if (!pageHeader) return;
+    if (hidden) {
+      pageHeader.classList.add('hidden-on-mobile-social');
+    } else {
+      pageHeader.classList.remove('hidden-on-mobile-social');
+    }
+    // 同步更新 --app-header 变量，避免桌面端粘性布局误差（即便在移动端通常不使用）
+    const h = hidden ? 0 : Math.ceil(pageHeader.getBoundingClientRect().height || 0);
+    document.documentElement.style.setProperty('--app-header', `${h}px`);
+  }
+
   show(state = { isMobile: this.getIsMobile(), isSocialMode: true }) {
     const el = this.getElement();
     if (!el) return;
@@ -116,14 +130,20 @@ export class SocialPanel {
         el.setAttribute('aria-hidden', 'true');
         // 关闭后还原播放器布局
         this._unwrapPlayerColumn(stage);
+        // 确保恢复顶部 header
+        stage.classList.remove('is-mobile-active');
+        this._setMobileHeaderHidden(false);
       }, 300);
     } else {
       // 移动端：无动画，直接隐藏
       el.classList.remove('mobile-inline');
       stage.classList.remove('social-mode');
+      stage.classList.remove('is-mobile-active');
       el.setAttribute('aria-hidden', 'true');
       // 兜底还原（一般移动端不会包裹）
       this._unwrapPlayerColumn(stage);
+      // 恢复顶部 header
+      this._setMobileHeaderHidden(false);
     }
   }
 
@@ -144,6 +164,15 @@ export class SocialPanel {
       stage.classList.remove('social-mode', 'parallel-mode');
       // 非社交模式时还原播放器布局
       this._unwrapPlayerColumn(stage);
+    }
+
+    // 新增：移动端社交模式时将舞台顶到页面顶部并隐藏 header
+    if (state.isSocialMode && state.isMobile) {
+      stage.classList.add('is-mobile-active');
+      this._setMobileHeaderHidden(true);
+    } else {
+      stage.classList.remove('is-mobile-active');
+      this._setMobileHeaderHidden(false);
     }
 
     // 根据设备挂载到不同位置

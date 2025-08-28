@@ -1257,3 +1257,17 @@ body.modal-open {
     width: 100%;          /* 填满左侧列，配合 aspect-ratio 自适应高度 */
   }
 }
+
+/* 移动端社交模式：隐藏顶部 header，并将舞台区域顶到屏幕顶部（保留 iOS 安全区） */
+@media (max-width: 880px) {
+  .stage.social-mode.is-mobile-active {
+    /* 占据全宽，顶部贴合状态栏 */
+    margin-top: 0;
+    padding-top: max(env(safe-area-inset-top), 0px);
+  }
+  .stage.social-mode.is-mobile-active ~ .header,
+  .stage.social-mode.is-mobile-active + .header,
+  .header.hidden-on-mobile-social {
+    display: none !important;
+  }
+}
