@@ -744,6 +744,7 @@ app.use(cors({
     },
     methods: ['GET','HEAD','PUT','PATCH','POST','DELETE','OPTIONS'],
     allowedHeaders: ['Content-Type','Authorization','Range','x-captcha-token','x-require-captcha'],
+    exposedHeaders: ['Content-Disposition'],
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
