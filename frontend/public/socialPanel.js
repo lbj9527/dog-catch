@@ -12,6 +12,9 @@ export class SocialPanel {
     this.titleEl = null;
     this.closeBtn = null;
     this.contentEl = null;
+    // 新增：增高按钮与状态
+    this.expandBtn = null;
+    this._expanded = false;
 
     this._animTimer = null;
   }
@@ -31,6 +34,22 @@ export class SocialPanel {
     title.id = 'socialPanelTitle';
     title.textContent = '';
 
+    // 右侧操作区容器
+    const actions = document.createElement('div');
+    actions.className = 'social-panel-actions';
+
+    // 新增：增高/还原按钮（图标与关闭按钮并列，位于其左侧）
+    const expandBtn = document.createElement('button');
+    expandBtn.className = 'social-panel-expand';
+    expandBtn.setAttribute('aria-label', '增高社交面板');
+    // 初始为“放大镜”图标（参考图中关闭按钮左侧）
+    expandBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
+        <path d="M20 20L16.65 16.65" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    `;
+
     const closeBtn = document.createElement('button');
     closeBtn.className = 'social-panel-close';
     closeBtn.setAttribute('aria-label', '关闭');
@@ -45,8 +64,12 @@ export class SocialPanel {
     const content = document.createElement('div');
     content.className = 'social-panel-content';
 
+    // 组装结构：标题在左，右侧 actions 中包含 增高 与 关闭
     header.appendChild(title);
-    header.appendChild(closeBtn);
+    actions.appendChild(expandBtn);
+    actions.appendChild(closeBtn);
+    header.appendChild(actions);
+
     panel.appendChild(header);
     panel.appendChild(content);
 
@@ -55,6 +78,12 @@ export class SocialPanel {
     this.titleEl = title;
     this.closeBtn = closeBtn;
     this.contentEl = content;
+    this.expandBtn = expandBtn;
+
+    // 绑定增高按钮逻辑
+    this.expandBtn.addEventListener('click', () => {
+      this._setExpanded(!this._expanded);
+    });
 
     // 默认挂到舞台底部，不显示，由 syncLayout 控制真正位置
     const stage = document.querySelector(this.stageSelector);
@@ -87,6 +116,42 @@ export class SocialPanel {
     });
   }
 
+  // 新增：设置是否增高（满屏高、隐藏视频）
+  _setExpanded(expanded) {
+    this._expanded = !!expanded;
+    const el = this.getElement();
+    const playerBox = document.querySelector(this.playerBoxSelector);
+    if (!el || !playerBox) return;
+
+    if (this._expanded) {
+      el.classList.add('is-expanded');
+      playerBox.classList.add('is-panel-expanded');
+      document.body.classList.add('modal-open');
+      this.expandBtn.setAttribute('aria-label', '还原社交面板');
+      this.expandBtn.classList.add('active');
+      // 维持“放大镜”图标
+      this.expandBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
+          <path d="M20 20L16.65 16.65" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      `;
+    } else {
+      el.classList.remove('is-expanded');
+      playerBox.classList.remove('is-panel-expanded');
+      document.body.classList.remove('modal-open');
+      this.expandBtn.setAttribute('aria-label', '增高社交面板');
+      this.expandBtn.classList.remove('active');
+      // 保持“放大镜”图标
+      this.expandBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
+          <path d="M20 20L16.65 16.65" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      `;
+    }
+  }
+
   // 内部：切换移动端社交模式时顶部 header 的显示隐藏
   _setMobileHeaderHidden(hidden) {
     const pageHeader = document.querySelector('.header');
@@ -108,6 +173,9 @@ export class SocialPanel {
 
     // 显示并设置可访问性
     el.setAttribute('aria-hidden', 'false');
+
+    // 每次打开默认还原未增高
+    this._setExpanded(false);
 
     if (!state.isMobile) {
       // 桌面端入场动画
@@ -139,6 +207,9 @@ export class SocialPanel {
 
     // 清理之前的延迟
     if (this._animTimer) { clearTimeout(this._animTimer); this._animTimer = null; }
+
+    // 关闭时强制还原增高状态
+    this._setExpanded(false);
 
     if (!state.isMobile) {
       // 桌面端：使用退出动画

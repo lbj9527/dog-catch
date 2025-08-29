@@ -1021,6 +1021,10 @@ body.modal-open {
     margin: 0;
 }
 
+/* 新增：头部右侧操作区（增高 + 关闭） */
+.social-panel-actions { display: flex; align-items: center; gap: 6px; }
+
+.social-panel-expand,
 .social-panel-close {
     background: none;
     border: none;
@@ -1034,15 +1038,11 @@ body.modal-open {
     justify-content: center;
 }
 
-.social-panel-close:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-}
+.social-panel-expand:hover,
+.social-panel-close:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
 
-.social-panel-close svg {
-    width: 20px;
-    height: 20px;
-}
+.social-panel-expand svg,
+.social-panel-close svg { width: 20px; height: 20px; }
 
 /* 社交面板内容 */
 .social-panel-content {
@@ -1296,3 +1296,21 @@ body.modal-open {
   /* 移动端社交模式：隐藏整个按钮行（包含点赞与社交入口按钮） */
   .stage.social-mode.is-mobile-active .player-box > .like-controls { display: none !important; }
 }
+
+/* 增高态：面板占满视口高度并覆盖播放器区域，宽度仍锚定 player-box */
+.stage.social-mode .social-panel.mobile-inline.is-expanded {
+  top: 0;           /* 覆盖至 player-box 顶部 */
+  margin-top: 0;    /* 去掉 1px 间距 */
+  height: 100dvh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 12px 12px 0 0;
+  padding-bottom: max(env(safe-area-inset-bottom), 8px);
+  box-shadow: 0 -10px 30px rgba(0,0,0,0.35);
+}
+
+/* 增高态：隐藏视频交互但保留 player-box 作为宽度锚点 */
+.player-box.is-panel-expanded .video-js { opacity: 0; visibility: hidden; pointer-events: none; }
+
+/* 锁定页面滚动（已有 modal-open，可复用） */
+body.modal-open { overflow: hidden; }
