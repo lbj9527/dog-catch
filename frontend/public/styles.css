@@ -1070,7 +1070,8 @@ body.modal-open {
 }
 /* 展开态：右上 + 左下 朝内（白色） */
 .social-panel-expand::after {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 4h-4M16 4v4M4 16h4M4 16v-4'/></svg>");
+  /* 采用内向顶点：右上 (12,8) 向左/下，左下 (8,12) 向右/上，真正“朝内” */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 8h-4M12 8v4M8 12h4M8 12v-4'/></svg>");
 }
 /* 展开态切换（任一选择器命中即切换） */
 .stage.social-mode .social-panel.mobile-inline.is-expanded .social-panel-expand::before,
