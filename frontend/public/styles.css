@@ -1038,36 +1038,47 @@ body.modal-open {
     justify-content: center;
 }
 
+/* hover：仅保留一处 */
 .social-panel-expand:hover,
 .social-panel-close:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
 
-.social-panel-expand svg,
+/* 仅保留关闭按钮 SVG 尺寸；扩展按钮 SVG 将被隐藏 */
 .social-panel-close svg { width: 20px; height: 20px; }
 
-/* 替换移动端“扩展四角”为“两角”图标（方案A：右上角 + 左下角） */
-/* 仅样式层实现：隐藏原SVG，用 ::before 绘制基于 currentColor 的SVG */
+/* 屏蔽旧四角 SVG（保留 DOM 但不显示） */
 .social-panel-expand svg { display: none !important; }
-.social-panel-expand::before {
+
+/* 两角图标：::before 为“朝外”（默认可见），::after 为“朝内”（默认隐藏），淡入淡出切换 */
+.social-panel-expand { position: relative; }
+.social-panel-expand::before,
+.social-panel-expand::after {
   content: '';
-  width: 20px;
-  height: 20px;
-  display: inline-block;
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px; height: 20px;
   background-repeat: no-repeat;
   background-size: 20px 20px;
   background-position: center;
-  /* 未展开：两角朝外 */
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M18 2h-4M18 2v4M2 18h4M2 18v-4'/></svg>");
+  transition: opacity 120ms ease-out;
+  opacity: 0;
 }
-/* 展开态：两角朝内（依据 .social-panel.mobile-inline.is-expanded 切换） */
-.stage.social-mode .social-panel.mobile-inline.is-expanded .social-panel-expand::before {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 4h-4M16 4v4M4 16h4M4 16v-4'/></svg>");
+/* 折叠态：右上 + 左下 朝外（白色） */
+.social-panel-expand::before {
+  opacity: 1;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M18 2h-4M18 2v4M2 18h4M2 18v-4'/></svg>");
 }
-
-.social-panel-expand:hover,
-.social-panel-close:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
-
-.social-panel-expand svg,
-.social-panel-close svg { width: 20px; height: 20px; }
+/* 展开态：右上 + 左下 朝内（白色） */
+.social-panel-expand::after {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 4h-4M16 4v4M4 16h4M4 16v-4'/></svg>");
+}
+/* 展开态切换（任一选择器命中即切换） */
+.stage.social-mode .social-panel.mobile-inline.is-expanded .social-panel-expand::before,
+.stage.social-mode .social-panel.is-expanded .social-panel-expand::before,
+.stage.social-mode .player-box.is-panel-expanded .social-panel .social-panel-expand::before { opacity: 0; }
+.stage.social-mode .social-panel.mobile-inline.is-expanded .social-panel-expand::after,
+.stage.social-mode .social-panel.is-expanded .social-panel-expand::after,
+.stage.social-mode .player-box.is-panel-expanded .social-panel .social-panel-expand::after { opacity: 1; }
 
 /* 设备类型控制：默认隐藏“扩展四角”按钮，仅在触控且无悬停设备（常见手机/平板）显示 */
 .social-panel-expand { display: none !important; }
