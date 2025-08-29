@@ -42,11 +42,13 @@ export class SocialPanel {
     const expandBtn = document.createElement('button');
     expandBtn.className = 'social-panel-expand';
     expandBtn.setAttribute('aria-label', '增高社交面板');
-    // 初始为“放大镜”图标（参考图中关闭按钮左侧）
+    // 改为“扩展四角”图标（与参考图一致），颜色继承 currentColor
     expandBtn.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
-        <path d="M20 20L16.65 16.65" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <path d="M9 4H5a1 1 0 0 0-1 1v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M4 15v4a1 1 0 0 0 1 1h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M15 20h4a1 1 0 0 0 1-1v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M20 9V5a1 1 0 0 0-1-1h-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     `;
 
@@ -129,11 +131,13 @@ export class SocialPanel {
       document.body.classList.add('modal-open');
       this.expandBtn.setAttribute('aria-label', '还原社交面板');
       this.expandBtn.classList.add('active');
-      // 维持“放大镜”图标
+      // 维持“扩展四角”图标样式
       this.expandBtn.innerHTML = `
         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
-          <path d="M20 20L16.65 16.65" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M9 4H5a1 1 0 0 0-1 1v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M4 15v4a1 1 0 0 0 1 1h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M15 20h4a1 1 0 0 0 1-1v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M20 9V5a1 1 0 0 0-1-1h-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       `;
     } else {
@@ -142,11 +146,13 @@ export class SocialPanel {
       document.body.classList.remove('modal-open');
       this.expandBtn.setAttribute('aria-label', '增高社交面板');
       this.expandBtn.classList.remove('active');
-      // 保持“放大镜”图标
+      // 保持“扩展四角”图标样式
       this.expandBtn.innerHTML = `
         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
-          <path d="M20 20L16.65 16.65" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M9 4H5a1 1 0 0 0-1 1v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M4 15v4a1 1 0 0 0 1 1h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M15 20h4a1 1 0 0 0 1-1v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M20 9V5a1 1 0 0 0-1-1h-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       `;
     }
