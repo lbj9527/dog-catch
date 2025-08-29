@@ -1044,6 +1044,31 @@ body.modal-open {
 .social-panel-expand svg,
 .social-panel-close svg { width: 20px; height: 20px; }
 
+/* 替换移动端“扩展四角”为“两角”图标（方案A：右上角 + 左下角） */
+/* 仅样式层实现：隐藏原SVG，用 ::before 绘制基于 currentColor 的SVG */
+.social-panel-expand svg { display: none !important; }
+.social-panel-expand::before {
+  content: '';
+  width: 20px;
+  height: 20px;
+  display: inline-block;
+  background-repeat: no-repeat;
+  background-size: 20px 20px;
+  background-position: center;
+  /* 未展开：两角朝外 */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M18 2h-4M18 2v4M2 18h4M2 18v-4'/></svg>");
+}
+/* 展开态：两角朝内（依据 .social-panel.mobile-inline.is-expanded 切换） */
+.stage.social-mode .social-panel.mobile-inline.is-expanded .social-panel-expand::before {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M16 4h-4M16 4v4M4 16h4M4 16v-4'/></svg>");
+}
+
+.social-panel-expand:hover,
+.social-panel-close:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+
+.social-panel-expand svg,
+.social-panel-close svg { width: 20px; height: 20px; }
+
 /* 设备类型控制：默认隐藏“扩展四角”按钮，仅在触控且无悬停设备（常见手机/平板）显示 */
 .social-panel-expand { display: none !important; }
 @media (hover: none) and (pointer: coarse) {
