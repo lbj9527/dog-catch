@@ -1044,6 +1044,12 @@ body.modal-open {
 .social-panel-expand svg,
 .social-panel-close svg { width: 20px; height: 20px; }
 
+/* 设备类型控制：默认隐藏“扩展四角”按钮，仅在触控且无悬停设备（常见手机/平板）显示 */
+.social-panel-expand { display: none !important; }
+@media (hover: none) and (pointer: coarse) {
+  .social-panel-expand { display: inline-flex !important; }
+}
+
 /* 社交面板内容 */
 .social-panel-content {
     flex: 1;
