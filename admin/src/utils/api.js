@@ -142,6 +142,36 @@ export const wishlistAPI = {
   // 更新心愿单状态
   updateStatus(id, status) {
     return api.patch(`/api/admin/wishlists/${id}`, { status })
+  },
+
+  // 新增：导出未更新心愿单（使用 fetch 以保留响应头部并获取文件名）
+  async exportUnupdated() {
+    const token = localStorage.getItem('admin_token')
+    const headers = token ? { Authorization: `Bearer ${token}` } : {}
+    const resp = await fetch(`${API_BASE_URL}/api/admin/wishlists/export/unupdated`, {
+      method: 'GET',
+      headers
+    })
+
+    if (resp.status === 401) {
+      ElMessage.error('登录已过期，请重新登录')
+      localStorage.removeItem('admin_token')
+      localStorage.removeItem('admin_user')
+      window.location.href = '/login'
+      throw new Error('未授权')
+    }
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '')
+      throw new Error(text || `下载失败，HTTP ${resp.status}`)
+    }
+
+    const blob = await resp.blob()
+    const cd = resp.headers.get('Content-Disposition') || ''
+    const match = cd.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/)
+    let filename = 'wishlist-unupdated.json'
+    if (match) filename = decodeURIComponent(match[1] || match[2] || filename)
+
+    return { blob, filename, contentDisposition: cd }
   }
 }
 

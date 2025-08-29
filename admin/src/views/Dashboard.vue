@@ -247,6 +247,10 @@
               <el-icon><Refresh /></el-icon>
               刷新
             </el-button>
+            <el-button type="primary" @click="exportUnupdated" :loading="wishlist.exporting" style="margin-left: 8px;">
+              <el-icon><Download /></el-icon>
+              导出未更新心愿单
+            </el-button>
           </div>
           <div class="toolbar-right">
             <el-input
@@ -408,7 +412,8 @@ const wishlist = reactive({
   searchQuery: '',
   // 页码分页字段
   page: 1,
-  total: 0
+  total: 0,
+  exporting: false
 })
 
 // 当前用户
@@ -450,6 +455,34 @@ const loadData = async () => {
     console.error('加载数据失败:', error)
   } finally {
     loading.value = false
+  }
+}
+
+// 新增：心愿单导出方法（最小侵入）
+const exportUnupdated = async () => {
+  if (wishlist.exporting) return
+  const token = localStorage.getItem('admin_token')
+  if (!token) {
+    ElMessage.error('请先登录')
+    return
+  }
+  wishlist.exporting = true
+  try {
+    const { blob, filename } = await wishlistAPI.exportUnupdated()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename || 'wishlist-unupdated.json'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '导出失败')
+  } finally {
+    wishlist.exporting = false
   }
 }
 

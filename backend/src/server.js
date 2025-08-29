@@ -1970,6 +1970,39 @@ app.get('/api/admin/wishlists', authenticateAdminToken, async (req, res) => {
     }
 });
 
+app.get('/api/admin/wishlists/export/unupdated', authenticateAdminToken, async (req, res) => {
+    try {
+        const rows = await getAllAsync(
+            `SELECT u.username, u.email, w.video_id, w.status
+             FROM wishlists w
+             LEFT JOIN users u ON w.user_id = u.id
+             WHERE w.status = ?
+             ORDER BY w.id DESC`,
+            ['未更新']
+        );
+
+        const data = rows.map(r => ({
+            username: r.username || '',
+            email: r.email || '',
+            videoId: r.video_id,
+            status: r.status
+        }));
+
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        const filename = `wishlist-unupdated-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.json`;
+
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        const encoded = encodeURIComponent(filename);
+        res.setHeader('Content-Disposition', `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`);
+        res.send(JSON.stringify({ data }, null, 2));
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: '导出失败' });
+    }
+});
+
 app.patch('/api/admin/wishlists/:id', authenticateAdminToken, async (req, res) => {
     try {
         const id = parseInt(req.params.id);
