@@ -233,6 +233,12 @@
           v-model="showPreviewDialog"
           :subtitle-data="previewData"
         />
+
+        <!-- 心愿单批量上传对话框 -->
+        <WishlistBatchUploadDialog
+          v-model="showWishlistBatchUploadDialog"
+          @success="handleWishlistBatchUploadSuccess"
+        />
       </el-tab-pane>
 
       <el-tab-pane label="用户管理" name="users">
@@ -247,7 +253,11 @@
               <el-icon><Refresh /></el-icon>
               刷新
             </el-button>
-            <el-button type="primary" @click="exportUnupdated" :loading="wishlist.exporting" style="margin-left: 8px;">
+            <el-button type="primary" @click="showWishlistBatchUploadDialog = true" style="margin-left: 8px;">
+              <el-icon><Upload /></el-icon>
+              批量上传字幕
+            </el-button>
+            <el-button @click="exportUnupdated" :loading="wishlist.exporting" style="margin-left: 8px;">
               <el-icon><Download /></el-icon>
               导出未更新心愿单
             </el-button>
@@ -360,6 +370,7 @@ import { subtitleAPI, wishlistAPI } from '../utils/api'
 import UploadDialog from '../components/UploadDialog.vue'
 import BatchUploadDialog from '../components/BatchUploadDialog.vue'
 import PreviewDialog from '../components/PreviewDialog.vue'
+import WishlistBatchUploadDialog from '../components/WishlistBatchUploadDialog.vue'
 import UserManagement from './UserManagement.vue'
 
 const router = useRouter()
@@ -391,6 +402,7 @@ const tableRef = ref()
 const selectedIds = ref(new Set())
 const showUploadDialog = ref(false)
 const showBatchUploadDialog = ref(false)
+const showWishlistBatchUploadDialog = ref(false)
 const showPreviewDialog = ref(false)
 const selectedVideoId = ref('')
 const previewData = ref(null)
@@ -705,6 +717,12 @@ const bulkDelete = async () => {
 }
 
 const handleUploadSuccess = () => { loadData() }
+
+// 心愿单批量上传成功处理
+const handleWishlistBatchUploadSuccess = () => {
+  ElMessage.success('批量上传完成')
+  refreshWishlist()
+}
 
 // 新增：退出登录
 const handleLogout = async () => {

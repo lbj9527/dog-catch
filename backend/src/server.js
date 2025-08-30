@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -1666,6 +1667,143 @@ app.delete('/api/subtitles', authenticateAdminToken, async (req, res) => {
     }
 
     return res.json({ deleted, failed });
+});
+
+// 批量上传字幕文件 (管理员权限)
+app.post('/api/admin/subtitles/batch-upload', authenticateAdminToken, upload.array('files', 50), async (req, res) => {
+    try {
+        const files = req.files;
+        if (!files || files.length === 0) {
+            return res.status(400).json({ error: '请选择要上传的字幕文件' });
+        }
+
+        if (files.length > 50) {
+            return res.status(400).json({ error: '单次最多上传50个文件' });
+        }
+
+        const results = {
+            success: [],
+            failed: [],
+            skipped: []
+        };
+
+        // 文件名校验正则：视频编号.扩展名格式
+        const filenameRegex = /^([A-Za-z0-9\-_]+)\.(srt|vtt|ass|ssa)$/i;
+        
+        for (const file of files) {
+            const originalName = file.originalname;
+            const match = originalName.match(filenameRegex);
+            
+            if (!match) {
+                results.failed.push({
+                    filename: originalName,
+                    error: '文件名格式不正确，应为：视频编号.扩展名'
+                });
+                continue;
+            }
+
+            const baseVideoId = match[1].toUpperCase();
+            const extension = match[2].toLowerCase();
+            
+            try {
+                // 检测文件编码
+                const encoding = detectEncoding(file.buffer);
+                let content = iconv.decode(file.buffer, encoding);
+                
+                // 转换格式
+                if (extension === 'ass' || extension === 'ssa') {
+                    content = convertAssToVtt(content);
+                }
+                
+                // 计算内容哈希
+                const contentHash = calculateTextHash(content);
+                
+                // 检查是否已存在相同内容的字幕
+                const existingSubtitle = await getAsync(
+                    'SELECT video_id, base_video_id, variant FROM subtitles WHERE content_hash = ?',
+                    [contentHash]
+                );
+                
+                if (existingSubtitle) {
+                    results.skipped.push({
+                        filename: originalName,
+                        reason: `内容重复，已存在相同字幕：${existingSubtitle.video_id}`,
+                        existing_video_id: existingSubtitle.video_id
+                    });
+                    continue;
+                }
+                
+                // 分配变体编号
+                const variant = await allocateVariantForBase(baseVideoId);
+                const videoId = variant === 1 ? baseVideoId : `${baseVideoId}_${variant}`;
+                
+                // 生成文件名
+                const filename = `${videoId}.vtt`;
+                const filePath = path.join(__dirname, '../uploads', filename);
+                
+                // 保存文件
+                await fs.writeFile(filePath, content, 'utf8');
+                
+                // 插入数据库记录
+                await runAsync(
+                    `INSERT INTO subtitles (
+                        video_id, base_video_id, variant, filename, file_path, file_size, 
+                        content_hash, original_filename, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+                    [
+                        videoId,
+                        baseVideoId, 
+                        variant,
+                        filename,
+                        filePath,
+                        Buffer.byteLength(content, 'utf8'),
+                        contentHash,
+                        originalName
+                    ]
+                );
+                
+                // 更新心愿单状态
+                await runAsync(
+                    `UPDATE wishlists SET status = '已更新', updated_at = datetime('now') 
+                     WHERE lower(video_id) = lower(?) AND status != '已更新'`,
+                    [baseVideoId]
+                );
+                
+                results.success.push({
+                    filename: originalName,
+                    video_id: videoId,
+                    base_video_id: baseVideoId,
+                    variant: variant,
+                    file_size: Buffer.byteLength(content, 'utf8')
+                });
+                
+            } catch (error) {
+                console.error(`处理文件 ${originalName} 失败:`, error);
+                results.failed.push({
+                    filename: originalName,
+                    error: error.message || '处理文件时发生错误'
+                });
+            }
+        }
+        
+        // 记录操作日志
+        console.log(`管理员批量上传字幕 - 成功: ${results.success.length}, 失败: ${results.failed.length}, 跳过: ${results.skipped.length}`);
+        
+        res.json({
+            message: '批量上传完成',
+            summary: {
+                total: files.length,
+                success: results.success.length,
+                failed: results.failed.length,
+                skipped: results.skipped.length
+            },
+            results: results
+        });
+        
+    } catch (error) {
+        console.error('批量上传字幕失败:', error);
+        res.status(500).json({ error: '批量上传失败' });
+    }
 });
 
 // 获取字幕文件统计 (需要认证)

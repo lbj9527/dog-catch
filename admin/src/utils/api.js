@@ -125,6 +125,16 @@ export const subtitleAPI = {
     })
   },
 
+  // 批量上传字幕（心愿单）
+  batchUpload(formData) {
+    return api.post('/api/admin/subtitles/batch-upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      },
+      timeout: 60000 // 增加超时时间到60秒
+    })
+  },
+
   // 获取统计
   getStats(params = {}) {
     return api.get('/api/subtitles/stats', { params })
