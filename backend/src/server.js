@@ -1706,17 +1706,19 @@ app.post('/api/admin/subtitles/batch-upload', authenticateAdminToken, upload.arr
             const extension = match[2].toLowerCase();
             
             try {
-                // 检测文件编码
-                const encoding = detectEncoding(file.buffer);
-                let content = iconv.decode(file.buffer, encoding);
+                // 读取文件并检测编码，统一解码为 UTF-8 文本（multer 使用 diskStorage，此处需从 file.path 读取）
+                const fileBuffer = await fs.readFile(file.path);
+                let content = await detectAndDecodeToUtf8(fileBuffer);
                 
-                // 转换格式
+                // 统一转换为 VTT
                 if (extension === 'ass' || extension === 'ssa') {
-                    content = convertAssToVtt(content);
-                }
+                    content = await convertAssToVttString(content);
+                } else if (extension === 'srt') {
+                    content = convertSrtToVttString(content);
+                } // .vtt 直接使用
                 
-                // 计算内容哈希
-                const contentHash = calculateTextHash(content);
+                // 计算内容哈希（标准化后）
+                const contentHash = computeContentHash(content);
                 
                 // 检查是否已存在相同内容的字幕
                 const existingSubtitle = await getAsync(
