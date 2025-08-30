@@ -234,11 +234,7 @@
           :subtitle-data="previewData"
         />
 
-        <!-- 心愿单批量上传对话框 -->
-        <WishlistBatchUploadDialog
-          v-model="showWishlistBatchUploadDialog"
-          @success="handleWishlistBatchUploadSuccess"
-        />
+        <!-- 心愿单批量上传对话框 已移至心愿单标签页内 -->
       </el-tab-pane>
 
       <el-tab-pane label="用户管理" name="users">
@@ -357,6 +353,12 @@
             />
           </div>
         </el-card>
+
+        <!-- 心愿单批量上传对话框 放置在心愿单标签页内确保可见 -->
+        <WishlistBatchUploadDialog
+          v-model="showWishlistBatchUploadDialog"
+          @success="handleWishlistBatchUploadSuccess"
+        />
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -389,7 +391,7 @@ const onTabClick = async (pane) => {
 
 watch(activeTab, async (name) => {
   if (name === 'wishlist' && wishlist.items.length === 0) {
-    await loadWishlist(true)
+    await loadWishlistPage()
   }
 })
 // 响应式数据
