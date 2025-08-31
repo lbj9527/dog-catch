@@ -342,17 +342,17 @@
               </template>
             </el-table-column>
             <el-table-column label="操作" width="160" align="center" fixed="right">
-              <template #default="scope">
-                <el-button
-                  size="small"
-                  type="primary"
-                  :loading="wishlist.updatingId === scope.row.id"
-                  @click="toggleWishlistStatus(scope.row)"
-                >
-                  {{ scope.row.status === '已更新' ? '标记未更新' : '标记已更新' }}
-                </el-button>
-              </template>
-            </el-table-column>
+               <template #default="scope">
+                 <el-button
+                   size="small"
+                   :type="scope.row.status === '已更新' ? 'success' : 'primary'"
+                   :loading="wishlist.updatingId === scope.row.id"
+                   @click="toggleWishlistStatus(scope.row)"
+                 >
+                   {{ scope.row.status === '已更新' ? '标记未更新' : '标记已更新' }}
+                 </el-button>
+               </template>
+             </el-table-column>
           </el-table>
           <div class="pagination-wrapper" style="margin-top:16px; text-align: center;">
             <el-pagination
