@@ -1,5 +1,6 @@
 window.PLAYER_CONFIG = {
-  API_BASE_URL: 'https://api.sub-dog.top',
+  // 本地开发默认为本地后端；线上可通过替换该文件或 URL 参数 ?api= 覆盖
+  API_BASE_URL: 'http://localhost:8000',
   SUBTITLE_NEED_LOGIN: true,
   ALLOW_PLAY_WITHOUT_LOGIN: true,
   CAPTCHA_ENABLED: false,  // 禁用图形验证码

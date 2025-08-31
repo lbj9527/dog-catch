@@ -9,10 +9,10 @@ export default defineConfig(({ mode }) => {
 		plugins: [vue()],
 		server: {
 			port,
-			open: true
+			open: false,
 		},
 		build: {
 			outDir: 'dist'
 		}
 	}
-}) 
+})

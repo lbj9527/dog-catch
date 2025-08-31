@@ -116,6 +116,8 @@ backend/build/
 *.sqlite3
 backend/database/*.db
 backend/database/*.sqlite*
+backend/database/*.db-wal
+backend/database/*.db-shm
 
 # 上传的文件
 backend/uploads/*
