@@ -107,6 +107,19 @@
           </el-result>
         </div>
 
+        <!-- 失败明细：仅在有失败时展示 -->
+        <div class="failed-section" v-if="uploadResult.failed > 0 && failedDetails.length > 0">
+          <h4>失败明细（{{ failedDetails.length }}）</h4>
+          <el-table :data="failedDetails" size="small" max-height="240">
+            <el-table-column label="文件名" prop="filename" min-width="200" />
+            <el-table-column label="失败原因" min-width="300">
+              <template #default="scope">
+                {{ scope.row.message || '发生未知错误' }}
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+
         <!-- 详细结果 -->
         <div class="result-details" v-if="uploadResult.details && uploadResult.details.length > 0">
           <el-collapse>
@@ -190,6 +203,9 @@ const uploadResult = ref({
   skipped: 0,
   details: []
 })
+
+// 新增：失败明细（仅失败项）
+const failedDetails = computed(() => uploadResult.value.details.filter(d => d.status === 'failed'))
 
 // 计算属性
 const validFileCount = computed(() => {
@@ -315,11 +331,36 @@ const startUpload = async () => {
     // 调用批量上传API
     const response = await subtitleAPI.batchUpload(formData)
     
-    // 处理响应结果
-    results.success = response.summary?.success || 0
-    results.failed = response.summary?.failed || 0
-    results.skipped = response.summary?.skipped || 0
-    results.details = response.results || []
+    // 处理响应结果（按后端结构映射）
+    const summary = response?.summary || {}
+    const resResults = response?.results || {}
+    results.success = summary.success || 0
+    results.failed = summary.failed || 0
+    results.skipped = summary.skipped || 0
+
+    const details = []
+    ;(resResults.success || []).forEach(item => {
+      details.push({
+        filename: item.filename,
+        status: 'success',
+        message: `上传成功${item.variant ? `（变体 ${item.variant}）` : ''}${item.video_id ? `，ID：${item.video_id}` : ''}`.trim()
+      })
+    })
+    ;(resResults.skipped || []).forEach(item => {
+      details.push({
+        filename: item.filename,
+        status: 'skipped',
+        message: item.reason || '已跳过'
+      })
+    })
+    ;(resResults.failed || []).forEach(item => {
+      details.push({
+        filename: item.filename,
+        status: 'failed',
+        message: item.error || '处理文件时发生错误'
+      })
+    })
+    results.details = details
 
     uploadProgress.value = 100
     uploadedCount.value = totalCount.value
@@ -583,5 +624,13 @@ const handleClose = () => {
 
 .dialog-footer {
   text-align: right;
+}
+.failed-section {
+  margin-top: 16px;
+}
+
+.failed-section h4 {
+  margin: 0 0 8px 0;
+  color: #303133;
 }
 </style>
