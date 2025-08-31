@@ -674,6 +674,15 @@ class VideoPlayer {
                 loginModal.style.display='none';
                 if (loginError) loginError.textContent='';
                 await this.refreshAuthUi();
+                // 登录成功后：刷新社交按钮状态并重新拉取点赞状态
+                if (typeof this.updateSocialButtonsState === 'function') {
+                    this.updateSocialButtonsState();
+                }
+                if (typeof this.debouncedFetchLikeStatus === 'function') {
+                    this.debouncedFetchLikeStatus();
+                } else if (typeof this.fetchLikeStatus === 'function') {
+                    this.fetchLikeStatus(true);
+                }
                 if (this.currentVideoId) this.loadSubtitleVariants();
             } catch (e) {
                 const msg = e && e.message ? e.message : '登录失败';
@@ -993,6 +1002,10 @@ class VideoPlayer {
         // 如果已登录，更新用户邮箱显示
         if (logged) {
             await this.updateUserEmail();
+        }
+        // 刷新社交按钮禁用/激活状态，确保登录/退出后无需刷新即可生效
+        if (typeof this.updateSocialButtonsState === 'function') {
+            this.updateSocialButtonsState();
         }
     }
 
