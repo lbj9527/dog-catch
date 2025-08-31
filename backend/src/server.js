@@ -1702,7 +1702,7 @@ app.post('/api/admin/subtitles/batch-upload', authenticateAdminToken, upload.arr
                 continue;
             }
 
-            const baseVideoId = match[1].toUpperCase();
+            const baseVideoId = extractBaseVideoId(match[1].toUpperCase());
             const extension = match[2].toLowerCase();
             
             try {
@@ -1735,9 +1735,9 @@ app.post('/api/admin/subtitles/batch-upload', authenticateAdminToken, upload.arr
                     continue;
                 }
                 
-                // 分配变体编号
-                const variant = await allocateVariantForBase(baseVideoId);
-                const videoId = variant === 1 ? baseVideoId : `${baseVideoId}_${variant}`;
+                // 分配变体编号（使用 allocateVariantForBase 返回的 finalVideoId，统一连字符分隔）
+                const { finalVideoId, variant } = await allocateVariantForBase(baseVideoId);
+                const videoId = finalVideoId;
                 
                 // 生成文件名
                 const filename = `${videoId}.vtt`;
