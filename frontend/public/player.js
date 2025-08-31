@@ -2413,21 +2413,80 @@ class VideoPlayer {
         
         // 统一通过 SocialPanel 设置内容
         this.socialPanel.setContent(title, content);
+        
+        // 如果是字幕评论功能且用户已登录，初始化评论功能
+        if (feature === 'subtitle-comment' && this.isLoggedIn()) {
+            // 使用 setTimeout 确保 DOM 已渲染
+            setTimeout(() => {
+                this.initSubtitleComments();
+            }, 100);
+        }
     }
     
     // 获取字幕评论内容
     getSubtitleCommentContent() {
-        return `
-            <div class="social-placeholder">
-                <div class="placeholder-icon">💬</div>
-                <h3>字幕评论</h3>
-                <p>在这里可以查看和发表字幕相关的评论讨论。</p>
-                <div class="placeholder-features">
-                    <div class="feature-item">📝 发表评论</div>
-                    <div class="feature-item">👍 点赞互动</div>
-                    <div class="feature-item">🔗 分享讨论</div>
+        // 检查用户是否已登录
+        if (!this.isLoggedIn()) {
+            return `
+                <div class="comment-login-required">
+                    <div class="login-icon">🔒</div>
+                    <h3>需要登录</h3>
+                    <p>请先登录后再查看和发表评论</p>
+                    <button class="login-btn" onclick="window.location.href='/login.html'">立即登录</button>
                 </div>
-                <p class="placeholder-note">功能开发中，敬请期待...</p>
+            `;
+        }
+
+        return `
+            <div class="subtitle-comments">
+                <!-- 顶部工具栏 - 显示评论数统计 -->
+                <div class="comments-toolbar">
+                    <div class="comments-count">
+                        <span id="commentsCountText">571条评论</span>
+                    </div>
+                    <div class="sort-options">
+                        <button class="sort-btn active" data-sort="newest">最新</button>
+                        <button class="sort-btn" data-sort="oldest">最早</button>
+                    </div>
+                </div>
+
+                <!-- 中间评论列表区域 -->
+                <div class="comments-container">
+                    <div id="commentsList" class="comments-list">
+                        <div class="loading-comments">
+                            <div class="loading-spinner"></div>
+                            <span>加载评论中...</span>
+                        </div>
+                    </div>
+                    <div id="loadMoreComments" class="load-more" style="display: none;">
+                        <button class="load-more-btn">加载更多评论</button>
+                    </div>
+                </div>
+
+                <!-- 底部发表评论区域 -->
+                <div class="comment-compose">
+                    <div class="compose-input-wrapper">
+                        <div class="user-avatar" data-username="${this.getCurrentUsername()}">${this.generateUserAvatar(this.getCurrentUsername())}</div>
+                        <div class="input-container">
+                            <textarea 
+                                id="commentInput" 
+                                placeholder="善语结善缘，恶言伤人心" 
+                                maxlength="500"
+                                rows="1"></textarea>
+                            <div class="input-actions">
+                                <div class="input-tools">
+                                    <button class="tool-btn emoji-btn" title="表情">😊</button>
+                                    <button class="tool-btn mention-btn" title="@某人">@</button>
+                                    <button class="tool-btn image-btn" title="图片">📷</button>
+                                </div>
+                                <div class="submit-area">
+                                    <span class="char-count">0/500</span>
+                                    <button id="submitComment" class="submit-btn" disabled>发表</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
     }
@@ -2466,9 +2525,385 @@ class VideoPlayer {
         `;
     }
     
-    // 检查是否已登录
-    isLoggedIn() {
-        return !!this.userToken;
+    // 获取当前用户名
+    getCurrentUsername() {
+        try {
+            if (this.userToken) {
+                const payload = JSON.parse(atob(this.userToken.split('.')[1]));
+                return payload.email || payload.username || '用户';
+            }
+        } catch (e) {
+            console.warn('解析用户token失败:', e);
+        }
+        return '用户';
+    }
+
+    // 生成用户头像（用户名首字母+随机背景色）
+    generateUserAvatar(username) {
+        if (!username) return 'U';
+        
+        // 获取用户名首字母
+        const firstChar = username.charAt(0).toUpperCase();
+        
+        // 基于用户名生成固定的背景色
+        const colors = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+            '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9'
+        ];
+        
+        let hash = 0;
+        for (let i = 0; i < username.length; i++) {
+            hash = username.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const colorIndex = Math.abs(hash) % colors.length;
+        const backgroundColor = colors[colorIndex];
+        
+        return `<span class="avatar-text" style="background-color: ${backgroundColor}">${firstChar}</span>`;
+    }
+
+    // 初始化字幕评论功能
+    initSubtitleComments() {
+        // 绑定发表评论相关事件
+        this.bindCommentEvents();
+        // 加载评论列表
+        this.loadComments();
+    }
+
+    // 绑定评论相关事件
+    bindCommentEvents() {
+        const commentInput = document.getElementById('commentInput');
+        const submitBtn = document.getElementById('submitComment');
+        const sortBtns = document.querySelectorAll('.sort-btn');
+        
+        if (commentInput && submitBtn) {
+            // 输入框字符计数
+            commentInput.addEventListener('input', (e) => {
+                const length = e.target.value.length;
+                const charCount = document.querySelector('.char-count');
+                if (charCount) {
+                    charCount.textContent = `${length}/500`;
+                }
+                
+                // 控制提交按钮状态
+                submitBtn.disabled = length === 0 || length > 500;
+            });
+            
+            // 提交评论
+            submitBtn.addEventListener('click', () => {
+                this.submitComment();
+            });
+            
+            // 回车提交（Ctrl+Enter）
+            commentInput.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'Enter') {
+                    e.preventDefault();
+                    this.submitComment();
+                }
+            });
+        }
+        
+        // 排序按钮
+        sortBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const sortType = e.target.dataset.sort;
+                this.changeSortOrder(sortType);
+            });
+        });
+    }
+
+    // 加载评论列表
+    async loadComments(page = 1, sort = 'newest') {
+        if (!this.currentVideoId) {
+            console.warn('当前视频ID为空，无法加载评论');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/subtitles/${this.currentVideoId}/comments?page=${page}&sort=${sort}`, {
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            this.renderComments(data.comments, page === 1);
+            
+            // 更新评论数统计
+            if (page === 1) {
+                this.updateCommentsCount(data.total || data.comments.length);
+            }
+            
+            // 更新加载更多按钮
+            const loadMoreBtn = document.getElementById('loadMoreComments');
+            if (loadMoreBtn) {
+                loadMoreBtn.style.display = data.hasMore ? 'block' : 'none';
+                loadMoreBtn.onclick = () => this.loadComments(page + 1, sort);
+            }
+            
+        } catch (error) {
+            console.error('加载评论失败:', error);
+            this.showCommentError('加载评论失败，请稍后重试');
+        }
+    }
+
+    // 渲染评论列表
+    renderComments(comments, replace = true) {
+        const commentsList = document.getElementById('commentsList');
+        if (!commentsList) return;
+        
+        if (replace) {
+            commentsList.innerHTML = '';
+        }
+        
+        if (!comments || comments.length === 0) {
+            if (replace) {
+                commentsList.innerHTML = `
+                    <div class="no-comments">
+                        <div class="no-comments-icon">💭</div>
+                        <p>还没有评论，来发表第一条评论吧！</p>
+                    </div>
+                `;
+            }
+            return;
+        }
+        
+        comments.forEach(comment => {
+            const commentEl = this.createCommentElement(comment);
+            commentsList.appendChild(commentEl);
+        });
+    }
+
+    // 创建评论元素
+    createCommentElement(comment) {
+        const div = document.createElement('div');
+        div.className = 'comment-item';
+        div.dataset.commentId = comment.id;
+        
+        const timeAgo = this.formatTimeAgo(comment.created_at);
+        const avatar = this.generateUserAvatar(comment.username);
+        
+        div.innerHTML = `
+            <div class="comment-header">
+                <div class="user-avatar" data-username="${comment.username}">${avatar}</div>
+                <div class="comment-meta">
+                    <span class="username">${comment.username}</span>
+                    <span class="timestamp">${timeAgo}</span>
+                </div>
+            </div>
+            <div class="comment-content">${this.escapeHtml(comment.content)}</div>
+            <div class="comment-actions">
+                <button class="like-btn ${comment.user_liked ? 'liked' : ''}" data-comment-id="${comment.id}">
+                    <span class="like-icon">${comment.user_liked ? '❤️' : '🤍'}</span>
+                    <span class="like-count">${comment.likes_count || 0}</span>
+                </button>
+                <button class="reply-btn" data-comment-id="${comment.id}">回复</button>
+            </div>
+            ${comment.replies && comment.replies.length > 0 ? this.renderReplies(comment.replies) : ''}
+        `;
+        
+        // 绑定点赞事件
+        const likeBtn = div.querySelector('.like-btn');
+        if (likeBtn) {
+            likeBtn.addEventListener('click', () => {
+                this.toggleCommentLike(comment.id);
+            });
+        }
+        
+        return div;
+    }
+
+    // 渲染回复
+    renderReplies(replies) {
+        if (!replies || replies.length === 0) return '';
+        
+        const repliesHtml = replies.map(reply => {
+            const avatar = this.generateUserAvatar(reply.username);
+            const timeAgo = this.formatTimeAgo(reply.created_at);
+            
+            return `
+                <div class="reply-item" data-comment-id="${reply.id}">
+                    <div class="comment-header">
+                        <div class="user-avatar small" data-username="${reply.username}">${avatar}</div>
+                        <div class="comment-meta">
+                            <span class="username">${reply.username}</span>
+                            <span class="timestamp">${timeAgo}</span>
+                        </div>
+                    </div>
+                    <div class="comment-content">${this.escapeHtml(reply.content)}</div>
+                    <div class="comment-actions">
+                        <button class="like-btn ${reply.user_liked ? 'liked' : ''}" data-comment-id="${reply.id}">
+                            <span class="like-icon">${reply.user_liked ? '❤️' : '🤍'}</span>
+                            <span class="like-count">${reply.likes_count || 0}</span>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        return `<div class="replies-section">${repliesHtml}</div>`;
+    }
+
+    // 提交评论
+    async submitComment() {
+        const commentInput = document.getElementById('commentInput');
+        const submitBtn = document.getElementById('submitComment');
+        
+        if (!commentInput || !submitBtn) return;
+        
+        const content = commentInput.value.trim();
+        if (!content) return;
+        
+        if (!this.currentVideoId) {
+            this.showCommentError('当前视频ID为空，无法发表评论');
+            return;
+        }
+        
+        // 禁用提交按钮
+        submitBtn.disabled = true;
+        submitBtn.textContent = '发表中...';
+        
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/subtitles/${this.currentVideoId}/comments`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.userToken}`
+                },
+                body: JSON.stringify({
+                    content: content,
+                    timestamp: this.player ? Math.floor(this.player.currentTime) : 0
+                })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || `HTTP ${response.status}`);
+            }
+            
+            // 清空输入框
+            commentInput.value = '';
+            const charCount = document.querySelector('.char-count');
+            if (charCount) {
+                charCount.textContent = '0/500';
+            }
+            
+            // 重新加载评论列表
+            await this.loadComments();
+            
+            // 显示成功提示
+            this.showCommentSuccess('评论发表成功！');
+            
+        } catch (error) {
+            console.error('发表评论失败:', error);
+            this.showCommentError(error.message || '发表评论失败，请稍后重试');
+        } finally {
+            // 恢复提交按钮
+            submitBtn.disabled = false;
+            submitBtn.textContent = '发表评论';
+        }
+    }
+
+    // 更新评论数统计
+    updateCommentsCount(count) {
+        const commentsCountText = document.getElementById('commentsCountText');
+        if (commentsCountText) {
+            commentsCountText.textContent = `${count}条评论`;
+        }
+    }
+
+    // 切换评论点赞状态
+    async toggleCommentLike(commentId) {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/comments/${commentId}/like`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            // 更新UI
+            const commentEl = document.querySelector(`[data-comment-id="${commentId}"]`);
+            if (commentEl) {
+                const likeBtn = commentEl.querySelector('.like-btn');
+                const likeIcon = commentEl.querySelector('.like-icon');
+                const likeCount = commentEl.querySelector('.like-count');
+                
+                if (likeBtn && likeIcon && likeCount) {
+                    if (data.liked) {
+                        likeBtn.classList.add('liked');
+                        likeIcon.textContent = '❤️';
+                    } else {
+                        likeBtn.classList.remove('liked');
+                        likeIcon.textContent = '🤍';
+                    }
+                    likeCount.textContent = data.likes_count || 0;
+                }
+            }
+            
+        } catch (error) {
+            console.error('点赞操作失败:', error);
+            this.showCommentError('点赞操作失败，请稍后重试');
+        }
+    }
+
+    // 改变排序顺序
+    changeSortOrder(sortType) {
+        // 更新按钮状态
+        document.querySelectorAll('.sort-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelector(`[data-sort="${sortType}"]`).classList.add('active');
+        
+        // 重新加载评论
+        this.loadComments(1, sortType);
+    }
+
+    // 显示评论错误信息
+    showCommentError(message) {
+        // 可以使用现有的toast系统或创建临时提示
+        console.error('评论错误:', message);
+        // 这里可以集成现有的提示系统
+    }
+
+    // 显示评论成功信息
+    showCommentSuccess(message) {
+        console.log('评论成功:', message);
+        // 这里可以集成现有的提示系统
+    }
+
+    // 格式化时间
+    formatTimeAgo(timestamp) {
+        const now = new Date();
+        const time = new Date(timestamp);
+        const diff = now - time;
+        
+        const minutes = Math.floor(diff / 60000);
+        const hours = Math.floor(diff / 3600000);
+        const days = Math.floor(diff / 86400000);
+        
+        if (minutes < 1) return '刚刚';
+        if (minutes < 60) return `${minutes}分钟前`;
+        if (hours < 24) return `${hours}小时前`;
+        if (days < 30) return `${days}天前`;
+        
+        return time.toLocaleDateString('zh-CN');
+    }
+
+    // HTML转义
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
     
     // ===== 可访问性支持方法 =====

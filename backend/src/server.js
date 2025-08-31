@@ -711,6 +711,45 @@ db.serialize(() => {
     db.run('CREATE INDEX IF NOT EXISTS idx_wishlists_user ON wishlists(user_id)', () => {});
     db.run('CREATE INDEX IF NOT EXISTS idx_wishlists_base ON wishlists(base_video_id)', () => {});
     
+    // 新增：字幕评论表
+    db.run(`CREATE TABLE IF NOT EXISTS subtitle_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        video_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        timestamp REAL NOT NULL,
+        parent_id INTEGER NULL,
+        likes_count INTEGER DEFAULT 0,
+        replies_count INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'approved',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (parent_id) REFERENCES subtitle_comments(id) ON DELETE CASCADE,
+        CHECK (status IN ('pending', 'approved', 'rejected', 'deleted'))
+    )`);
+    
+    // 为 subtitle_comments 表创建索引
+    db.run('CREATE INDEX IF NOT EXISTS idx_subtitle_comments_video ON subtitle_comments(video_id)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_subtitle_comments_timestamp ON subtitle_comments(timestamp)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_subtitle_comments_user ON subtitle_comments(user_id)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_subtitle_comments_parent ON subtitle_comments(parent_id)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_subtitle_comments_created ON subtitle_comments(created_at DESC)', () => {});
+    
+    // 新增：评论点赞表
+    db.run(`CREATE TABLE IF NOT EXISTS comment_likes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        comment_id INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (comment_id) REFERENCES subtitle_comments(id) ON DELETE CASCADE
+    )`);
+    
+    // 为 comment_likes 表创建唯一索引，确保一个用户对一个评论只能点赞一次
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_comment_likes_user_comment ON comment_likes(user_id, comment_id)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id)', () => {});
+    
     // 创建默认管理员账号 (用户名: admin, 密码: admin123)
     const defaultPassword = bcrypt.hashSync('admin123', 10);
     db.run(`INSERT OR IGNORE INTO admins (username, password_hash) VALUES (?, ?)`, 
@@ -2158,6 +2197,318 @@ app.patch('/api/admin/wishlists/:id', authenticateAdminToken, async (req, res) =
     } catch (e) {
         console.error(e);
         return res.status(500).json({ error: '更新失败' });
+    }
+});
+
+// 字幕评论相关API
+// 获取指定视频的评论列表
+app.get('/api/subtitles/:videoId/comments', async (req, res) => {
+    try {
+        const { videoId } = req.params;
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+        const offset = (page - 1) * limit;
+        const sortBy = req.query.sort === 'oldest' ? 'ASC' : 'DESC'; // 默认最新
+        
+        if (!videoId) {
+            return res.status(400).json({ error: '视频ID不能为空' });
+        }
+        
+        // 获取评论总数
+        const countResult = await getAsync(
+            'SELECT COUNT(*) as total FROM subtitle_comments WHERE video_id = ? AND status = "approved"',
+            [videoId]
+        );
+        const total = countResult ? countResult.total : 0;
+        
+        // 获取评论列表（只获取顶级评论，回复通过单独接口获取）
+        const comments = await getAllAsync(`
+            SELECT 
+                sc.id,
+                sc.user_id,
+                u.username,
+                sc.content,
+                sc.timestamp,
+                sc.parent_id as parent_comment_id,
+                sc.likes_count,
+                sc.replies_count,
+                sc.created_at,
+                sc.updated_at
+            FROM subtitle_comments sc
+            LEFT JOIN users u ON sc.user_id = u.id
+            WHERE sc.video_id = ? AND sc.status = "approved" AND sc.parent_id IS NULL
+            ORDER BY sc.created_at ${sortBy}
+            LIMIT ? OFFSET ?
+        `, [videoId, limit, offset]);
+        
+        // 格式化返回数据
+        const formattedComments = comments.map(comment => ({
+            id: comment.id,
+            userId: comment.user_id,
+            username: comment.username || '未知用户',
+            content: comment.content,
+            timestampSeconds: comment.timestamp,
+            parentCommentId: comment.parent_comment_id,
+            likesCount: comment.likes_count || 0,
+            repliesCount: comment.replies_count || 0,
+            createdAt: comment.created_at,
+            updatedAt: comment.updated_at
+        }));
+        
+        res.json({
+            data: formattedComments,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        console.error('获取评论列表失败:', error);
+        res.status(500).json({ error: '获取评论列表失败' });
+    }
+});
+
+// 获取指定评论的回复列表
+app.get('/api/comments/:commentId/replies', async (req, res) => {
+    try {
+        const { commentId } = req.params;
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(20, Math.max(1, parseInt(req.query.limit) || 10));
+        const offset = (page - 1) * limit;
+        
+        if (!commentId) {
+            return res.status(400).json({ error: '评论ID不能为空' });
+        }
+        
+        // 获取回复总数
+        const countResult = await getAsync(
+            'SELECT COUNT(*) as total FROM subtitle_comments WHERE parent_id = ? AND status = "approved"',
+            [commentId]
+        );
+        const total = countResult ? countResult.total : 0;
+        
+        // 获取回复列表
+        const replies = await getAllAsync(`
+            SELECT 
+                sc.id,
+                sc.user_id,
+                u.username,
+                sc.content,
+                sc.timestamp,
+                sc.parent_id as parent_comment_id,
+                sc.likes_count,
+                sc.created_at,
+                sc.updated_at
+            FROM subtitle_comments sc
+            LEFT JOIN users u ON sc.user_id = u.id
+            WHERE sc.parent_id = ? AND sc.status = "approved"
+            ORDER BY sc.created_at ASC
+            LIMIT ? OFFSET ?
+        `, [commentId, limit, offset]);
+        
+        // 格式化返回数据
+        const formattedReplies = replies.map(reply => ({
+            id: reply.id,
+            userId: reply.user_id,
+            username: reply.username || '未知用户',
+            content: reply.content,
+            timestampSeconds: reply.timestamp,
+            parentCommentId: reply.parent_comment_id,
+            likesCount: reply.likes_count || 0,
+            createdAt: reply.created_at,
+            updatedAt: reply.updated_at
+        }));
+        
+        res.json({
+            data: formattedReplies,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        console.error('获取回复列表失败:', error);
+        res.status(500).json({ error: '获取回复列表失败' });
+    }
+});
+
+// 发表评论
+app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, res) => {
+    try {
+        const { videoId } = req.params;
+        const { content, timestampSeconds, parentCommentId } = req.body;
+        const userId = req.user.id;
+        
+        if (!videoId) {
+            return res.status(400).json({ error: '视频ID不能为空' });
+        }
+        
+        if (!content || content.trim().length === 0) {
+            return res.status(400).json({ error: '评论内容不能为空' });
+        }
+        
+        if (content.trim().length > 500) {
+            return res.status(400).json({ error: '评论内容不能超过500字符' });
+        }
+        
+        // 验证时间戳：允许 0，空串/未传视为 null；兼容前端 body.timestamp 或 body.timestampSeconds
+        const tsRaw = (timestampSeconds !== undefined && timestampSeconds !== null && timestampSeconds !== '') 
+            ? timestampSeconds 
+            : req.body.timestamp;
+        let timestamp = (tsRaw !== undefined && tsRaw !== null && tsRaw !== '') ? parseFloat(tsRaw) : null;
+        if (timestamp !== null && (isNaN(timestamp) || timestamp < 0)) {
+            return res.status(400).json({ error: '时间戳格式不正确' });
+        }
+        
+        // 如果是回复，验证父评论存在；未提供时间戳则继承父评论的时间戳
+        if (parentCommentId) {
+            const parentComment = await getAsync(
+                'SELECT id, timestamp FROM subtitle_comments WHERE id = ? AND video_id = ? AND status = "approved"',
+                [parentCommentId, videoId]
+            );
+            if (!parentComment) {
+                return res.status(400).json({ error: '父评论不存在' });
+            }
+            if (timestamp === null) {
+                timestamp = parentComment.timestamp;
+            }
+        }
+        
+        // 顶级评论未提供时间戳时默认 0 秒
+        if (!parentCommentId && timestamp === null) {
+            timestamp = 0;
+        }
+        
+        // 插入评论
+        const result = await runAsync(`
+            INSERT INTO subtitle_comments (
+                user_id, video_id, content, timestamp, parent_id, status
+            ) VALUES (?, ?, ?, ?, ?, "approved")
+        `, [userId, videoId, content.trim(), timestamp, parentCommentId || null]);
+        
+        // 如果是回复，更新父评论的回复数
+        if (parentCommentId) {
+            await runAsync(
+                'UPDATE subtitle_comments SET replies_count = replies_count + 1 WHERE id = ?',
+                [parentCommentId]
+            );
+        }
+        
+        // 获取刚插入的评论详情
+        const newComment = await getAsync(`
+            SELECT 
+                sc.id,
+                sc.user_id,
+                u.username,
+                sc.content,
+                sc.timestamp,
+                sc.parent_id as parent_comment_id,
+                sc.likes_count,
+                sc.replies_count,
+                sc.created_at,
+                sc.updated_at
+            FROM subtitle_comments sc
+            LEFT JOIN users u ON sc.user_id = u.id
+            WHERE sc.id = ?
+        `, [result.lastID]);
+        
+        res.status(201).json({
+            message: '评论发表成功',
+            data: {
+                id: newComment.id,
+                userId: newComment.user_id,
+                username: newComment.username,
+                content: newComment.content,
+                timestampSeconds: newComment.timestamp,
+                parentCommentId: newComment.parent_comment_id,
+                likesCount: newComment.likes_count || 0,
+                repliesCount: newComment.replies_count || 0,
+                createdAt: newComment.created_at,
+                updatedAt: newComment.updated_at
+            }
+        });
+    } catch (error) {
+        console.error('发表评论失败:', error);
+        res.status(500).json({ error: '发表评论失败' });
+    }
+});
+
+// 点赞/取消点赞评论
+app.post('/api/comments/:commentId/like', authenticateUserToken, async (req, res) => {
+    try {
+        const { commentId } = req.params;
+        const userId = req.user.id;
+        
+        if (!commentId) {
+            return res.status(400).json({ error: '评论ID不能为空' });
+        }
+        
+        // 验证评论是否存在
+        const comment = await getAsync(
+            'SELECT id FROM subtitle_comments WHERE id = ? AND status = "approved"',
+            [commentId]
+        );
+        if (!comment) {
+            return res.status(404).json({ error: '评论不存在' });
+        }
+        
+        // 检查是否已经点赞
+        const existingLike = await getAsync(
+            'SELECT id FROM comment_likes WHERE user_id = ? AND comment_id = ?',
+            [userId, commentId]
+        );
+        
+        if (existingLike) {
+            // 取消点赞
+            await runAsync('DELETE FROM comment_likes WHERE id = ?', [existingLike.id]);
+            await runAsync(
+                'UPDATE subtitle_comments SET likes_count = likes_count - 1 WHERE id = ?',
+                [commentId]
+            );
+            
+            res.json({ message: '取消点赞成功', liked: false });
+        } else {
+            // 添加点赞
+            await runAsync(
+                'INSERT INTO comment_likes (user_id, comment_id) VALUES (?, ?)',
+                [userId, commentId]
+            );
+            await runAsync(
+                'UPDATE subtitle_comments SET likes_count = likes_count + 1 WHERE id = ?',
+                [commentId]
+            );
+            
+            res.json({ message: '点赞成功', liked: true });
+        }
+    } catch (error) {
+        console.error('点赞操作失败:', error);
+        res.status(500).json({ error: '点赞操作失败' });
+    }
+});
+
+// 获取用户对评论的点赞状态
+app.get('/api/comments/:commentId/like-status', authenticateUserToken, async (req, res) => {
+    try {
+        const { commentId } = req.params;
+        const userId = req.user.id;
+        
+        if (!commentId) {
+            return res.status(400).json({ error: '评论ID不能为空' });
+        }
+        
+        const like = await getAsync(
+            'SELECT id FROM comment_likes WHERE user_id = ? AND comment_id = ?',
+            [userId, commentId]
+        );
+        
+        res.json({ liked: !!like });
+    } catch (error) {
+        console.error('获取点赞状态失败:', error);
+        res.status(500).json({ error: '获取点赞状态失败' });
     }
 });
 
