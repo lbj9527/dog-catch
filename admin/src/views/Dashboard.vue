@@ -134,6 +134,19 @@
               </template>
             </el-table-column>
             
+            <!-- 新增：HASH 列（显示前缀，悬浮可见完整值，支持复制） -->
+            <el-table-column prop="content_hash" label="HASH" width="220">
+              <template #default="scope">
+                <template v-if="scope.row.filename && scope.row.content_hash">
+                  <el-tooltip effect="dark" :content="scope.row.content_hash" placement="top">
+                    <span class="monospace">{{ scope.row.content_hash.slice(0, 16) }}...</span>
+                  </el-tooltip>
+                  <el-link type="primary" :underline="false" style="margin-left:8px;" @click="copyText(scope.row.content_hash)">复制</el-link>
+                </template>
+                <span v-else style="color:#ccc;">-</span>
+              </template>
+            </el-table-column>
+            
             <el-table-column prop="file_size" label="文件大小" width="120" align="right">
               <template #default="scope">
                 <span v-if="scope.row.file_size">{{ formatFileSize(scope.row.file_size) }}</span>
@@ -746,11 +759,12 @@ const handleLogout = async () => {
 const exportData = () => {
   exporting.value = true
   setTimeout(() => {
-    const headers = ['视频编号', '字幕状态', '文件名', '文件大小', '更新时间']
+    const headers = ['视频编号', '字幕状态', '文件名', 'HASH', '文件大小', '更新时间']
     const rows = tableData.value.map(row => [
       row.video_id,
       row.filename ? '已上传' : '缺失',
       (row.original_filename || row.filename || ''),
+      (row.content_hash || ''),
       row.file_size ? formatFileSize(row.file_size) : '',
       row.updated_at ? formatDate(row.updated_at) : ''
     ])
@@ -838,4 +852,5 @@ onMounted(() => { loadData(); loadWishlistPage() })
   border-top: 1px solid #ebeef5;
   padding-top: 8px;
 }
+.monospace { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 </style>
