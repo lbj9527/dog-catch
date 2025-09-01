@@ -2629,19 +2629,46 @@ class VideoPlayer {
                 throw new Error(`HTTP ${response.status}`);
             }
             
-            const data = await response.json();
-            this.renderComments(data.comments, page === 1);
+            const raw = await response.json();
+            
+            // 兼容多种返回结构: {comments: []} 或 {data: [], pagination: {...}}
+            if (!raw || (!Array.isArray(raw.comments) && !Array.isArray(raw.data))) {
+                console.warn('评论数据格式不正确:', raw);
+                this.renderComments([], page === 1);
+                if (page === 1) {
+                    this.updateCommentsCount(0);
+                }
+                // 隐藏加载更多按钮
+                const loadMoreBtn = document.getElementById('loadMoreComments');
+                if (loadMoreBtn) {
+                    loadMoreBtn.style.display = 'none';
+                    loadMoreBtn.onclick = null;
+                }
+                return;
+            }
+            
+            const commentsArr = Array.isArray(raw.comments) ? raw.comments : raw.data;
+            this.renderComments(commentsArr, page === 1);
             
             // 更新评论数统计
             if (page === 1) {
-                this.updateCommentsCount(data.total || data.comments.length);
+                const total = (typeof raw.total === 'number') ? raw.total
+                             : (typeof raw.count === 'number') ? raw.count
+                             : (raw.pagination && typeof raw.pagination.total === 'number') ? raw.pagination.total
+                             : commentsArr.length;
+                this.updateCommentsCount(total);
             }
             
             // 更新加载更多按钮
             const loadMoreBtn = document.getElementById('loadMoreComments');
             if (loadMoreBtn) {
-                loadMoreBtn.style.display = data.hasMore ? 'block' : 'none';
-                loadMoreBtn.onclick = () => this.loadComments(page + 1, sort);
+                const hasMore = (typeof raw.hasMore === 'boolean') ? raw.hasMore
+                               : (raw.pagination && typeof raw.pagination.has_more === 'boolean') ? raw.pagination.has_more
+                               : (raw.pagination && typeof raw.pagination.page === 'number' && typeof raw.pagination.total_pages === 'number'
+                                   ? raw.pagination.page < raw.pagination.total_pages
+                                   : false);
+                loadMoreBtn.style.display = hasMore ? 'block' : 'none';
+                loadMoreBtn.onclick = hasMore ? (() => this.loadComments(page + 1, sort)) : null;
             }
             
         } catch (error) {
@@ -2659,7 +2686,21 @@ class VideoPlayer {
             commentsList.innerHTML = '';
         }
         
-        if (!comments || comments.length === 0) {
+        // 验证comments参数
+        if (!Array.isArray(comments)) {
+            console.warn('renderComments: comments参数不是数组', comments);
+            if (replace) {
+                commentsList.innerHTML = `
+                    <div class="no-comments">
+                        <div class="no-comments-icon">💭</div>
+                        <p>还没有评论，来发表第一条评论吧！</p>
+                    </div>
+                `;
+            }
+            return;
+        }
+        
+        if (comments.length === 0) {
             if (replace) {
                 commentsList.innerHTML = `
                     <div class="no-comments">
@@ -2672,44 +2713,63 @@ class VideoPlayer {
         }
         
         comments.forEach(comment => {
-            const commentEl = this.createCommentElement(comment);
-            commentsList.appendChild(commentEl);
+            if (comment) {
+                const commentEl = this.createCommentElement(comment);
+                if (commentEl) {
+                    commentsList.appendChild(commentEl);
+                }
+            }
         });
     }
 
     // 创建评论元素
     createCommentElement(comment) {
+        // 验证comment对象
+        if (!comment || typeof comment !== 'object') {
+            console.warn('createCommentElement: comment参数无效', comment);
+            return null;
+        }
+        
+        // 提供默认值
+        const username = comment.username || '匿名用户';
+        const content = comment.content || '';
+        const created_at = comment.created_at || new Date().toISOString();
+        const likes_count = comment.likes_count || 0;
+        const user_liked = comment.user_liked || false;
+        const id = comment.id || 'unknown';
+        const replies = Array.isArray(comment.replies) ? comment.replies : [];
+        
         const div = document.createElement('div');
         div.className = 'comment-item';
-        div.dataset.commentId = comment.id;
+        div.dataset.commentId = id;
         
-        const timeAgo = this.formatTimeAgo(comment.created_at);
-        const avatar = this.generateUserAvatar(comment.username);
+        const timeAgo = this.formatTimeAgo(created_at);
+        const avatar = this.generateUserAvatar(username);
         
         div.innerHTML = `
             <div class="comment-header">
-                <div class="user-avatar" data-username="${comment.username}">${avatar}</div>
+                <div class="user-avatar" data-username="${username}">${avatar}</div>
                 <div class="comment-meta">
-                    <span class="username">${comment.username}</span>
+                    <span class="username">${username}</span>
                     <span class="timestamp">${timeAgo}</span>
                 </div>
             </div>
-            <div class="comment-content">${this.escapeHtml(comment.content)}</div>
+            <div class="comment-content">${this.escapeHtml(content)}</div>
             <div class="comment-actions">
-                <button class="like-btn ${comment.user_liked ? 'liked' : ''}" data-comment-id="${comment.id}">
-                    <span class="like-icon">${comment.user_liked ? '❤️' : '🤍'}</span>
-                    <span class="like-count">${comment.likes_count || 0}</span>
+                <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
+                    <span class="like-icon">${user_liked ? '❤️' : '🤍'}</span>
+                    <span class="like-count">${likes_count}</span>
                 </button>
-                <button class="reply-btn" data-comment-id="${comment.id}">回复</button>
+                <button class="reply-btn" data-comment-id="${id}">回复</button>
             </div>
-            ${comment.replies && comment.replies.length > 0 ? this.renderReplies(comment.replies) : ''}
+            ${replies.length > 0 ? this.renderReplies(replies) : ''}
         `;
         
         // 绑定点赞事件
         const likeBtn = div.querySelector('.like-btn');
         if (likeBtn) {
             likeBtn.addEventListener('click', () => {
-                this.toggleCommentLike(comment.id);
+                this.toggleCommentLike(id);
             });
         }
         
@@ -2718,31 +2778,44 @@ class VideoPlayer {
 
     // 渲染回复
     renderReplies(replies) {
-        if (!replies || replies.length === 0) return '';
+        if (!Array.isArray(replies) || replies.length === 0) return '';
         
         const repliesHtml = replies.map(reply => {
-            const avatar = this.generateUserAvatar(reply.username);
-            const timeAgo = this.formatTimeAgo(reply.created_at);
+            // 验证reply对象并提供默认值
+            if (!reply || typeof reply !== 'object') {
+                console.warn('renderReplies: reply对象无效', reply);
+                return '';
+            }
+            
+            const username = reply.username || '匿名用户';
+            const content = reply.content || '';
+            const created_at = reply.created_at || new Date().toISOString();
+            const likes_count = reply.likes_count || 0;
+            const user_liked = reply.user_liked || false;
+            const id = reply.id || 'unknown';
+            
+            const avatar = this.generateUserAvatar(username);
+            const timeAgo = this.formatTimeAgo(created_at);
             
             return `
-                <div class="reply-item" data-comment-id="${reply.id}">
+                <div class="reply-item" data-comment-id="${id}">
                     <div class="comment-header">
-                        <div class="user-avatar small" data-username="${reply.username}">${avatar}</div>
+                        <div class="user-avatar small" data-username="${username}">${avatar}</div>
                         <div class="comment-meta">
-                            <span class="username">${reply.username}</span>
+                            <span class="username">${username}</span>
                             <span class="timestamp">${timeAgo}</span>
                         </div>
                     </div>
-                    <div class="comment-content">${this.escapeHtml(reply.content)}</div>
+                    <div class="comment-content">${this.escapeHtml(content)}</div>
                     <div class="comment-actions">
-                        <button class="like-btn ${reply.user_liked ? 'liked' : ''}" data-comment-id="${reply.id}">
-                            <span class="like-icon">${reply.user_liked ? '❤️' : '🤍'}</span>
-                            <span class="like-count">${reply.likes_count || 0}</span>
+                        <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
+                            <span class="like-icon">${user_liked ? '❤️' : '🤍'}</span>
+                            <span class="like-count">${likes_count}</span>
                         </button>
                     </div>
                 </div>
             `;
-        }).join('');
+        }).filter(html => html !== '').join('');
         
         return `<div class="replies-section">${repliesHtml}</div>`;
     }
