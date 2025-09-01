@@ -602,6 +602,124 @@ function runAsync(sql, params = []) {
     });
 }
 
+// 统一清理用户相关数据的函数（方案A：显式事务 + 精确回填计数）
+async function deleteUserDataCascade(userId) {
+    return new Promise((resolve, reject) => {
+        // 开始显式事务
+        db.run('BEGIN IMMEDIATE', (err) => {
+            if (err) {
+                console.error('开始事务失败:', err);
+                return reject(err);
+            }
+            
+            // 在事务中执行所有操作
+            (async () => {
+                try {
+                    // 1. 查询用户点赞过的所有字幕 video_id（去重）
+                    const userSubtitleLikes = await getAllAsync(
+                        'SELECT DISTINCT video_id FROM subtitle_likes WHERE user_id = ?', 
+                        [userId]
+                    );
+                    
+                    // 2. 查询用户点赞过的所有评论 comment_id（去重）
+                    const userCommentLikes = await getAllAsync(
+                        'SELECT DISTINCT comment_id FROM comment_likes WHERE user_id = ?', 
+                        [userId]
+                    );
+                    
+                    // 3. 查询用户发出的回复评论的父评论 id（去重）
+                    const affectedParentComments = await getAllAsync(
+                        'SELECT DISTINCT parent_id FROM subtitle_comments WHERE user_id = ? AND parent_id IS NOT NULL', 
+                        [userId]
+                    );
+                    
+                    // 4. 删除用户的字幕点赞记录
+                    await runAsync('DELETE FROM subtitle_likes WHERE user_id = ?', [userId]);
+                    
+                    // 5. 删除用户的评论点赞记录
+                    await runAsync('DELETE FROM comment_likes WHERE user_id = ?', [userId]);
+                    
+                    // 6. 删除用户的所有评论（包括顶级评论和回复）
+                    await runAsync('DELETE FROM subtitle_comments WHERE user_id = ?', [userId]);
+                    
+                    // 7. 删除用户的心愿单记录
+                    await runAsync('DELETE FROM wishlists WHERE user_id = ?', [userId]);
+                    
+                    // 8. 精确回填字幕点赞数（使用大小写不敏感匹配）
+                    for (const like of userSubtitleLikes) {
+                        const actualCount = await getAsync(
+                            'SELECT COUNT(1) as count FROM subtitle_likes WHERE lower(video_id) = lower(?)',
+                            [like.video_id]
+                        );
+                        await runAsync(
+                            'UPDATE subtitles SET likes_count = ? WHERE lower(video_id) = lower(?)',
+                            [actualCount.count || 0, like.video_id]
+                        );
+                    }
+                    
+                    // 9. 精确回填评论点赞数
+                    for (const like of userCommentLikes) {
+                        const actualCount = await getAsync(
+                            'SELECT COUNT(1) as count FROM comment_likes WHERE comment_id = ?',
+                            [like.comment_id]
+                        );
+                        await runAsync(
+                            'UPDATE subtitle_comments SET likes_count = ? WHERE id = ?',
+                            [actualCount.count || 0, like.comment_id]
+                        );
+                    }
+                    
+                    // 10. 精确回填父评论的回复数
+                    for (const parent of affectedParentComments) {
+                        const actualCount = await getAsync(
+                            'SELECT COUNT(1) as count FROM subtitle_comments WHERE parent_id = ?',
+                            [parent.parent_id]
+                        );
+                        await runAsync(
+                            'UPDATE subtitle_comments SET replies_count = ? WHERE id = ?',
+                            [actualCount.count || 0, parent.parent_id]
+                        );
+                    }
+                    
+                    // 11. 获取用户邮箱用于清理验证码
+                    const user = await getAsync('SELECT email FROM users WHERE id = ?', [userId]);
+                    
+                    // 12. 删除用户主记录
+                    await runAsync('DELETE FROM users WHERE id = ?', [userId]);
+                    
+                    // 13. 清理邮箱验证码记录
+                    if (user && user.email) {
+                        try {
+                            await runAsync('DELETE FROM email_verification_codes WHERE email = ?', [user.email]);
+                        } catch (e) {
+                            console.warn('清理邮箱验证码失败:', e.message);
+                        }
+                    }
+                    
+                    // 提交事务
+                    db.run('COMMIT', (commitErr) => {
+                        if (commitErr) {
+                            console.error('提交事务失败:', commitErr);
+                            return reject(commitErr);
+                        }
+                        resolve();
+                    });
+                    
+                } catch (error) {
+                    console.error('删除用户数据失败:', error);
+                    // 回滚事务
+                    db.run('ROLLBACK', (rollbackErr) => {
+                        if (rollbackErr) {
+                            console.error('回滚事务失败:', rollbackErr);
+                        }
+                        reject(error);
+                    });
+                }
+            })();
+        });
+    });
+}
+
 async function allocateVariantForBase(baseVideoId) {
     const rows = await getAllAsync('SELECT video_id, variant FROM subtitles WHERE lower(base_video_id) = lower(?)', [baseVideoId]);
     const used = new Set();
@@ -983,11 +1101,7 @@ app.post('/api/user/exist', requireCaptchaIfFlagged, async (req, res) => {
 app.delete('/api/user/me', authenticateUserToken, async (req, res) => {
     try {
         const userId = req.user.id;
-        const u = await getAsync('SELECT email FROM users WHERE id = ?', [userId]);
-        await runAsync('DELETE FROM users WHERE id = ?', [userId]);
-        if (u && u.email) {
-            try { await runAsync('DELETE FROM email_verification_codes WHERE email = ?', [u.email]); } catch {}
-        }
+        await deleteUserDataCascade(userId);
         return res.json({ message: '账号已注销' });
     } catch (e) {
         console.error(e);
@@ -2544,7 +2658,7 @@ app.delete('/api/admin/users/:id', authenticateAdminToken, async (req, res) => {
     try {
         const id = parseInt(req.params.id);
         if (!id) return res.status(400).json({ error: '参数错误' });
-        await runAsync('DELETE FROM users WHERE id = ?', [id]);
+        await deleteUserDataCascade(id);
         res.json({ message: '删除成功' });
     } catch (e) {
         console.error(e);
