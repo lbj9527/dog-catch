@@ -1045,6 +1045,11 @@ class VideoPlayer {
             hasMore: true
         };
         
+        // 关闭社交面板（如果已打开）
+        if (this.socialState && this.socialState.isSocialMode) {
+            this.closeSocialMode();
+        }
+        
         this.removeAllSubtitleTracks('登录后可用');
         this.disableSubtitleUi('登录后可用');
         this.refreshAuthUi();
