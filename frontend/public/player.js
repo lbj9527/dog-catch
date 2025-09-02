@@ -2579,6 +2579,9 @@ class VideoPlayer {
         const commentInput = document.getElementById('commentInput');
         const submitBtn = document.getElementById('submitComment');
         const sortBtns = document.querySelectorAll('.sort-btn');
+        const emojiBtn = document.querySelector('.emoji-btn');
+        const mentionBtn = document.querySelector('.mention-btn');
+        const imageBtn = document.querySelector('.image-btn');
         
         if (commentInput && submitBtn) {
             // 输入框字符计数
@@ -2607,12 +2610,41 @@ class VideoPlayer {
             });
         }
         
+        // 表情按钮事件
+        if (emojiBtn) {
+            emojiBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.showEmojiPicker();
+            });
+        }
+        
+        // @用户按钮事件
+        if (mentionBtn) {
+            mentionBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.showUserSearchModal();
+            });
+        }
+        
+        // 图片按钮事件
+        if (imageBtn) {
+            imageBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.triggerImageUpload();
+            });
+        }
+        
         // 排序按钮
         sortBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const sortType = e.target.dataset.sort;
                 this.changeSortOrder(sortType);
             });
+        });
+        
+        // 点击外部关闭浮层
+        document.addEventListener('click', (e) => {
+            this.handleOutsideClick(e);
         });
     }
 
@@ -2982,6 +3014,659 @@ class VideoPlayer {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+    
+    // ===== 表情、@用户、图片上传功能 =====
+    
+    // 显示表情选择器
+    showEmojiPicker() {
+        // 移除已存在的表情选择器
+        const existingPicker = document.querySelector('.emoji-picker');
+        if (existingPicker) {
+            existingPicker.remove();
+            return;
+        }
+        
+        const emojiList = [
+            '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇',
+            '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚',
+            '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩',
+            '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣',
+            '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬',
+            '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗',
+            '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯',
+            '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐',
+            '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠', '😈',
+            '👿', '👹', '👺', '🤡', '💩', '👻', '💀', '☠️', '👽', '👾',
+            '🤖', '🎃', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾'
+        ];
+        
+        const picker = document.createElement('div');
+        picker.className = 'emoji-picker';
+        picker.innerHTML = `
+            <div class="emoji-picker-header">选择表情</div>
+            <div class="emoji-grid">
+                ${emojiList.map(emoji => `<button class="emoji-item" data-emoji="${emoji}">${emoji}</button>`).join('')}
+            </div>
+        `;
+        
+        // 定位到表情按钮附近
+        const emojiBtn = document.querySelector('.emoji-btn');
+        if (emojiBtn) {
+            const rect = emojiBtn.getBoundingClientRect();
+            picker.style.position = 'fixed';
+            picker.style.left = `${rect.left}px`;
+            picker.style.top = `${rect.top - 250}px`;
+            picker.style.zIndex = '10000';
+        }
+        
+        document.body.appendChild(picker);
+        
+        // 绑定表情点击事件
+        picker.addEventListener('click', (e) => {
+            if (e.target.classList.contains('emoji-item')) {
+                const emoji = e.target.dataset.emoji;
+                this.insertTextAtCursor(emoji);
+                picker.remove();
+            }
+        });
+    }
+    
+    // 显示用户搜索弹窗
+    showUserSearchModal() {
+        // 移除已存在的搜索弹窗
+        const existingModal = document.querySelector('.user-search-modal');
+        if (existingModal) {
+            existingModal.remove();
+            return;
+        }
+        
+        const modal = document.createElement('div');
+        modal.className = 'user-search-modal';
+        modal.innerHTML = `
+            <div class="user-search-content">
+                <div class="user-search-header">
+                    <h3>@用户</h3>
+                    <button class="close-btn">&times;</button>
+                </div>
+                <div class="user-search-body">
+                    <input type="text" class="user-search-input" placeholder="输入用户名搜索..." autocomplete="off">
+                    <div class="user-search-results"></div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        const searchInput = modal.querySelector('.user-search-input');
+        const resultsContainer = modal.querySelector('.user-search-results');
+        const closeBtn = modal.querySelector('.close-btn');
+        
+        // 关闭弹窗
+        const closeModal = () => {
+            modal.remove();
+        };
+        
+        closeBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+        
+        // 搜索用户
+        let searchTimeout;
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            
+            clearTimeout(searchTimeout);
+            
+            if (query.length < 2) {
+                resultsContainer.innerHTML = '';
+                return;
+            }
+            
+            searchTimeout = setTimeout(async () => {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/users/search?q=${encodeURIComponent(query)}`, {
+                        headers: {
+                            'Authorization': `Bearer ${this.userToken}`
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    const users = Array.isArray(data.users) ? data.users : [];
+                    
+                    if (users.length === 0) {
+                        resultsContainer.innerHTML = '<div class="no-users">未找到匹配的用户</div>';
+                        return;
+                    }
+                    
+                    resultsContainer.innerHTML = users.map(user => `
+                        <div class="user-item" data-username="${user.username || user.email}">
+                            <div class="user-avatar">${this.generateUserAvatar(user.username || user.email)}</div>
+                            <div class="user-info">
+                                <div class="username">${user.username || user.email}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                    // 绑定用户选择事件
+                    resultsContainer.addEventListener('click', (e) => {
+                        const userItem = e.target.closest('.user-item');
+                        if (userItem) {
+                            const username = userItem.dataset.username;
+                            this.insertTextAtCursor(`@${username} `);
+                            closeModal();
+                        }
+                    });
+                    
+                } catch (error) {
+                    console.error('搜索用户失败:', error);
+                    resultsContainer.innerHTML = '<div class="search-error">搜索失败，请稍后重试</div>';
+                }
+            }, 300);
+        });
+        
+        // 键盘导航支持
+        let selectedIndex = -1;
+        searchInput.addEventListener('keydown', (e) => {
+            const userItems = resultsContainer.querySelectorAll('.user-item');
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, userItems.length - 1);
+                this.updateUserSelection(userItems, selectedIndex);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, -1);
+                this.updateUserSelection(userItems, selectedIndex);
+            } else if (e.key === 'Enter' && selectedIndex >= 0) {
+                e.preventDefault();
+                const selectedUser = userItems[selectedIndex];
+                if (selectedUser) {
+                    const username = selectedUser.dataset.username;
+                    this.insertTextAtCursor(`@${username} `);
+                    closeModal();
+                }
+            } else if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+        
+        // 聚焦搜索框
+        searchInput.focus();
+    }
+    
+    // 更新用户选择状态
+    updateUserSelection(userItems, selectedIndex) {
+        userItems.forEach((item, index) => {
+            if (index === selectedIndex) {
+                item.classList.add('selected');
+            } else {
+                item.classList.remove('selected');
+            }
+        });
+    }
+    
+    // 触发图片上传
+    triggerImageUpload() {
+        // 创建隐藏的文件输入框
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/jpeg,image/jpg,image/png,image/gif,image/webp';
+        fileInput.style.display = 'none';
+        
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                this.handleImageUpload(file);
+            }
+        });
+        
+        document.body.appendChild(fileInput);
+        fileInput.click();
+        document.body.removeChild(fileInput);
+    }
+    
+    // 处理图片上传
+    async handleImageUpload(file) {
+        // 验证文件
+        const validation = this.validateImageFile(file);
+        if (!validation.valid) {
+            this.showCommentError(validation.message);
+            return;
+        }
+        
+        try {
+            // 显示上传进度
+            this.showUploadProgress();
+            
+            // 上传图片
+            const imageUrl = await this.uploadImage(file);
+            
+            // 创建图片缩略图
+            this.createImageThumbnail(imageUrl, file.name);
+            
+            // 隐藏上传进度
+            this.hideUploadProgress();
+            
+        } catch (error) {
+            console.error('图片上传失败:', error);
+            this.showCommentError('图片上传失败，请稍后重试');
+            this.hideUploadProgress();
+        }
+    }
+    
+    // 验证图片文件
+    validateImageFile(file) {
+        const maxSize = 5 * 1024 * 1024; // 5MB
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        
+        if (!allowedTypes.includes(file.type)) {
+            return {
+                valid: false,
+                message: '只支持 JPG、PNG、GIF、WebP 格式的图片'
+            };
+        }
+        
+        if (file.size > maxSize) {
+            return {
+                valid: false,
+                message: '图片大小不能超过 5MB'
+            };
+        }
+        
+        return { valid: true };
+    }
+    
+    // 上传图片到服务器
+    async uploadImage(file) {
+        const formData = new FormData();
+        formData.append('image', file);
+        
+        const response = await fetch(`${API_BASE_URL}/api/upload/image`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.userToken}`
+            },
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.url;
+    }
+    
+    // 创建图片缩略图
+    createImageThumbnail(imageUrl, fileName) {
+        const commentInput = document.getElementById('commentInput');
+        if (!commentInput) return;
+        
+        // 检查是否已存在图片容器
+        let imageContainer = document.querySelector('.comment-images');
+        if (!imageContainer) {
+            imageContainer = document.createElement('div');
+            imageContainer.className = 'comment-images';
+            commentInput.parentNode.insertBefore(imageContainer, commentInput.nextSibling);
+        }
+        
+        const thumbnail = document.createElement('div');
+        thumbnail.className = 'image-thumbnail';
+        thumbnail.innerHTML = `
+            <img src="${imageUrl}" alt="${fileName}" onclick="window.videoPlayerInstance.showImagePreview('${imageUrl}')">
+            <button class="remove-image" onclick="this.parentElement.remove()">&times;</button>
+            <input type="hidden" name="image_url" value="${imageUrl}">
+        `;
+        
+        imageContainer.appendChild(thumbnail);
+    }
+    
+    // 显示表情选择器
+    showEmojiPicker() {
+        // 移除已存在的表情选择器
+        const existingPicker = document.querySelector('.emoji-picker');
+        if (existingPicker) {
+            existingPicker.remove();
+            return;
+        }
+        
+        // 常用表情列表
+        const emojiList = [
+            '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇',
+            '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚',
+            '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩',
+            '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣',
+            '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬',
+            '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗',
+            '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯',
+            '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐',
+            '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠', '😈',
+            '👍', '👎', '👌', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉',
+            '👆', '🖕', '👇', '☝️', '👋', '🤚', '🖐️', '✋', '🖖', '👏',
+            '🙌', '🤲', '🤝', '🙏', '✍️', '💪', '🦾', '🦿', '🦵', '🦶',
+            '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔',
+            '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️'
+        ];
+        
+        const picker = document.createElement('div');
+        picker.className = 'emoji-picker';
+        picker.innerHTML = `
+            <div class="emoji-picker-header">选择表情</div>
+            <div class="emoji-grid">
+                ${emojiList.map(emoji => `<button class="emoji-item" data-emoji="${emoji}">${emoji}</button>`).join('')}
+            </div>
+        `;
+        
+        // 定位到表情按钮附近
+        const emojiBtn = document.querySelector('.emoji-btn');
+        if (emojiBtn) {
+            const rect = emojiBtn.getBoundingClientRect();
+            picker.style.position = 'fixed';
+            picker.style.top = `${rect.bottom + 5}px`;
+            picker.style.left = `${rect.left}px`;
+            picker.style.zIndex = '10000';
+        }
+        
+        document.body.appendChild(picker);
+        
+        // 绑定表情选择事件
+        picker.addEventListener('click', (e) => {
+            const emojiItem = e.target.closest('.emoji-item');
+            if (emojiItem) {
+                const emoji = emojiItem.dataset.emoji;
+                this.insertTextAtCursor(emoji);
+                picker.remove();
+            }
+        });
+    }
+    
+    // 显示用户搜索模态框
+    showUserSearchModal() {
+        // 移除已存在的模态框
+        const existingModal = document.querySelector('.user-search-modal');
+        if (existingModal) {
+            existingModal.remove();
+            return;
+        }
+        
+        const modal = document.createElement('div');
+        modal.className = 'user-search-modal';
+        modal.innerHTML = `
+            <div class="user-search-content">
+                <div class="user-search-header">
+                    <h3>搜索用户</h3>
+                    <button class="close-search">&times;</button>
+                </div>
+                <div class="user-search-body">
+                    <input type="text" class="user-search-input" placeholder="输入用户名搜索..." autocomplete="off">
+                    <div class="user-list"></div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        const searchInput = modal.querySelector('.user-search-input');
+        const userList = modal.querySelector('.user-list');
+        const closeBtn = modal.querySelector('.close-search');
+        
+        // 关闭模态框
+        const closeModal = () => {
+            modal.remove();
+        };
+        
+        closeBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+        
+        // ESC键关闭
+        const handleEsc = (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+                document.removeEventListener('keydown', handleEsc);
+            }
+        };
+        document.addEventListener('keydown', handleEsc);
+        
+        // 搜索用户
+        let searchTimeout;
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            
+            clearTimeout(searchTimeout);
+            
+            if (query.length < 2) {
+                userList.innerHTML = '<div class="search-hint">请输入至少2个字符</div>';
+                return;
+            }
+            
+            searchTimeout = setTimeout(async () => {
+                try {
+                    userList.innerHTML = '<div class="search-loading">搜索中...</div>';
+                    
+                    const response = await fetch(`${API_BASE_URL}/api/users/search?q=${encodeURIComponent(query)}`, {
+                        headers: {
+                            'Authorization': `Bearer ${this.userToken}`
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    const users = data.users || [];
+                    
+                    if (users.length === 0) {
+                        userList.innerHTML = '<div class="no-users">未找到相关用户</div>';
+                        return;
+                    }
+                    
+                    const resultsContainer = document.createElement('div');
+                    resultsContainer.className = 'search-results';
+                    
+                    users.forEach(user => {
+                        const userItem = document.createElement('div');
+                        userItem.className = 'user-item';
+                        userItem.dataset.username = user.username;
+                        userItem.innerHTML = `
+                            <div class="user-avatar small">${this.generateUserAvatar(user.username)}</div>
+                            <div class="user-info">
+                                <div class="username">${user.username}</div>
+                                <div class="user-stats">评论 ${user.comment_count || 0} 条</div>
+                            </div>
+                        `;
+                        resultsContainer.appendChild(userItem);
+                    });
+                    
+                    userList.innerHTML = '';
+                    userList.appendChild(resultsContainer);
+                    
+                    // 绑定用户选择事件
+                    resultsContainer.addEventListener('click', (e) => {
+                        const userItem = e.target.closest('.user-item');
+                        if (userItem) {
+                            const username = userItem.dataset.username;
+                            this.insertTextAtCursor(`@${username} `);
+                            closeModal();
+                        }
+                    });
+                    
+                } catch (error) {
+                    console.error('搜索用户失败:', error);
+                    userList.innerHTML = '<div class="search-error">搜索失败，请稍后重试</div>';
+                }
+            }, 300);
+        });
+        
+        // 聚焦搜索框
+        searchInput.focus();
+    }
+    
+    // 触发图片上传
+    triggerImageUpload() {
+        // 创建文件输入元素
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*';
+        fileInput.style.display = 'none';
+        
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                this.handleImageUpload(file);
+            }
+        });
+        
+        document.body.appendChild(fileInput);
+        fileInput.click();
+        document.body.removeChild(fileInput);
+    }
+    
+    // 处理图片上传
+    async handleImageUpload(file) {
+        // 验证文件
+        if (!this.validateImageFile(file)) {
+            return;
+        }
+        
+        this.showUploadProgress();
+        
+        try {
+            const imageUrl = await this.uploadImage(file);
+            this.createImageThumbnail(imageUrl, file.name);
+            this.showCommentSuccess('图片上传成功！');
+        } catch (error) {
+            console.error('图片上传失败:', error);
+            this.showCommentError(error.message || '图片上传失败，请稍后重试');
+        } finally {
+            this.hideUploadProgress();
+        }
+    }
+    
+    // 验证图片文件
+    validateImageFile(file) {
+        // 检查文件类型
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        if (!allowedTypes.includes(file.type)) {
+            this.showCommentError('只支持 JPG、PNG、GIF、WebP 格式的图片');
+            return false;
+        }
+        
+        // 检查文件大小（5MB）
+        const maxSize = 5 * 1024 * 1024;
+        if (file.size > maxSize) {
+            this.showCommentError('图片大小不能超过 5MB');
+            return false;
+        }
+        
+        return true;
+    }
+    
+    // 上传图片到服务器
+    async uploadImage(file) {
+        const formData = new FormData();
+        formData.append('image', file);
+        
+        const response = await fetch(`${API_BASE_URL}/api/upload/image`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.userToken}`
+            },
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.url;
+    }
+
+    // 显示图片预览
+    showImagePreview(imageUrl) {
+        const modal = document.createElement('div');
+        modal.className = 'image-preview-modal';
+        modal.innerHTML = `
+            <div class="image-preview-content">
+                <button class="close-preview">&times;</button>
+                <img src="${imageUrl}" alt="图片预览">
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        const closePreview = () => {
+            modal.remove();
+        };
+        
+        modal.querySelector('.close-preview').addEventListener('click', closePreview);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closePreview();
+        });
+        
+        // ESC键关闭
+        const handleEsc = (e) => {
+            if (e.key === 'Escape') {
+                closePreview();
+                document.removeEventListener('keydown', handleEsc);
+            }
+        };
+        document.addEventListener('keydown', handleEsc);
+    }
+    
+    // 显示上传进度
+    showUploadProgress() {
+        const imageBtn = document.querySelector('.image-btn');
+        if (imageBtn) {
+            imageBtn.innerHTML = '⏳';
+            imageBtn.disabled = true;
+        }
+    }
+    
+    // 隐藏上传进度
+    hideUploadProgress() {
+        const imageBtn = document.querySelector('.image-btn');
+        if (imageBtn) {
+            imageBtn.innerHTML = '📷';
+            imageBtn.disabled = false;
+        }
+    }
+    
+    // 在光标位置插入文本
+    insertTextAtCursor(text) {
+        const commentInput = document.getElementById('commentInput');
+        if (!commentInput) return;
+        
+        const start = commentInput.selectionStart;
+        const end = commentInput.selectionEnd;
+        const value = commentInput.value;
+        
+        commentInput.value = value.substring(0, start) + text + value.substring(end);
+        commentInput.selectionStart = commentInput.selectionEnd = start + text.length;
+        
+        // 触发input事件更新字符计数
+        commentInput.dispatchEvent(new Event('input'));
+        commentInput.focus();
+    }
+    
+    // 处理外部点击事件
+    handleOutsideClick(e) {
+        // 关闭表情选择器
+        const emojiPicker = document.querySelector('.emoji-picker');
+        if (emojiPicker && !emojiPicker.contains(e.target) && !e.target.classList.contains('emoji-btn')) {
+            emojiPicker.remove();
+        }
     }
     
     // ===== 可访问性支持方法 =====

@@ -1109,7 +1109,95 @@ app.delete('/api/user/me', authenticateUserToken, async (req, res) => {
     }
 });
 
-// 健康检查
+// 图片上传配置
+const imageStorage = multer.memoryStorage();
+const imageUpload = multer({
+    storage: imageStorage,
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('只允许上传 jpg、png、gif、webp 格式的图片'));
+        }
+    },
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB 限制
+    }
+});
+
+// 图片上传接口
+app.post('/api/upload/image', authenticateToken, imageUpload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: '请选择要上传的图片' });
+        }
+
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        
+        // 创建目录结构
+        const uploadDir = path.join(__dirname, '../uploads/images', year.toString(), month);
+        await fs.mkdir(uploadDir, { recursive: true });
+        
+        // 生成唯一文件名
+        const ext = path.extname(req.file.originalname) || '.jpg';
+        const filename = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}${ext}`;
+        const filePath = path.join(uploadDir, filename);
+        
+        // 保存文件
+        await fs.writeFile(filePath, req.file.buffer);
+        
+        // 返回URL
+        const imageUrl = `/uploads/images/${year}/${month}/${filename}`;
+        res.json({ 
+            message: '图片上传成功', 
+            url: imageUrl,
+            filename: filename
+        });
+        
+    } catch (error) {
+        console.error('图片上传失败:', error);
+        if (error.message.includes('只允许上传')) {
+            return res.status(400).json({ error: error.message });
+        }
+        res.status(500).json({ error: '图片上传失败' });
+    }
+ });
+ 
+ // 用户搜索接口
+ app.get('/api/users/search', authenticateToken, async (req, res) => {
+     try {
+         const { username } = req.query;
+         
+         if (!username || typeof username !== 'string') {
+             return res.status(400).json({ error: '请提供用户名搜索参数' });
+         }
+         
+         const searchTerm = username.trim();
+         if (searchTerm.length === 0) {
+             return res.json({ users: [] });
+         }
+         
+         // 搜索用户名包含关键词的用户，限制返回数量
+         const users = await allAsync(
+             `SELECT id, username FROM users 
+              WHERE username LIKE ? 
+              ORDER BY username 
+              LIMIT 20`,
+             [`%${searchTerm}%`]
+         );
+         
+         res.json({ users });
+         
+     } catch (error) {
+         console.error('用户搜索失败:', error);
+         res.status(500).json({ error: '用户搜索失败' });
+     }
+ });
+ 
+ // 健康检查
 app.get('/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
