@@ -3126,7 +3126,7 @@ class VideoPlayer {
             
             searchTimeout = setTimeout(async () => {
                 try {
-                    const response = await fetch(`${API_BASE_URL}/api/users/search?q=${encodeURIComponent(query)}`, {
+                    const response = await fetch(`${API_BASE_URL}/api/users/search?username=${encodeURIComponent(query)}`, {
                         headers: {
                             'Authorization': `Bearer ${this.userToken}`
                         }
@@ -3452,7 +3452,7 @@ class VideoPlayer {
                 try {
                     userList.innerHTML = '<div class="search-loading">搜索中...</div>';
                     
-                    const response = await fetch(`${API_BASE_URL}/api/users/search?q=${encodeURIComponent(query)}`, {
+                    const response = await fetch(`${API_BASE_URL}/api/users/search?username=${encodeURIComponent(query)}`, {
                         headers: {
                             'Authorization': `Bearer ${this.userToken}`
                         }

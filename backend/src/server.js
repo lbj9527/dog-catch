@@ -1181,13 +1181,13 @@ app.post('/api/upload/image', authenticateToken, imageUpload.single('image'), as
          }
          
          // 搜索用户名包含关键词的用户，限制返回数量
-         const users = await allAsync(
-             `SELECT id, username FROM users 
-              WHERE username LIKE ? 
-              ORDER BY username 
-              LIMIT 20`,
-             [`%${searchTerm}%`]
-         );
+        const users = await getAllAsync(
+            `SELECT id, username FROM users 
+             WHERE username LIKE ? 
+             ORDER BY username 
+             LIMIT 20`,
+            [`%${searchTerm}%`]
+        );
          
          res.json({ users });
          
