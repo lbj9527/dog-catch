@@ -2666,22 +2666,7 @@ body.modal-open { overflow: hidden; }
     }
 }
 
-/* ===== 表情选择器样式 ===== */
-.emoji-picker {
-    position: absolute;
-    bottom: 100%;
-    left: 0;
-    width: 320px;
-    max-height: 320px;
-    background: rgba(20, 20, 20, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 8px;
-    backdrop-filter: blur(8px);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    z-index: 1000;
-    animation: modalFadeIn 0.2s ease-out;
-    margin-bottom: 8px;
-}
+/* ===== 表情选择器样式（重复定义已删除，使用上方的fixed定位版本） ===== */
 
 .emoji-picker-header {
     padding: 12px 16px;

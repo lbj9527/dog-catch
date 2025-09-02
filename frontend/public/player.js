@@ -2613,9 +2613,10 @@ class VideoPlayer {
         // 表情按钮事件
         if (emojiBtn) {
             emojiBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.showEmojiPicker();
-            });
+            e.preventDefault();
+            e.stopPropagation(); // 防止事件冒泡触发handleOutsideClick
+            this.showEmojiPicker(e.currentTarget);
+        });
         }
         
         // @用户按钮事件
@@ -3018,59 +3019,7 @@ class VideoPlayer {
     
     // ===== 表情、@用户、图片上传功能 =====
     
-    // 显示表情选择器
-    showEmojiPicker() {
-        // 移除已存在的表情选择器
-        const existingPicker = document.querySelector('.emoji-picker');
-        if (existingPicker) {
-            existingPicker.remove();
-            return;
-        }
-        
-        const emojiList = [
-            '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇',
-            '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚',
-            '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩',
-            '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣',
-            '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬',
-            '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗',
-            '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯',
-            '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐',
-            '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠', '😈',
-            '👿', '👹', '👺', '🤡', '💩', '👻', '💀', '☠️', '👽', '👾',
-            '🤖', '🎃', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾'
-        ];
-        
-        const picker = document.createElement('div');
-        picker.className = 'emoji-picker';
-        picker.innerHTML = `
-            <div class="emoji-picker-header">选择表情</div>
-            <div class="emoji-grid">
-                ${emojiList.map(emoji => `<button class="emoji-item" data-emoji="${emoji}">${emoji}</button>`).join('')}
-            </div>
-        `;
-        
-        // 定位到表情按钮附近
-        const emojiBtn = document.querySelector('.emoji-btn');
-        if (emojiBtn) {
-            const rect = emojiBtn.getBoundingClientRect();
-            picker.style.position = 'fixed';
-            picker.style.left = `${rect.left}px`;
-            picker.style.top = `${rect.top - 250}px`;
-            picker.style.zIndex = '10000';
-        }
-        
-        document.body.appendChild(picker);
-        
-        // 绑定表情点击事件
-        picker.addEventListener('click', (e) => {
-            if (e.target.classList.contains('emoji-item')) {
-                const emoji = e.target.dataset.emoji;
-                this.insertTextAtCursor(emoji);
-                picker.remove();
-            }
-        });
-    }
+
     
     // 显示用户搜索弹窗
     showUserSearchModal() {
@@ -3329,12 +3278,11 @@ class VideoPlayer {
     }
     
     // 显示表情选择器
-    showEmojiPicker() {
-        // 移除已存在的表情选择器
+    showEmojiPicker(anchorEl = null) {
+        // 检查是否已存在表情选择器，如果存在则移除
         const existingPicker = document.querySelector('.emoji-picker');
         if (existingPicker) {
             existingPicker.remove();
-            return;
         }
         
         // 常用表情列表
@@ -3364,27 +3312,83 @@ class VideoPlayer {
             </div>
         `;
         
-        // 定位到表情按钮附近
-        const emojiBtn = document.querySelector('.emoji-btn');
-        if (emojiBtn) {
-            const rect = emojiBtn.getBoundingClientRect();
-            picker.style.position = 'fixed';
-            picker.style.top = `${rect.bottom + 5}px`;
-            picker.style.left = `${rect.left}px`;
-            picker.style.zIndex = '10000';
-        }
+        // 使用传入的锚点元素或回退到查找按钮
+        const targetBtn = anchorEl || document.querySelector('.emoji-btn');
+        if (!targetBtn) return;
         
+        // 先插入到 body 再测量尺寸
+        picker.style.position = 'fixed';
+        picker.style.visibility = 'hidden';
+        picker.style.zIndex = '10000';
         document.body.appendChild(picker);
+        
+        // 定位表情面板到按钮上方
+        this.positionEmojiPicker(targetBtn, picker);
+        
+        // 显示面板
+        picker.style.visibility = 'visible';
         
         // 绑定表情选择事件
         picker.addEventListener('click', (e) => {
+            e.stopPropagation(); // 防止触发外部点击关闭
             const emojiItem = e.target.closest('.emoji-item');
             if (emojiItem) {
                 const emoji = emojiItem.dataset.emoji;
                 this.insertTextAtCursor(emoji);
                 picker.remove();
+                this.removeEmojiPickerListeners();
             }
         });
+        
+        // 绑定窗口变化事件
+        this.emojiPickerResizeHandler = () => {
+            if (document.body.contains(picker)) {
+                this.positionEmojiPicker(targetBtn, picker);
+            }
+        };
+        
+        window.addEventListener('resize', this.emojiPickerResizeHandler);
+        window.addEventListener('orientationchange', this.emojiPickerResizeHandler);
+    }
+    
+    // 定位表情面板
+    positionEmojiPicker(anchorEl, pickerEl) {
+        const anchorRect = anchorEl.getBoundingClientRect();
+        const pickerRect = pickerEl.getBoundingClientRect();
+        const gap = 8;
+        
+        // 计算上方位置
+        let top = anchorRect.top - pickerRect.height - gap;
+        
+        // 如果上方空间不足，钳制到顶部并设置最大高度
+        if (top < gap) {
+            const availableHeight = anchorRect.top - gap * 2;
+            if (availableHeight > 100) {
+                pickerEl.style.maxHeight = `${availableHeight}px`;
+                pickerEl.style.overflowY = 'auto';
+            }
+            top = gap;
+        }
+        
+        // 计算水平居中位置
+        let left = anchorRect.left + anchorRect.width / 2 - pickerRect.width / 2;
+        
+        // 水平边界钳制
+        const minLeft = gap;
+        const maxLeft = window.innerWidth - pickerRect.width - gap;
+        left = Math.max(minLeft, Math.min(left, maxLeft));
+        
+        pickerEl.style.top = `${top}px`;
+        pickerEl.style.left = `${left}px`;
+    }
+    
+    // 移除表情面板相关监听器
+    removeEmojiPickerListeners() {
+        if (this.emojiPickerResizeHandler) {
+            window.removeEventListener('resize', this.emojiPickerResizeHandler);
+            window.removeEventListener('orientationchange', this.emojiPickerResizeHandler);
+            this.emojiPickerResizeHandler = null;
+        }
     }
     
     // 显示用户搜索模态框
@@ -3664,8 +3668,9 @@ class VideoPlayer {
     handleOutsideClick(e) {
         // 关闭表情选择器
         const emojiPicker = document.querySelector('.emoji-picker');
-        if (emojiPicker && !emojiPicker.contains(e.target) && !e.target.classList.contains('emoji-btn')) {
+        if (emojiPicker && !emojiPicker.contains(e.target) && !e.target.closest('.emoji-btn')) {
             emojiPicker.remove();
+            this.removeEmojiPickerListeners();
         }
     }
     
