@@ -2841,8 +2841,8 @@ class VideoPlayer {
         // 提供默认值
         const username = comment.username || '匿名用户';
         const content = comment.content || '';
-        const created_at = comment.created_at || new Date().toISOString();
-        const likes_count = comment.likes_count || 0;
+        const created_at = comment.createdAt || comment.created_at || new Date().toISOString();
+        const likes_count = comment.likesCount || comment.likes_count || 0;
         const user_liked = comment.user_liked || false;
         const id = comment.id || 'unknown';
         const replies = Array.isArray(comment.replies) ? comment.replies : [];
@@ -3116,7 +3116,17 @@ class VideoPlayer {
     // 格式化时间
     formatTimeAgo(timestamp) {
         const now = new Date();
-        const time = new Date(timestamp);
+        // 确保时间戳被正确解析，SQLite返回的是UTC时间字符串
+        // 如果timestamp不包含时区信息，SQLite的CURRENT_TIMESTAMP是UTC时间
+        // 需要将其作为UTC时间处理
+        let time;
+        if (typeof timestamp === 'string' && !timestamp.includes('T') && !timestamp.includes('Z')) {
+            // SQLite格式: '2025-09-03 13:14:12' (UTC时间)
+            time = new Date(timestamp + 'Z'); // 添加Z表示UTC时间
+        } else {
+            time = new Date(timestamp);
+        }
+        
         const diff = now - time;
         
         const minutes = Math.floor(diff / 60000);
