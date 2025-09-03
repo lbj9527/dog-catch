@@ -840,12 +840,20 @@ db.serialize(() => {
         likes_count INTEGER DEFAULT 0,
         replies_count INTEGER DEFAULT 0,
         status TEXT DEFAULT 'approved',
+        image_urls TEXT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (parent_id) REFERENCES subtitle_comments(id) ON DELETE CASCADE,
         CHECK (status IN ('pending', 'approved', 'rejected', 'deleted'))
     )`);
+    
+    // 为已存在的 subtitle_comments 表添加 image_urls 字段（如果不存在）
+    db.run(`ALTER TABLE subtitle_comments ADD COLUMN image_urls TEXT NULL`, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+            console.error('添加 image_urls 字段失败:', err.message);
+        }
+    });
     
     // 为 subtitle_comments 表创建索引
     db.run('CREATE INDEX IF NOT EXISTS idx_subtitle_comments_video ON subtitle_comments(video_id)', () => {});
@@ -2439,6 +2447,7 @@ app.get('/api/subtitles/:videoId/comments', async (req, res) => {
                 sc.parent_id as parent_comment_id,
                 sc.likes_count,
                 sc.replies_count,
+                sc.image_urls,
                 sc.created_at,
                 sc.updated_at
             FROM subtitle_comments sc
@@ -2458,6 +2467,7 @@ app.get('/api/subtitles/:videoId/comments', async (req, res) => {
             parentCommentId: comment.parent_comment_id,
             likesCount: comment.likes_count || 0,
             repliesCount: comment.replies_count || 0,
+            imageUrls: comment.image_urls ? JSON.parse(comment.image_urls) : [],
             createdAt: comment.created_at,
             updatedAt: comment.updated_at
         }));
@@ -2506,6 +2516,7 @@ app.get('/api/comments/:commentId/replies', async (req, res) => {
                 sc.timestamp,
                 sc.parent_id as parent_comment_id,
                 sc.likes_count,
+                sc.image_urls,
                 sc.created_at,
                 sc.updated_at
             FROM subtitle_comments sc
@@ -2524,6 +2535,7 @@ app.get('/api/comments/:commentId/replies', async (req, res) => {
             timestampSeconds: reply.timestamp,
             parentCommentId: reply.parent_comment_id,
             likesCount: reply.likes_count || 0,
+            imageUrls: reply.image_urls ? JSON.parse(reply.image_urls) : [],
             createdAt: reply.created_at,
             updatedAt: reply.updated_at
         }));
@@ -2547,7 +2559,7 @@ app.get('/api/comments/:commentId/replies', async (req, res) => {
 app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, res) => {
     try {
         const { videoId } = req.params;
-        const { content, timestampSeconds, parentCommentId } = req.body;
+        const { content, timestampSeconds, parentCommentId, imageUrls } = req.body;
         const userId = req.user.id;
         
         if (!videoId) {
@@ -2590,12 +2602,39 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
             timestamp = 0;
         }
         
+        // 处理图片URL数组 - 清洗、验证和截断（最多3张）
+        let imageUrlsJson = null;
+        if (imageUrls && Array.isArray(imageUrls) && imageUrls.length > 0) {
+            // 清洗和验证图片URL
+            const validUrls = imageUrls
+                .map(url => typeof url === 'string' ? url.trim() : '')
+                .filter(url => {
+                    // 过滤空字符串
+                    if (!url) return false;
+                    // 安全性检查：仅允许 http/https 协议
+                    try {
+                        const urlObj = new URL(url);
+                        return urlObj.protocol === 'http:' || urlObj.protocol === 'https:';
+                    } catch {
+                        return false;
+                    }
+                })
+                // 去重
+                .filter((url, index, arr) => arr.indexOf(url) === index)
+                // 截断为最多3张
+                .slice(0, 3);
+            
+            if (validUrls.length > 0) {
+                imageUrlsJson = JSON.stringify(validUrls);
+            }
+        }
+        
         // 插入评论
         const result = await runAsync(`
             INSERT INTO subtitle_comments (
-                user_id, video_id, content, timestamp, parent_id, status
-            ) VALUES (?, ?, ?, ?, ?, "approved")
-        `, [userId, videoId, content.trim(), timestamp, parentCommentId || null]);
+                user_id, video_id, content, timestamp, parent_id, status, image_urls
+            ) VALUES (?, ?, ?, ?, ?, "approved", ?)
+        `, [userId, videoId, content.trim(), timestamp, parentCommentId || null, imageUrlsJson]);
         
         // 如果是回复，更新父评论的回复数
         if (parentCommentId) {
@@ -2616,6 +2655,7 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
                 sc.parent_id as parent_comment_id,
                 sc.likes_count,
                 sc.replies_count,
+                sc.image_urls,
                 sc.created_at,
                 sc.updated_at
             FROM subtitle_comments sc
@@ -2634,6 +2674,7 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
                 parentCommentId: newComment.parent_comment_id,
                 likesCount: newComment.likes_count || 0,
                 repliesCount: newComment.replies_count || 0,
+                imageUrls: newComment.image_urls ? JSON.parse(newComment.image_urls) : [],
                 createdAt: newComment.created_at,
                 updatedAt: newComment.updated_at
             }

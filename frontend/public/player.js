@@ -53,10 +53,80 @@ class VideoPlayer {
 
     // XSS 防护：转义 HTML 特殊字符
     escapeHtml(text) {
-        if (!text) return '';
+        if (typeof text !== 'string') return '';
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // 打开Lightbox预览
+    openLightbox(currentUrl, allUrls, currentIndex) {
+        // 创建Lightbox容器
+        const lightbox = document.createElement('div');
+        lightbox.className = 'lightbox-overlay';
+        lightbox.innerHTML = `
+            <div class="lightbox-container">
+                <button class="lightbox-close">&times;</button>
+                <button class="lightbox-prev" ${allUrls.length <= 1 ? 'style="display:none"' : ''}>&lt;</button>
+                <img class="lightbox-image" src="${currentUrl}" alt="预览图片" />
+                <button class="lightbox-next" ${allUrls.length <= 1 ? 'style="display:none"' : ''}>&gt;</button>
+                <div class="lightbox-counter" ${allUrls.length <= 1 ? 'style="display:none"' : ''}>${currentIndex + 1} / ${allUrls.length}</div>
+            </div>
+        `;
+        
+        document.body.appendChild(lightbox);
+        
+        let currentIdx = currentIndex;
+        const img = lightbox.querySelector('.lightbox-image');
+        const counter = lightbox.querySelector('.lightbox-counter');
+        
+        // 更新图片和计数器
+        const updateImage = (index) => {
+            img.src = allUrls[index];
+            if (counter) counter.textContent = `${index + 1} / ${allUrls.length}`;
+            currentIdx = index;
+        };
+        
+        // 关闭Lightbox
+        const closeLightbox = () => {
+            document.body.removeChild(lightbox);
+        };
+        
+        // 事件监听
+        lightbox.querySelector('.lightbox-close').addEventListener('click', closeLightbox);
+        lightbox.addEventListener('click', (e) => {
+            if (e.target === lightbox) closeLightbox();
+        });
+        
+        if (allUrls.length > 1) {
+            lightbox.querySelector('.lightbox-prev').addEventListener('click', () => {
+                const newIndex = currentIdx > 0 ? currentIdx - 1 : allUrls.length - 1;
+                updateImage(newIndex);
+            });
+            
+            lightbox.querySelector('.lightbox-next').addEventListener('click', () => {
+                const newIndex = currentIdx < allUrls.length - 1 ? currentIdx + 1 : 0;
+                updateImage(newIndex);
+            });
+        }
+        
+        // 键盘事件
+        const handleKeydown = (e) => {
+            if (e.key === 'Escape') {
+                closeLightbox();
+                document.removeEventListener('keydown', handleKeydown);
+            } else if (allUrls.length > 1) {
+                if (e.key === 'ArrowLeft') {
+                    const newIndex = currentIdx > 0 ? currentIdx - 1 : allUrls.length - 1;
+                    updateImage(newIndex);
+                } else if (e.key === 'ArrowRight') {
+                    const newIndex = currentIdx < allUrls.length - 1 ? currentIdx + 1 : 0;
+                    updateImage(newIndex);
+                }
+            }
+        };
+        
+        document.addEventListener('keydown', handleKeydown);
     }
 
     async updateUserEmail() {
@@ -2478,6 +2548,8 @@ class VideoPlayer {
                                 placeholder="善语结善缘，恶言伤人心" 
                                 maxlength="500"
                                 rows="1"></textarea>
+                            <!-- 专用的图片预览容器 -->
+                            <div id="composeImagePreview" class="comment-images compose-preview" style="display: none;"></div>
                             <div class="input-actions">
                                 <div class="input-tools">
                                     <button class="tool-btn emoji-btn" title="表情">😊</button>
@@ -2643,8 +2715,18 @@ class VideoPlayer {
             });
         });
         
-        // 点击外部关闭浮层
+        // 缩略图点击事件（使用事件委托）
         document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('comment-image-thumbnail')) {
+                e.preventDefault();
+                const url = e.target.dataset.url;
+                const index = parseInt(e.target.dataset.index);
+                const allUrls = JSON.parse(e.target.dataset.allUrls);
+                this.openLightbox(url, allUrls, index);
+                return;
+            }
+            
+            // 点击外部关闭浮层
             this.handleOutsideClick(e);
         });
     }
@@ -2776,6 +2858,7 @@ class VideoPlayer {
         const user_liked = comment.user_liked || false;
         const id = comment.id || 'unknown';
         const replies = Array.isArray(comment.replies) ? comment.replies : [];
+        const imageUrls = Array.isArray(comment.imageUrls) ? comment.imageUrls : [];
         
         const div = document.createElement('div');
         div.className = 'comment-item';
@@ -2783,6 +2866,15 @@ class VideoPlayer {
         
         const timeAgo = this.formatTimeAgo(created_at);
         const avatar = this.generateUserAvatar(username);
+        
+        // 生成图片HTML（缩略图形式）
+        let imagesHtml = '';
+        if (imageUrls.length > 0) {
+            const imageElements = imageUrls.map((url, index) => 
+                `<img src="${this.escapeHtml(url)}" alt="评论图片" class="comment-image-thumbnail" data-url="${this.escapeHtml(url)}" data-index="${index}" data-all-urls='${JSON.stringify(imageUrls.map(u => this.escapeHtml(u)))}' />`
+            ).join('');
+            imagesHtml = `<div class="comment-images">${imageElements}</div>`;
+        }
         
         div.innerHTML = `
             <div class="comment-header">
@@ -2793,6 +2885,7 @@ class VideoPlayer {
                 </div>
             </div>
             <div class="comment-content">${this.escapeHtml(content)}</div>
+            ${imagesHtml}
             <div class="comment-actions">
                 <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
                     <span class="like-icon">${user_liked ? '❤️' : '🤍'}</span>
@@ -2831,9 +2924,19 @@ class VideoPlayer {
             const likes_count = reply.likes_count || 0;
             const user_liked = reply.user_liked || false;
             const id = reply.id || 'unknown';
+            const imageUrls = Array.isArray(reply.imageUrls) ? reply.imageUrls : [];
             
             const avatar = this.generateUserAvatar(username);
             const timeAgo = this.formatTimeAgo(created_at);
+            
+            // 生成回复图片HTML（缩略图形式）
+            let replyImagesHtml = '';
+            if (imageUrls.length > 0) {
+                const imageElements = imageUrls.map((url, index) => 
+                    `<img src="${this.escapeHtml(url)}" alt="回复图片" class="comment-image-thumbnail" data-url="${this.escapeHtml(url)}" data-index="${index}" data-all-urls='${JSON.stringify(imageUrls.map(u => this.escapeHtml(u)))}' />`
+                ).join('');
+                replyImagesHtml = `<div class="comment-images">${imageElements}</div>`;
+            }
             
             return `
                 <div class="reply-item" data-comment-id="${id}">
@@ -2845,6 +2948,7 @@ class VideoPlayer {
                         </div>
                     </div>
                     <div class="comment-content">${this.escapeHtml(content)}</div>
+                    ${replyImagesHtml}
                     <div class="comment-actions">
                         <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
                             <span class="like-icon">${user_liked ? '❤️' : '🤍'}</span>
@@ -2873,6 +2977,24 @@ class VideoPlayer {
             return;
         }
         
+        // 收集上传的图片URL（仅从专用预览容器）
+        const imageUrls = [];
+        const previewContainer = document.getElementById('composeImagePreview');
+        if (previewContainer) {
+            const imageInputs = previewContainer.querySelectorAll('input[name="image_url"]');
+            imageInputs.forEach(input => {
+                if (input.value && input.value.trim()) {
+                    imageUrls.push(input.value.trim());
+                }
+            });
+        }
+        
+        // 限制图片数量为最多3张，并给出用户提示
+        if (imageUrls.length > 3) {
+            this.showCommentError('最多只能上传3张图片，已自动保留前3张图片');
+            imageUrls.splice(3); // 只保留前3张图片
+        }
+        
         // 禁用提交按钮
         submitBtn.disabled = true;
         submitBtn.textContent = '发表中...';
@@ -2886,7 +3008,8 @@ class VideoPlayer {
                 },
                 body: JSON.stringify({
                     content: content,
-                    timestamp: this.player ? Math.floor(this.player.currentTime) : 0
+                    timestamp: this.player ? Math.floor(this.player.currentTime) : 0,
+                    imageUrls: imageUrls
                 })
             });
             
@@ -2895,11 +3018,17 @@ class VideoPlayer {
                 throw new Error(errorData.message || `HTTP ${response.status}`);
             }
             
-            // 清空输入框
+            // 清空输入框和图片
             commentInput.value = '';
             const charCount = document.querySelector('.char-count');
             if (charCount) {
                 charCount.textContent = '0/500';
+            }
+            
+            // 清空预览容器中的图片
+            if (previewContainer) {
+                previewContainer.innerHTML = '';
+                previewContainer.style.display = 'none';
             }
             
             // 重新加载评论列表
@@ -3258,26 +3387,42 @@ class VideoPlayer {
     
     // 创建图片缩略图
     createImageThumbnail(imageUrl, fileName) {
-        const commentInput = document.getElementById('commentInput');
-        if (!commentInput) return;
-        
-        // 检查是否已存在图片容器
-        let imageContainer = document.querySelector('.comment-images');
+        // 使用专用的预览容器
+        let imageContainer = document.getElementById('composeImagePreview');
         if (!imageContainer) {
+            // 兜底：如果容器不存在，在 commentInput 后创建
+            const commentInput = document.getElementById('commentInput');
+            if (!commentInput) return;
+            
             imageContainer = document.createElement('div');
-            imageContainer.className = 'comment-images';
+            imageContainer.id = 'composeImagePreview';
+            imageContainer.className = 'comment-images compose-preview';
             commentInput.parentNode.insertBefore(imageContainer, commentInput.nextSibling);
         }
+        
+        // 显示容器
+        imageContainer.style.display = 'block';
         
         const thumbnail = document.createElement('div');
         thumbnail.className = 'image-thumbnail';
         thumbnail.innerHTML = `
             <img src="${imageUrl}" alt="${fileName}" onclick="window.videoPlayerInstance.showImagePreview('${imageUrl}')">
-            <button class="remove-image" onclick="this.parentElement.remove()">&times;</button>
+            <button class="remove-image" onclick="this.parentElement.remove(); window.videoPlayerInstance.checkPreviewContainerVisibility()">&times;</button>
             <input type="hidden" name="image_url" value="${imageUrl}">
         `;
         
         imageContainer.appendChild(thumbnail);
+    }
+    
+    // 检查预览容器可见性（当删除图片后调用）
+    checkPreviewContainerVisibility() {
+        const previewContainer = document.getElementById('composeImagePreview');
+        if (previewContainer) {
+            const thumbnails = previewContainer.querySelectorAll('.image-thumbnail');
+            if (thumbnails.length === 0) {
+                previewContainer.style.display = 'none';
+            }
+        }
     }
     
     // 显示表情选择器
