@@ -2206,7 +2206,7 @@ body.modal-open { overflow: hidden; }
     border-radius: 8px;
     backdrop-filter: blur(8px);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    width: 280px;
+    width: 320px;
     max-height: 300px;
     overflow: hidden;
     z-index: 10000;
@@ -2236,7 +2236,7 @@ body.modal-open { overflow: hidden; }
 
 .emoji-grid {
     display: grid;
-    grid-template-columns: repeat(8, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     gap: 4px;
     padding: 12px;
     max-height: 240px;
@@ -2621,7 +2621,7 @@ body.modal-open { overflow: hidden; }
     }
     
     .emoji-grid {
-        grid-template-columns: repeat(7, 1fr);
+        grid-template-columns: repeat(6, 1fr);
         padding: 8px;
         max-height: 220px;
     }
@@ -2701,7 +2701,7 @@ body.modal-open { overflow: hidden; }
 
 .emoji-grid {
     display: grid;
-    grid-template-columns: repeat(8, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     gap: 4px;
     padding: 12px;
     max-height: 240px;
