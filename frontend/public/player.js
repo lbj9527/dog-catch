@@ -6,6 +6,9 @@ const REQUIRE_SUBTITLE_LOGIN = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.SUB
 const ALLOW_PLAY_WITHOUT_LOGIN = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.ALLOW_PLAY_WITHOUT_LOGIN) !== false;
 const CAPTCHA_SITE_KEY = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.CAPTCHA_SITE_KEY) || '10000000-ffff-ffff-ffff-000000000001';
 const ENABLE_CAPTCHA = (window.PLAYER_CONFIG && window.PLAYER_CONFIG.CAPTCHA_ENABLED) === true;
+
+// 图片上传数量限制常量
+const MAX_IMAGES = 5;
 class VideoPlayer {
     constructor() {
         this.player = null;
@@ -2985,10 +2988,10 @@ class VideoPlayer {
             });
         }
         
-        // 限制图片数量为最多3张，并给出用户提示
-        if (imageUrls.length > 3) {
-            this.showCommentError('最多只能上传3张图片，已自动保留前3张图片');
-            imageUrls.splice(3); // 只保留前3张图片
+        // 限制图片数量为最多5张，并给出用户提示
+        if (imageUrls.length > MAX_IMAGES) {
+            this.showCommentError(`最多只能上传${MAX_IMAGES}张图片，已自动保留前${MAX_IMAGES}张图片`);
+            imageUrls.splice(MAX_IMAGES); // 只保留前MAX_IMAGES张图片
         }
         
         // 禁用提交按钮
@@ -3308,10 +3311,10 @@ class VideoPlayer {
             if (files.length > 0) {
                 // 检查当前已有图片数量
                 const currentImages = document.querySelectorAll('#composeImagePreview .image-thumbnail').length;
-                const remainingSlots = 3 - currentImages;
+                const remainingSlots = MAX_IMAGES - currentImages;
                 
                 if (files.length > remainingSlots) {
-                    this.showCommentError(`最多只能上传3张图片，当前还可以上传${remainingSlots}张`);
+                    this.showCommentError(`最多只能上传${MAX_IMAGES}张图片，当前还可以上传${remainingSlots}张`);
                     files.splice(remainingSlots); // 只处理允许的数量
                 }
                 
@@ -3331,8 +3334,8 @@ class VideoPlayer {
     async handleImageUpload(file) {
         // 检查图片数量限制
         const currentImages = document.querySelectorAll('#composeImagePreview .image-thumbnail').length;
-        if (currentImages >= 3) {
-            this.showCommentError('最多只能上传3张图片');
+        if (currentImages >= MAX_IMAGES) {
+            this.showCommentError(`最多只能上传${MAX_IMAGES}张图片`);
             return;
         }
         

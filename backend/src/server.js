@@ -18,6 +18,9 @@ const iconv = require('iconv-lite');
 const helmet = require('helmet');
 const crypto = require('crypto');
 const Redis = require('ioredis');
+
+// 图片上传数量限制常量
+const MAX_IMAGES = 5;
 const { RateLimiterRedis } = require('rate-limiter-flexible');
 
 // 新增：为上游请求启用 Keep-Alive，以减少频繁建连的开销
@@ -2608,7 +2611,7 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
             timestamp = 0;
         }
         
-        // 处理图片URL数组 - 清洗、验证和截断（最多3张）
+        // 处理图片URL数组 - 清洗、验证和截断（最多5张）
         let imageUrlsJson = null;
         if (imageUrls && Array.isArray(imageUrls) && imageUrls.length > 0) {
             // 清洗和验证图片URL
@@ -2627,8 +2630,8 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
                 })
                 // 去重
                 .filter((url, index, arr) => arr.indexOf(url) === index)
-                // 截断为最多3张
-                .slice(0, 3);
+                // 截断为最多MAX_IMAGES张
+                .slice(0, MAX_IMAGES);
             
             if (validUrls.length > 0) {
                 imageUrlsJson = JSON.stringify(validUrls);
