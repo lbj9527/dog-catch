@@ -908,7 +908,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // 静态文件服务（用于提供字幕文件）
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// 为 /uploads 路由设置跨源资源策略，允许跨源嵌入
+app.use('/uploads', (req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+}, express.static(path.join(__dirname, '../uploads')));
 
 // 文件上传配置
 const storage = multer.diskStorage({
@@ -1149,8 +1153,9 @@ app.post('/api/upload/image', authenticateToken, imageUpload.single('image'), as
         // 保存文件
         await fs.writeFile(filePath, req.file.buffer);
         
-        // 返回URL
-        const imageUrl = `/uploads/images/${year}/${month}/${filename}`;
+        // 构造完整的绝对URL
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const imageUrl = `${baseUrl}/uploads/images/${year}/${month}/${filename}`;
         res.json({ 
             message: '图片上传成功', 
             url: imageUrl,

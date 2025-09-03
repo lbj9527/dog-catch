@@ -3045,7 +3045,10 @@ class VideoPlayer {
             </div>
         `;
         
-        document.body.appendChild(modal);
+        // 优先挂载到社交面板内，如果不可用则挂载到document.body
+        const socialPanelElement = this.socialPanel && this.socialPanel.getElement ? this.socialPanel.getElement() : null;
+        const parentElement = socialPanelElement || document.body;
+        parentElement.appendChild(modal);
         
         const searchInput = modal.querySelector('.user-search-input');
         const resultsContainer = modal.querySelector('.user-search-results');
@@ -3415,7 +3418,10 @@ class VideoPlayer {
             </div>
         `;
         
-        document.body.appendChild(modal);
+        // 优先挂载到社交面板内，如果不可用则挂载到document.body
+        const socialPanelElement = this.socialPanel && this.socialPanel.getElement ? this.socialPanel.getElement() : null;
+        const parentElement = socialPanelElement || document.body;
+        parentElement.appendChild(modal);
         
         const searchInput = modal.querySelector('.user-search-input');
         const userList = modal.querySelector('.user-list');
