@@ -350,4 +350,31 @@ export class SocialPanel {
     // 移动端样式类
     el.classList.add('mobile-inline');
   }
+
+  // 设置面板类型，控制评论数显示
+  setPanelType(type) {
+    if (!this.el || !this.commentsCountEl) return;
+    
+    // 移除所有面板类型标记
+    this.el.classList.remove('social-panel--subtitle', 'social-panel--plaza', 'social-panel--chat');
+    
+    // 添加新的面板类型标记
+    switch (type) {
+      case 'subtitle':
+        this.el.classList.add('social-panel--subtitle');
+        this.commentsCountEl.style.display = 'inline'; // 显示评论数
+        break;
+      case 'plaza':
+        this.el.classList.add('social-panel--plaza');
+        this.commentsCountEl.style.display = 'none'; // 隐藏评论数
+        break;
+      case 'chat':
+        this.el.classList.add('social-panel--chat');
+        this.commentsCountEl.style.display = 'none'; // 隐藏评论数
+        break;
+      default:
+        // 默认情况下隐藏评论数
+        this.commentsCountEl.style.display = 'none';
+    }
+  }
 }

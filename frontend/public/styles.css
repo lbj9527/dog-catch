@@ -1022,14 +1022,30 @@ body.modal-open {
     margin: 0;
 }
 
-.social-panel-comments-count {
-    font-size: 12px;
+/* 评论数显示样式 - 使用ID选择器确保优先级 */
+#socialPanelCommentsCount {
+    font-size: 8px !important;
+    line-height: 1 !important;
     color: rgba(255, 255, 255, 0.8);
     background: rgba(255, 255, 255, 0.1);
     padding: 4px 8px;
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.2);
     flex-shrink: 0;
+    font-weight: 400;
+}
+
+/* 保留类选择器作为备用 */
+.social-panel-comments-count {
+    font-size: 8px !important;
+    line-height: 1 !important;
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    flex-shrink: 0;
+    font-weight: 400;
 }
 
 /* 新增：头部右侧操作区（增高 + 关闭） */
@@ -1664,7 +1680,7 @@ body.modal-open { overflow: hidden; }
 
 /* 评论项样式 */
 .comment-item {
-    padding: 16px;
+    padding: 1px 16px 8px 16px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     background: transparent;
     transition: background-color 0.2s;
@@ -1682,7 +1698,7 @@ body.modal-open { overflow: hidden; }
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
 }
 
 .comment-meta {
@@ -1706,7 +1722,7 @@ body.modal-open { overflow: hidden; }
 }
 
 .comment-content {
-    margin: 8px 0 12px 0;
+    margin: 2px 0 4px 0;
     font-size: 14px;
     line-height: 1.5;
     color: #ddd;
@@ -1789,7 +1805,7 @@ body.modal-open { overflow: hidden; }
 }
 
 .reply-item {
-    padding: 12px 0;
+    padding: 4px 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.03);
 }
 
@@ -1947,7 +1963,7 @@ body.modal-open { overflow: hidden; }
 
 /* 单个评论项 */
 .comment-item {
-    padding: 16px;
+    padding: 1px 16px 8px 16px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     transition: background-color 0.2s;
 }
@@ -2125,7 +2141,7 @@ body.modal-open { overflow: hidden; }
     }
     
     .comment-item {
-        padding: 12px;
+        padding: 1px 12px 6px 12px;
     }
     
     .comment-item .comment-avatar {

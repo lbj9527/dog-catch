@@ -2470,24 +2470,31 @@ class VideoPlayer {
     loadSocialContent(feature) {
         let title = '';
         let content = '';
+        let panelType = '';
         
         switch (feature) {
             case 'subtitle-comment':
                 title = '字幕评论';
                 content = this.getSubtitleCommentContent();
+                panelType = 'subtitle';
                 break;
             case 'user-plaza':
                 title = '用户广场';
                 content = this.getUserPlazaContent();
+                panelType = 'plaza';
                 break;
             case 'realtime-chat':
                 title = '实时聊天';
                 content = this.getRealtimeChatContent();
+                panelType = 'chat';
                 break;
         }
         
         // 统一通过 SocialPanel 设置内容
         this.socialPanel.setContent(title, content);
+        
+        // 设置面板类型，控制评论数显示
+        this.socialPanel.setPanelType(panelType);
         
         // 如果是字幕评论功能且用户已登录，初始化评论功能
         if (feature === 'subtitle-comment' && this.isLoggedIn()) {
@@ -3042,7 +3049,7 @@ class VideoPlayer {
         const socialPanelCommentsCount = document.getElementById('socialPanelCommentsCount');
         if (socialPanelCommentsCount) {
             if (count > 0) {
-                socialPanelCommentsCount.textContent = `${count}条评论`;
+                socialPanelCommentsCount.textContent = `共有${count}条评论`;
                 socialPanelCommentsCount.style.display = 'inline';
             } else {
                 socialPanelCommentsCount.style.display = 'none';
