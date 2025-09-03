@@ -2766,8 +2766,36 @@ body.modal-open { overflow: hidden; }
     transform: scale(1.1);
 }
 
+/* ===== 图片预览同一行排列样式 ===== */
+/* 专门针对评论输入框的图片预览区域 */
+.comment-images.compose-preview {
+    display: flex;
+    flex-wrap: nowrap; /* 强制单行排列 */
+    gap: 8px;
+    align-items: center;
+    overflow-x: auto; /* 超出时水平滚动 */
+    overflow-y: hidden;
+    margin-top: 8px;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
+/* 确保预览区的图片缩略图不会被压缩 */
+.comment-images.compose-preview .image-thumbnail {
+    flex: 0 0 auto; /* 防止在单行模式下被压缩变形 */
+    width: 80px;
+    height: 80px;
+}
+
 /* 移动端适配 */
-@media (max-width: 767px) {
+@media (max-width: 768px) {
+    /* 移动端预览区图片缩小 */
+    .comment-images.compose-preview .image-thumbnail {
+        width: 60px;
+        height: 60px;
+    }
     .emoji-picker {
         width: 260px;
         max-height: 280px;

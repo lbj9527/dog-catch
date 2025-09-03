@@ -3299,13 +3299,26 @@ class VideoPlayer {
         // 创建隐藏的文件输入框
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
+        fileInput.multiple = true; // 启用多选
         fileInput.accept = 'image/jpeg,image/jpg,image/png,image/gif,image/webp';
         fileInput.style.display = 'none';
         
         fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                this.handleImageUpload(file);
+            const files = Array.from(e.target.files); // 获取所有选中文件
+            if (files.length > 0) {
+                // 检查当前已有图片数量
+                const currentImages = document.querySelectorAll('#composeImagePreview .image-thumbnail').length;
+                const remainingSlots = 3 - currentImages;
+                
+                if (files.length > remainingSlots) {
+                    this.showCommentError(`最多只能上传3张图片，当前还可以上传${remainingSlots}张`);
+                    files.splice(remainingSlots); // 只处理允许的数量
+                }
+                
+                // 批量处理文件
+                files.forEach(file => {
+                    this.handleImageUpload(file);
+                });
             }
         });
         
@@ -3316,6 +3329,13 @@ class VideoPlayer {
     
     // 处理图片上传
     async handleImageUpload(file) {
+        // 检查图片数量限制
+        const currentImages = document.querySelectorAll('#composeImagePreview .image-thumbnail').length;
+        if (currentImages >= 3) {
+            this.showCommentError('最多只能上传3张图片');
+            return;
+        }
+        
         // 验证文件
         const validation = this.validateImageFile(file);
         if (!validation.valid) {
@@ -3402,8 +3422,8 @@ class VideoPlayer {
             commentInput.parentNode.insertBefore(imageContainer, commentInput.nextSibling);
         }
         
-        // 显示容器
-        imageContainer.style.display = 'block';
+        // 显示容器（交由 CSS 控制为 flex 布局）
+        imageContainer.style.display = '';
         
         const thumbnail = document.createElement('div');
         thumbnail.className = 'image-thumbnail';
@@ -3668,87 +3688,9 @@ class VideoPlayer {
         searchInput.focus();
     }
     
-    // 触发图片上传
-    triggerImageUpload() {
-        // 创建文件输入元素
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.accept = 'image/*';
-        fileInput.style.display = 'none';
-        
-        fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                this.handleImageUpload(file);
-            }
-        });
-        
-        document.body.appendChild(fileInput);
-        fileInput.click();
-        document.body.removeChild(fileInput);
-    }
+
     
-    // 处理图片上传
-    async handleImageUpload(file) {
-        // 验证文件
-        if (!this.validateImageFile(file)) {
-            return;
-        }
-        
-        this.showUploadProgress();
-        
-        try {
-            const imageUrl = await this.uploadImage(file);
-            this.createImageThumbnail(imageUrl, file.name);
-            this.showCommentSuccess('图片上传成功！');
-        } catch (error) {
-            console.error('图片上传失败:', error);
-            this.showCommentError(error.message || '图片上传失败，请稍后重试');
-        } finally {
-            this.hideUploadProgress();
-        }
-    }
-    
-    // 验证图片文件
-    validateImageFile(file) {
-        // 检查文件类型
-        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-        if (!allowedTypes.includes(file.type)) {
-            this.showCommentError('只支持 JPG、PNG、GIF、WebP 格式的图片');
-            return false;
-        }
-        
-        // 检查文件大小（5MB）
-        const maxSize = 5 * 1024 * 1024;
-        if (file.size > maxSize) {
-            this.showCommentError('图片大小不能超过 5MB');
-            return false;
-        }
-        
-        return true;
-    }
-    
-    // 上传图片到服务器
-    async uploadImage(file) {
-        const formData = new FormData();
-        formData.append('image', file);
-        
-        const response = await fetch(`${API_BASE_URL}/api/upload/image`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${this.userToken}`
-            },
-            body: formData
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || `HTTP ${response.status}`);
-        }
-        
-        const data = await response.json();
-        return data.url;
-    }
+
 
     // 显示图片预览
     showImagePreview(imageUrl) {
