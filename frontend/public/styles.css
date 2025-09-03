@@ -1716,9 +1716,26 @@ body.modal-open { overflow: hidden; }
 
 .comment-actions {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 16px;
     padding-left: 48px;
+}
+
+.comment-actions-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.comment-actions-right {
+    display: flex;
+    align-items: center;
+}
+
+.comment-actions .timestamp {
+    font-size: 12px;
+    color: #888;
+    margin: 0;
 }
 
 .like-btn {

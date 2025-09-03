@@ -2862,17 +2862,21 @@ class VideoPlayer {
                 <div class="user-avatar" data-username="${username}">${avatar}</div>
                 <div class="comment-meta">
                     <span class="username">${username}</span>
-                    <span class="timestamp">${timeAgo}</span>
                 </div>
             </div>
             <div class="comment-content">${this.escapeHtml(content)}</div>
             ${imagesHtml}
             <div class="comment-actions">
-                <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
-                    <span class="like-icon">${user_liked ? '❤️' : '🤍'}</span>
-                    <span class="like-count">${likes_count}</span>
-                </button>
-                <button class="reply-btn" data-comment-id="${id}">回复</button>
+                <div class="comment-actions-left">
+                    <span class="timestamp">${timeAgo}</span>
+                    <button class="reply-btn" data-comment-id="${id}">回复</button>
+                </div>
+                <div class="comment-actions-right">
+                    <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
+                        <span class="like-icon">${user_liked ? '❤️' : '🤍'}</span>
+                        <span class="like-count">${likes_count}</span>
+                    </button>
+                </div>
             </div>
             ${replies.length > 0 ? this.renderReplies(replies) : ''}
         `;
@@ -2925,16 +2929,20 @@ class VideoPlayer {
                         <div class="user-avatar small" data-username="${username}">${avatar}</div>
                         <div class="comment-meta">
                             <span class="username">${username}</span>
-                            <span class="timestamp">${timeAgo}</span>
                         </div>
                     </div>
                     <div class="comment-content">${this.escapeHtml(content)}</div>
                     ${replyImagesHtml}
                     <div class="comment-actions">
-                        <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
-                            <span class="like-icon">${user_liked ? '❤️' : '🤍'}</span>
-                            <span class="like-count">${likes_count}</span>
-                        </button>
+                        <div class="comment-actions-left">
+                            <span class="timestamp">${timeAgo}</span>
+                        </div>
+                        <div class="comment-actions-right">
+                            <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
+                                <span class="like-icon">${user_liked ? '❤️' : '🤍'}</span>
+                                <span class="like-count">${likes_count}</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             `;
