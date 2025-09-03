@@ -42,6 +42,14 @@ class VideoPlayer {
             isDrawerMode: false
         };
         
+        // 回复模式状态管理
+        this.replyingToCommentId = null;
+        this.replyingToUser = null;
+        
+        // 楼中楼回复状态管理
+        this.repliesCache = new Map(); // key: commentId, value: {items: [], page, totalPages, total}
+        this.repliesExpanded = new Set(); // 已展开的评论ID集合
+        
         // 新增：社交面板实例
         this.socialPanel = new SocialPanel({
             onClose: () => this.closeSocialMode(),
@@ -2541,6 +2549,12 @@ class VideoPlayer {
                 <div class="comment-compose">
                     <div class="compose-input-wrapper">
                         <div class="input-container">
+                            <!-- 回复提示条 -->
+                            <div id="replyHint" class="reply-hint" style="display: none;">
+                                <span class="reply-prefix">回复 </span>
+                                <span class="reply-username">@用户名</span>
+                                <button class="reply-cancel-btn" type="button">取消</button>
+                            </div>
                             <textarea 
                                 id="commentInput" 
                                 placeholder="善语结善缘，恶言伤人心" 
@@ -2717,6 +2731,44 @@ class VideoPlayer {
                 return;
             }
             
+            // 回复按钮点击事件（使用事件委托）
+            if (e.target.classList.contains('comment-reply-btn')) {
+                e.preventDefault();
+                const commentId = e.target.dataset.commentId;
+                const username = e.target.dataset.username;
+                if (commentId && username) {
+                    this.enterReplyMode(commentId, username);
+                }
+                return;
+            }
+            
+            // 取消回复按钮点击事件
+            if (e.target.classList.contains('reply-cancel-btn')) {
+                e.preventDefault();
+                this.exitReplyMode();
+                return;
+            }
+            
+            // 回复展开/收起按钮点击事件
+            if (e.target.classList.contains('replies-toggle-btn')) {
+                e.preventDefault();
+                const commentId = e.target.dataset.commentId;
+                if (commentId) {
+                    this.toggleReplies(commentId);
+                }
+                return;
+            }
+            
+            // 加载更多回复按钮点击事件
+            if (e.target.classList.contains('load-more-replies-btn')) {
+                e.preventDefault();
+                const commentId = e.target.dataset.commentId;
+                if (commentId) {
+                    this.loadMoreReplies(commentId);
+                }
+                return;
+            }
+            
             // 点击外部关闭浮层
             this.handleOutsideClick(e);
         });
@@ -2850,6 +2902,7 @@ class VideoPlayer {
         const id = comment.id || 'unknown';
         const replies = Array.isArray(comment.replies) ? comment.replies : [];
         const imageUrls = Array.isArray(comment.imageUrls) ? comment.imageUrls : [];
+        const repliesCount = Number(comment.repliesCount ?? comment.replies_count ?? (Array.isArray(comment.replies) ? comment.replies.length : 0)) || 0;
         
         const div = document.createElement('div');
         div.className = 'comment-item';
@@ -2879,7 +2932,8 @@ class VideoPlayer {
             <div class="comment-actions">
                 <div class="comment-actions-left">
                     <span class="timestamp">${timeAgo}</span>
-                    <button class="reply-btn" data-comment-id="${id}">回复</button>
+                    <button class="comment-reply-btn" data-comment-id="${id}" data-username="${username}">回复</button>
+                    ${repliesCount > 0 ? `<button class="replies-toggle-btn" data-comment-id="${id}" data-count="${repliesCount}">查看 ${repliesCount} 条回复</button>` : ''}
                 </div>
                 <div class="comment-actions-right">
                     <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
@@ -2888,7 +2942,7 @@ class VideoPlayer {
                     </button>
                 </div>
             </div>
-            ${replies.length > 0 ? this.renderReplies(replies) : ''}
+            <div class="replies-section" id="replies-${id}" data-loaded="false" data-page="0" style="display:none"></div>
         `;
         
         // 绑定点赞事件
@@ -3008,7 +3062,8 @@ class VideoPlayer {
                 body: JSON.stringify({
                     content: content,
                     timestamp: this.player ? Math.floor(this.player.currentTime) : 0,
-                    imageUrls: imageUrls
+                    imageUrls: imageUrls,
+                    parentCommentId: this.replyingToCommentId || null
                 })
             });
             
@@ -3016,6 +3071,8 @@ class VideoPlayer {
                 const errorData = await response.json();
                 throw new Error(errorData.message || `HTTP ${response.status}`);
             }
+            
+            const responseData = await response.json();
             
             // 清空输入框和图片
             commentInput.value = '';
@@ -3030,8 +3087,15 @@ class VideoPlayer {
                 previewContainer.style.display = 'none';
             }
             
-            // 重新加载评论列表
-            await this.loadComments();
+            // 处理回复或顶级评论
+            if (this.replyingToCommentId) {
+                // 回复模式：即时插入新回复
+                await this.handleNewReply(this.replyingToCommentId, responseData);
+                this.exitReplyMode();
+            } else {
+                // 顶级评论：重新加载评论列表
+                await this.loadComments();
+            }
             
             // 显示成功提示
             this.showCommentSuccess('评论发表成功！');
@@ -3822,6 +3886,261 @@ class VideoPlayer {
         if (this.currentFocusTrap) {
             this.currentFocusTrap();
             this.currentFocusTrap = null;
+        }
+    }
+    
+    // ===== 回复模式相关方法 =====
+    
+    // 进入回复模式
+    enterReplyMode(commentId, username) {
+        this.replyingToCommentId = commentId;
+        this.replyingToUser = username;
+        
+        // 显示回复提示条
+        const replyHint = document.querySelector('.reply-hint');
+        const replyUsername = document.querySelector('.reply-username');
+        
+        if (replyHint && replyUsername) {
+            replyUsername.textContent = username;
+            replyHint.style.display = 'flex';
+        }
+        
+        // 聚焦到输入框
+        const commentInput = document.getElementById('commentInput');
+        if (commentInput) {
+            commentInput.focus();
+            commentInput.placeholder = `回复 @${username}...`;
+        }
+    }
+    
+    // 退出回复模式
+    exitReplyMode() {
+        this.replyingToCommentId = null;
+        this.replyingToUser = null;
+        
+        // 隐藏回复提示条
+        const replyHint = document.querySelector('.reply-hint');
+        if (replyHint) {
+            replyHint.style.display = 'none';
+        }
+        
+        // 恢复输入框默认状态
+        const commentInput = document.getElementById('commentInput');
+        if (commentInput) {
+            commentInput.placeholder = '发表评论...';
+        }
+    }
+    
+    // 获取指定评论的回复列表
+    async fetchReplies(commentId, page = 1) {
+        try {
+            const response = await fetch(`${API_BASE_URL.replace(/\/$/, '')}/api/comments/${encodeURIComponent(commentId)}/replies?page=${page}&limit=10`, {
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
+            }
+            
+            const data = await response.json();
+            
+            return {
+                items: data.data || [],
+                page: data.pagination?.page || page,
+                totalPages: data.pagination?.totalPages || 1,
+                total: data.pagination?.total || 0,
+                hasMore: page < (data.pagination?.totalPages || 1)
+            };
+        } catch (error) {
+            console.error('获取回复失败:', error);
+            return {
+                items: [],
+                page: 1,
+                totalPages: 1,
+                total: 0,
+                hasMore: false
+            };
+        }
+    }
+    
+    // 切换回复展开/收起状态
+    async toggleReplies(commentId) {
+        const isExpanded = this.repliesExpanded.has(commentId);
+        
+        if (isExpanded) {
+            // 收起回复
+            this.repliesExpanded.delete(commentId);
+            const repliesSection = document.querySelector(`[data-comment-id="${commentId}"] .replies-section`);
+            if (repliesSection) {
+                repliesSection.innerHTML = '';
+                repliesSection.style.display = 'none';
+            }
+            
+            // 获取真实的回复总数
+            let totalReplies = 0;
+            const cached = this.repliesCache.get(commentId);
+            if (cached && cached.total) {
+                totalReplies = cached.total;
+            } else {
+                // 回退到按钮的data-count属性
+                const toggleBtn = document.querySelector(`[data-comment-id="${commentId}"] .replies-toggle-btn`);
+                if (toggleBtn && toggleBtn.dataset.count) {
+                    totalReplies = parseInt(toggleBtn.dataset.count, 10) || 0;
+                }
+            }
+            
+            this.updateRepliesToggleUi(commentId, false, totalReplies);
+        } else {
+            // 展开回复
+            this.repliesExpanded.add(commentId);
+            await this.loadRepliesForComment(commentId, 1);
+        }
+    }
+    
+    // 为指定评论加载回复
+    async loadRepliesForComment(commentId, page = 1) {
+        const repliesData = await this.fetchReplies(commentId, page);
+        
+        // 更新缓存
+        if (page === 1) {
+            this.repliesCache.set(commentId, repliesData);
+        } else {
+            const cached = this.repliesCache.get(commentId) || { items: [] };
+            cached.items = [...cached.items, ...repliesData.items];
+            cached.page = repliesData.page;
+            cached.totalPages = repliesData.totalPages;
+            cached.total = repliesData.total;
+            cached.hasMore = repliesData.hasMore;
+            this.repliesCache.set(commentId, cached);
+        }
+        
+        // 渲染回复
+        this.paintReplies(commentId);
+        
+        // 更新切换按钮UI
+        const cached = this.repliesCache.get(commentId);
+        this.updateRepliesToggleUi(commentId, true, cached.total);
+    }
+    
+    // 加载更多回复
+    async loadMoreReplies(commentId) {
+        const cached = this.repliesCache.get(commentId);
+        if (!cached || !cached.hasMore) return;
+        
+        const nextPage = cached.page + 1;
+        await this.loadRepliesForComment(commentId, nextPage);
+    }
+    
+    // 渲染回复列表
+    paintReplies(commentId) {
+        const cached = this.repliesCache.get(commentId);
+        if (!cached || !cached.items.length) return;
+        
+        const repliesSection = document.querySelector(`[data-comment-id="${commentId}"] .replies-section`);
+        if (!repliesSection) return;
+        
+        let html = '<div class="replies-container">';
+        
+        // 渲染回复项
+        cached.items.forEach(reply => {
+            html += this.renderReplyItem(reply);
+        });
+        
+        // 添加"加载更多"按钮
+        if (cached.hasMore) {
+            html += `
+                <div class="load-more-replies">
+                    <button class="load-more-replies-btn" data-comment-id="${commentId}">
+                        加载更多回复 (${cached.total - cached.items.length})
+                    </button>
+                </div>
+            `;
+        }
+        
+        html += '</div>';
+        repliesSection.innerHTML = html;
+        repliesSection.style.display = 'block';
+    }
+    
+    // 渲染单个回复项
+    renderReplyItem(reply) {
+        const timeAgo = this.formatTimeAgo(reply.createdAt ?? reply.created_at);
+        return `
+            <div class="reply-item" data-reply-id="${reply.id}">
+                <div class="reply-content">
+                    <div class="reply-header">
+                        <span class="reply-author">${this.escapeHtml(reply.username)}</span>
+                        <span class="reply-time">${timeAgo}</span>
+                    </div>
+                    <div class="reply-text">${this.escapeHtml(reply.content)}</div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // 更新回复切换按钮UI
+    updateRepliesToggleUi(commentId, isExpanded, totalReplies) {
+        const toggleBtn = document.querySelector(`[data-comment-id="${commentId}"] .replies-toggle-btn`);
+        if (!toggleBtn) return;
+        
+        if (totalReplies === 0) {
+            toggleBtn.style.display = 'none';
+            return;
+        }
+        
+        toggleBtn.style.display = 'block';
+        toggleBtn.textContent = isExpanded 
+            ? `收起回复 (${totalReplies})` 
+            : `查看 ${totalReplies} 条回复`;
+        toggleBtn.setAttribute('data-expanded', isExpanded.toString());
+        
+        // 回填data-count属性，确保数据一致性
+        toggleBtn.dataset.count = String(totalReplies);
+    }
+    
+    // 处理新回复的即时插入
+    async handleNewReply(parentCommentId, newReplyData) {
+        // 确保回复区域已展开
+        if (!this.repliesExpanded.has(parentCommentId)) {
+            this.repliesExpanded.add(parentCommentId);
+        }
+        
+        // 更新缓存中的回复数据
+        let cached = this.repliesCache.get(parentCommentId);
+        if (!cached) {
+            // 如果没有缓存，创建新的缓存项
+            cached = {
+                items: [],
+                page: 1,
+                totalPages: 1,
+                total: 0,
+                hasMore: false
+            };
+        }
+        
+        // 将新回复添加到缓存的开头（最新回复在前）
+        cached.items.unshift(newReplyData);
+        cached.total += 1;
+        this.repliesCache.set(parentCommentId, cached);
+        
+        // 重新渲染回复列表
+        this.paintReplies(parentCommentId);
+        
+        // 更新父评论的回复数显示
+        const parentComment = document.querySelector(`[data-comment-id="${parentCommentId}"]`);
+        if (parentComment) {
+            // 更新回复数显示
+            const repliesCountSpan = parentComment.querySelector('.replies-count');
+            if (repliesCountSpan) {
+                const currentCount = parseInt(repliesCountSpan.textContent) || 0;
+                repliesCountSpan.textContent = currentCount + 1;
+            }
+            
+            // 更新切换按钮UI
+            this.updateRepliesToggleUi(parentCommentId, true, cached.total);
         }
     }
     

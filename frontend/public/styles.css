@@ -1511,6 +1511,50 @@ body.modal-open { overflow: hidden; }
     color: #888;
 }
 
+/* 回复提示条样式 */
+.reply-hint {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: rgba(74, 158, 255, 0.1);
+    border-bottom: 1px solid rgba(74, 158, 255, 0.2);
+    font-size: 13px;
+    color: #ccc;
+}
+
+.reply-prefix {
+    color: #888;
+}
+
+.reply-username {
+    color: #4a9eff;
+    font-weight: 500;
+    margin-right: auto;
+    margin-left: 2px;
+}
+
+.reply-cancel-btn {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    min-width: 28px;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.reply-cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
 .input-actions {
     display: flex;
     justify-content: space-between;
@@ -3097,5 +3141,137 @@ body.modal-open { overflow: hidden; }
     
     .user-search-content {
         max-width: 450px;
+    }
+}
+
+/* 移动端适配 */
+@media (max-width: 767px) {
+    .reply-hint {
+        padding: 4px 8px;
+        font-size: 12px;
+    }
+    
+    .reply-cancel-btn {
+        min-width: 24px;
+        min-height: 24px;
+        font-size: 11px;
+        padding: 1px 4px;
+    }
+}
+
+/* 楼中楼回复样式 */
+.replies-toggle-btn {
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 8px;
+    margin-top: 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.replies-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.replies-section {
+    margin-top: 12px;
+}
+
+.replies-container {
+    border-left: 2px solid rgba(255, 255, 255, 0.1);
+    margin-left: 20px;
+    padding-left: 16px;
+}
+
+.reply-item {
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    border-left: 3px solid rgba(255, 255, 255, 0.2);
+}
+
+.reply-content {
+    color: #fff;
+}
+
+.reply-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.reply-author {
+    font-weight: 600;
+    color: #4CAF50;
+    font-size: 13px;
+}
+
+.reply-time {
+    font-size: 11px;
+    color: #999;
+}
+
+.reply-text {
+    font-size: 13px;
+    line-height: 1.4;
+    color: #e0e0e0;
+    word-wrap: break-word;
+}
+
+.load-more-replies {
+    margin-top: 12px;
+    text-align: center;
+}
+
+.load-more-replies-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    padding: 6px 16px;
+    border-radius: 16px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.load-more-replies-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+    .replies-container {
+        margin-left: 12px;
+        padding-left: 12px;
+    }
+    
+    .reply-item {
+        padding: 6px 10px;
+        margin-bottom: 8px;
+    }
+    
+    .reply-author {
+        font-size: 12px;
+    }
+    
+    .reply-text {
+        font-size: 12px;
+    }
+    
+    .replies-toggle-btn {
+        font-size: 11px;
+        padding: 3px 6px;
+    }
+    
+    .load-more-replies-btn {
+        font-size: 11px;
+        padding: 5px 12px;
     }
 }
