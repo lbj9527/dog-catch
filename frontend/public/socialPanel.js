@@ -34,6 +34,13 @@ export class SocialPanel {
     title.id = 'socialPanelTitle';
     title.textContent = '';
 
+    // 中间评论数显示
+    const commentsCount = document.createElement('span');
+    commentsCount.className = 'social-panel-comments-count';
+    commentsCount.id = 'socialPanelCommentsCount';
+    commentsCount.textContent = '';
+    commentsCount.style.display = 'none'; // 默认隐藏，有评论时显示
+
     // 右侧操作区容器
     const actions = document.createElement('div');
     actions.className = 'social-panel-actions';
@@ -66,8 +73,9 @@ export class SocialPanel {
     const content = document.createElement('div');
     content.className = 'social-panel-content';
 
-    // 组装结构：标题在左，右侧 actions 中包含 增高 与 关闭
+    // 组装结构：标题在左，评论数在中间，右侧 actions 中包含 增高 与 关闭
     header.appendChild(title);
+    header.appendChild(commentsCount);
     actions.appendChild(expandBtn);
     actions.appendChild(closeBtn);
     header.appendChild(actions);
@@ -78,6 +86,7 @@ export class SocialPanel {
     this.el = panel;
     this.headerEl = header;
     this.titleEl = title;
+    this.commentsCountEl = commentsCount;
     this.closeBtn = closeBtn;
     this.contentEl = content;
     this.expandBtn = expandBtn;

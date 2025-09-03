@@ -2514,18 +2514,7 @@ class VideoPlayer {
 
         return `
             <div class="subtitle-comments">
-                <!-- 顶部工具栏 - 显示评论数统计 -->
-                <div class="comments-toolbar">
-                    <div class="comments-count">
-                        <span id="commentsCountText">571条评论</span>
-                    </div>
-                    <div class="sort-options">
-                        <button class="sort-btn active" data-sort="newest">最新</button>
-                        <button class="sort-btn" data-sort="oldest">最早</button>
-                    </div>
-                </div>
-
-                <!-- 中间评论列表区域 -->
+                <!-- 评论列表区域 -->
                 <div class="comments-container">
                     <div id="commentsList" class="comments-list">
                         <div class="loading-comments">
@@ -2541,7 +2530,6 @@ class VideoPlayer {
                 <!-- 底部发表评论区域 -->
                 <div class="comment-compose">
                     <div class="compose-input-wrapper">
-                        <div class="user-avatar" data-username="${this.getCurrentUsername()}">${this.generateUserAvatar(this.getCurrentUsername())}</div>
                         <div class="input-container">
                             <textarea 
                                 id="commentInput" 
@@ -2650,7 +2638,6 @@ class VideoPlayer {
     bindCommentEvents() {
         const commentInput = document.getElementById('commentInput');
         const submitBtn = document.getElementById('submitComment');
-        const sortBtns = document.querySelectorAll('.sort-btn');
         const emojiBtn = document.querySelector('.emoji-btn');
         const mentionBtn = document.querySelector('.mention-btn');
         const imageBtn = document.querySelector('.image-btn');
@@ -2707,13 +2694,7 @@ class VideoPlayer {
             });
         }
         
-        // 排序按钮
-        sortBtns.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const sortType = e.target.dataset.sort;
-                this.changeSortOrder(sortType);
-            });
-        });
+
         
         // 缩略图点击事件（使用事件委托）
         document.addEventListener('click', (e) => {
@@ -2732,14 +2713,14 @@ class VideoPlayer {
     }
 
     // 加载评论列表
-    async loadComments(page = 1, sort = 'newest') {
+    async loadComments(page = 1) {
         if (!this.currentVideoId) {
             console.warn('当前视频ID为空，无法加载评论');
             return;
         }
         
         try {
-            const response = await fetch(`${API_BASE_URL}/api/subtitles/${this.currentVideoId}/comments?page=${page}&sort=${sort}`, {
+            const response = await fetch(`${API_BASE_URL}/api/subtitles/${this.currentVideoId}/comments?page=${page}&sort=newest`, {
                 headers: {
                     'Authorization': `Bearer ${this.userToken}`
                 }
@@ -2788,7 +2769,7 @@ class VideoPlayer {
                                    ? raw.pagination.page < raw.pagination.total_pages
                                    : false);
                 loadMoreBtn.style.display = hasMore ? 'block' : 'none';
-                loadMoreBtn.onclick = hasMore ? (() => this.loadComments(page + 1, sort)) : null;
+                loadMoreBtn.onclick = hasMore ? (() => this.loadComments(page + 1)) : null;
             }
             
         } catch (error) {
@@ -3049,9 +3030,15 @@ class VideoPlayer {
 
     // 更新评论数统计
     updateCommentsCount(count) {
-        const commentsCountText = document.getElementById('commentsCountText');
-        if (commentsCountText) {
-            commentsCountText.textContent = `${count}条评论`;
+        // 更新社交面板顶部工具栏中的评论数显示
+        const socialPanelCommentsCount = document.getElementById('socialPanelCommentsCount');
+        if (socialPanelCommentsCount) {
+            if (count > 0) {
+                socialPanelCommentsCount.textContent = `${count}条评论`;
+                socialPanelCommentsCount.style.display = 'inline';
+            } else {
+                socialPanelCommentsCount.style.display = 'none';
+            }
         }
     }
 
@@ -3096,17 +3083,7 @@ class VideoPlayer {
         }
     }
 
-    // 改变排序顺序
-    changeSortOrder(sortType) {
-        // 更新按钮状态
-        document.querySelectorAll('.sort-btn').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        document.querySelector(`[data-sort="${sortType}"]`).classList.add('active');
-        
-        // 重新加载评论
-        this.loadComments(1, sortType);
-    }
+
 
     // 显示评论错误信息
     showCommentError(message) {
