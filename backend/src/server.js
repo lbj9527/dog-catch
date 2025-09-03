@@ -2417,7 +2417,7 @@ app.patch('/api/admin/wishlists/:id', authenticateAdminToken, async (req, res) =
 
 // 字幕评论相关API
 // 获取指定视频的评论列表
-app.get('/api/subtitles/:videoId/comments', async (req, res) => {
+app.get('/api/subtitles/:videoId/comments', authenticateAnyToken, async (req, res) => {
     try {
         const { videoId } = req.params;
         const page = Math.max(1, parseInt(req.query.page) || 1);
@@ -2436,6 +2436,9 @@ app.get('/api/subtitles/:videoId/comments', async (req, res) => {
         );
         const total = countResult ? countResult.total : 0;
         
+        // 获取当前用户ID（如果已登录）
+        const currentUserId = req.user ? req.user.id : null;
+        
         // 获取评论列表（只获取顶级评论，回复通过单独接口获取）
         const comments = await getAllAsync(`
             SELECT 
@@ -2449,13 +2452,15 @@ app.get('/api/subtitles/:videoId/comments', async (req, res) => {
                 sc.replies_count,
                 sc.image_urls,
                 sc.created_at,
-                sc.updated_at
+                sc.updated_at,
+                CASE WHEN cl.user_id IS NOT NULL THEN 1 ELSE 0 END as user_liked
             FROM subtitle_comments sc
             LEFT JOIN users u ON sc.user_id = u.id
+            LEFT JOIN comment_likes cl ON sc.id = cl.comment_id AND cl.user_id = ?
             WHERE sc.video_id = ? AND sc.status = "approved" AND sc.parent_id IS NULL
             ORDER BY sc.created_at ${sortBy}
             LIMIT ? OFFSET ?
-        `, [videoId, limit, offset]);
+        `, [currentUserId, videoId, limit, offset]);
         
         // 格式化返回数据
         const formattedComments = comments.map(comment => ({
@@ -2469,7 +2474,8 @@ app.get('/api/subtitles/:videoId/comments', async (req, res) => {
             repliesCount: comment.replies_count || 0,
             imageUrls: comment.image_urls ? JSON.parse(comment.image_urls) : [],
             createdAt: comment.created_at,
-            updatedAt: comment.updated_at
+            updatedAt: comment.updated_at,
+            userLiked: comment.user_liked === 1
         }));
         
         res.json({
@@ -2718,7 +2724,17 @@ app.post('/api/comments/:commentId/like', authenticateUserToken, async (req, res
                 [commentId]
             );
             
-            res.json({ message: '取消点赞成功', liked: false });
+            // 获取更新后的点赞数
+            const updatedComment = await getAsync(
+                'SELECT likes_count FROM subtitle_comments WHERE id = ?',
+                [commentId]
+            );
+            
+            res.json({ 
+                message: '取消点赞成功', 
+                liked: false,
+                likes_count: updatedComment ? updatedComment.likes_count : 0
+            });
         } else {
             // 添加点赞
             await runAsync(
@@ -2730,7 +2746,17 @@ app.post('/api/comments/:commentId/like', authenticateUserToken, async (req, res
                 [commentId]
             );
             
-            res.json({ message: '点赞成功', liked: true });
+            // 获取更新后的点赞数
+            const updatedComment = await getAsync(
+                'SELECT likes_count FROM subtitle_comments WHERE id = ?',
+                [commentId]
+            );
+            
+            res.json({ 
+                message: '点赞成功', 
+                liked: true,
+                likes_count: updatedComment ? updatedComment.likes_count : 0
+            });
         }
     } catch (error) {
         console.error('点赞操作失败:', error);

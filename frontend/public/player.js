@@ -2843,7 +2843,7 @@ class VideoPlayer {
         const content = comment.content || '';
         const created_at = comment.createdAt || comment.created_at || new Date().toISOString();
         const likes_count = comment.likesCount || comment.likes_count || 0;
-        const user_liked = comment.user_liked || false;
+        const user_liked = comment.userLiked || comment.user_liked || false;
         const id = comment.id || 'unknown';
         const replies = Array.isArray(comment.replies) ? comment.replies : [];
         const imageUrls = Array.isArray(comment.imageUrls) ? comment.imageUrls : [];
