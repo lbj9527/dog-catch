@@ -662,17 +662,7 @@ async function deleteUserDataCascade(userId) {
                         );
                     }
                     
-                    // 9. 精确回填评论点赞数
-                    for (const like of userCommentLikes) {
-                        const actualCount = await getAsync(
-                            'SELECT COUNT(1) as count FROM comment_likes WHERE comment_id = ?',
-                            [like.comment_id]
-                        );
-                        await runAsync(
-                            'UPDATE subtitle_comments SET likes_count = ? WHERE id = ?',
-                            [actualCount.count || 0, like.comment_id]
-                        );
-                    }
+                    // 9. 删除评论点赞记录（不再需要回填likes_count）
                     
                     // 10. 精确回填父评论的回复数
                     for (const parent of affectedParentComments) {
@@ -2470,7 +2460,7 @@ app.get('/api/subtitles/:videoId/comments', authenticateAnyToken, async (req, re
                 sc.content,
                 sc.timestamp,
                 sc.parent_id as parent_comment_id,
-                sc.likes_count,
+                COUNT(cl2.comment_id) as likes_count,
                 sc.replies_count,
                 sc.image_urls,
                 sc.location_country_code,
@@ -2482,7 +2472,9 @@ app.get('/api/subtitles/:videoId/comments', authenticateAnyToken, async (req, re
             FROM subtitle_comments sc
             LEFT JOIN users u ON sc.user_id = u.id
             LEFT JOIN comment_likes cl ON sc.id = cl.comment_id AND cl.user_id = ?
+            LEFT JOIN comment_likes cl2 ON sc.id = cl2.comment_id
             WHERE sc.video_id = ? AND sc.status = "approved" AND sc.parent_id IS NULL
+            GROUP BY sc.id, sc.user_id, u.username, sc.content, sc.timestamp, sc.parent_id, sc.replies_count, sc.image_urls, sc.location_country_code, sc.location_region, sc.location_city, sc.created_at, sc.updated_at, cl.user_id
             ORDER BY sc.created_at ${sortBy}
             LIMIT ? OFFSET ?
         `, [currentUserId, videoId, limit, offset]);
@@ -2551,7 +2543,7 @@ app.get('/api/comments/:commentId/replies', async (req, res) => {
                 sc.content,
                 sc.timestamp,
                 sc.parent_id as parent_comment_id,
-                sc.likes_count,
+                COUNT(cl.comment_id) as likes_count,
                 sc.image_urls,
                 sc.location_country_code,
                 sc.location_region,
@@ -2560,7 +2552,9 @@ app.get('/api/comments/:commentId/replies', async (req, res) => {
                 strftime('%Y-%m-%dT%H:%M:%SZ', sc.updated_at) as updatedAt
             FROM subtitle_comments sc
             LEFT JOIN users u ON sc.user_id = u.id
+            LEFT JOIN comment_likes cl ON sc.id = cl.comment_id
             WHERE sc.parent_id = ? AND sc.status = "approved"
+            GROUP BY sc.id, sc.user_id, u.username, sc.content, sc.timestamp, sc.parent_id, sc.image_urls, sc.location_country_code, sc.location_region, sc.location_city, sc.created_at, sc.updated_at
             ORDER BY sc.created_at ASC
             LIMIT ? OFFSET ?
         `, [commentId, limit, offset]);
@@ -2829,7 +2823,6 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
                 sc.content,
                 sc.timestamp,
                 sc.parent_id as parent_comment_id,
-                sc.likes_count,
                 sc.replies_count,
                 sc.image_urls,
                 sc.location_country_code,
@@ -2860,7 +2853,7 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
                 content: newComment.content,
                 timestampSeconds: newComment.timestamp,
                 parentCommentId: newComment.parent_comment_id,
-                likesCount: newComment.likes_count || 0,
+                likesCount: 0,
                 repliesCount: newComment.replies_count || 0,
                 imageUrls: newComment.image_urls ? JSON.parse(newComment.image_urls) : [],
                 locationDisplay: newComment.locationDisplay,
@@ -2902,23 +2895,16 @@ app.post('/api/comments/:commentId/like', authenticateUserToken, async (req, res
         if (existingLike) {
             // 取消点赞：仅当确实删除了一条记录时才递减计数，避免竞争条件导致 likes_count 变负
             const del = await runAsync('DELETE FROM comment_likes WHERE id = ?', [existingLike.id]);
-            if (del && del.changes > 0) {
-                await runAsync(
-                    'UPDATE subtitle_comments SET likes_count = CASE WHEN likes_count > 0 THEN likes_count - 1 ELSE 0 END WHERE id = ?',
-                    [commentId]
-                );
-            }
-            
-            // 获取更新后的点赞数
-            const updatedComment = await getAsync(
-                'SELECT likes_count FROM subtitle_comments WHERE id = ?',
+            // 获取实时点赞数
+            const likesCount = await getAsync(
+                'SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?',
                 [commentId]
             );
             
             return res.json({ 
                 message: '取消点赞成功', 
                 liked: false,
-                likes_count: updatedComment ? updatedComment.likes_count : 0
+                likes_count: likesCount ? likesCount.count : 0
             });
         } else {
             // 添加点赞：处理并发导致的唯一约束冲突，保证幂等，不返回500
@@ -2927,34 +2913,28 @@ app.post('/api/comments/:commentId/like', authenticateUserToken, async (req, res
                     'INSERT INTO comment_likes (user_id, comment_id) VALUES (?, ?)',
                     [userId, commentId]
                 );
-                if (ins && ins.changes > 0) {
-                    await runAsync(
-                        'UPDATE subtitle_comments SET likes_count = likes_count + 1 WHERE id = ?',
-                        [commentId]
-                    );
-                }
-                
-                const updatedComment = await getAsync(
-                    'SELECT likes_count FROM subtitle_comments WHERE id = ?',
+                // 获取实时点赞数
+                const likesCount = await getAsync(
+                    'SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?',
                     [commentId]
                 );
                 
                 return res.json({ 
                     message: '点赞成功', 
                     liked: true,
-                    likes_count: updatedComment ? updatedComment.likes_count : 0
+                    likes_count: likesCount ? likesCount.count : 0
                 });
             } catch (e) {
                 // UNIQUE 冲突（并发重复点击或快速多次请求）：视为已成功点赞
                 if (String(e && e.message).includes('UNIQUE') || String(e && e.code).includes('SQLITE_CONSTRAINT')) {
-                    const updatedComment = await getAsync(
-                        'SELECT likes_count FROM subtitle_comments WHERE id = ?',
+                    const likesCount = await getAsync(
+                        'SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?',
                         [commentId]
                     );
                     return res.json({
                         message: '已点赞',
                         liked: true,
-                        likes_count: updatedComment ? updatedComment.likes_count : 0
+                        likes_count: likesCount ? likesCount.count : 0
                     });
                 }
                 throw e;
