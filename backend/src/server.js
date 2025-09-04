@@ -2668,25 +2668,55 @@ async function parseIpLocation(ip) {
 // 格式化地理位置显示文本
 function formatLocationDisplay(countryCode, region, city) {
     if (!countryCode) return null;
-    
-    // 中国大陆：仅显示城市，无城市则显示省份
-    if (countryCode === 'CN') {
-        return city || region || null;
+
+    const code = String(countryCode).toUpperCase();
+
+    // 常见国家/地区中文名映射（未覆盖到的用国家代码回退）
+    const COUNTRY_NAME_ZH = {
+        CN: '中国', HK: '香港', MO: '澳门', TW: '台湾',
+        US: '美国', GB: '英国', JP: '日本', KR: '韩国', DE: '德国', FR: '法国',
+        CA: '加拿大', AU: '澳大利亚', SG: '新加坡', RU: '俄罗斯', IN: '印度',
+        TH: '泰国', MY: '马来西亚', VN: '越南', PH: '菲律宾', ID: '印度尼西亚',
+        ES: '西班牙', IT: '意大利', BR: '巴西', MX: '墨西哥', NL: '荷兰',
+        SE: '瑞典', NO: '挪威', DK: '丹麦', FI: '芬兰', PL: '波兰', TR: '土耳其',
+        AE: '阿联酋'
+    };
+
+    const countryName = COUNTRY_NAME_ZH[code] || code;
+
+    const norm = (s) => (s || '').trim();
+    let r = norm(region);
+    let c = norm(city);
+
+    // 基础去重：城市与地区完全相同则只保留一个
+    if (c && r && c.replace(/\s+/g, '') === r.replace(/\s+/g, '')) {
+        c = '';
     }
-    
-    // 台湾、香港、澳门：显示"地区 + 城市"，无城市则仅显示地区
-    if (countryCode === 'TW') {
-        return city ? `台湾 ${city}` : '台湾';
+
+    // 中国大陆：仅显示城市，无城市则显示省份（不附加"国家"前缀）
+    if (code === 'CN') {
+        return c || r || null;
     }
-    if (countryCode === 'HK') {
-        return city ? `香港 ${city}` : '香港';
+
+    // 港澳台：避免"香港 香港/澳门 澳门/台湾 台湾"重复
+    if (code === 'HK' || code === 'MO' || code === 'TW') {
+        const leaf = c || r; // 优先城市
+        if (!leaf) return countryName;
+        const leafNorm = leaf.replace(/\s+/g, '');
+        if (countryName === '香港' && /香港/.test(leafNorm)) return '香港';
+        if (countryName === '澳门' && /澳门/.test(leafNorm)) return '澳门';
+        if (countryName === '台湾' && /台湾/.test(leafNorm)) return '台湾';
+        return `${countryName} ${leaf}`;
     }
-    if (countryCode === 'MO') {
-        return city ? `澳门 ${city}` : '澳门';
-    }
-    
-    // 其他地区不显示位置信息
-    return null;
+
+    // 其他国家/地区：显示"国家 [地区] [城市]"，并做简单去重
+    const parts = [countryName];
+    const eq = (a, b) => a && b && a.replace(/\s+/g, '') === b.replace(/\s+/g, '');
+
+    if (r && !eq(r, countryName)) parts.push(r);
+    if (c && !eq(c, r)) parts.push(c);
+
+    return parts.join(' ');
 }
 
 // 发表评论
