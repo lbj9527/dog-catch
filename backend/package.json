@@ -8,25 +8,32 @@
     "dev": "nodemon src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["video", "subtitle", "api", "express"],
+  "keywords": [
+    "video",
+    "subtitle",
+    "api",
+    "express"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "multer": "^1.4.5-lts.1",
-    "jsonwebtoken": "^9.0.2",
-    "bcryptjs": "^2.4.3",
-    "sqlite3": "^5.1.6",
-    "path": "^0.12.7",
-    "socks-proxy-agent": "^8.0.2",
     "ass-to-vtt": "^1.2.0",
-    "iconv-lite": "^0.6.3",
+    "axios": "^1.11.0",
+    "bcryptjs": "^2.4.3",
     "chardet": "^2.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "geoip-lite": "^1.4.10",
     "helmet": "^7.1.0",
+    "iconv-lite": "^0.6.3",
     "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "path": "^0.12.7",
     "rate-limiter-flexible": "^5.0.3",
-    "dotenv": "^16.4.5"
+    "socks-proxy-agent": "^8.0.2",
+    "sqlite3": "^5.1.6"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

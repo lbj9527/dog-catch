@@ -1763,6 +1763,7 @@ body.modal-open { overflow: hidden; }
     font-size: 12px;
     color: #888;
     margin: 0;
+    white-space: nowrap;
 }
 
 .comment-content {

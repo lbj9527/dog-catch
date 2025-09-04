@@ -18,6 +18,8 @@ const iconv = require('iconv-lite');
 const helmet = require('helmet');
 const crypto = require('crypto');
 const Redis = require('ioredis');
+const geoip = require('geoip-lite');
+const axios = require('axios');
 
 // 图片上传数量限制常量
 const MAX_IMAGES = 5;
@@ -855,6 +857,23 @@ db.serialize(() => {
     db.run(`ALTER TABLE subtitle_comments ADD COLUMN image_urls TEXT NULL`, (err) => {
         if (err && !err.message.includes('duplicate column name')) {
             console.error('添加 image_urls 字段失败:', err.message);
+        }
+    });
+    
+    // 为 subtitle_comments 表添加地理位置相关字段
+    db.run(`ALTER TABLE subtitle_comments ADD COLUMN location_country_code TEXT NULL`, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+            console.error('添加 location_country_code 字段失败:', err.message);
+        }
+    });
+    db.run(`ALTER TABLE subtitle_comments ADD COLUMN location_region TEXT NULL`, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+            console.error('添加 location_region 字段失败:', err.message);
+        }
+    });
+    db.run(`ALTER TABLE subtitle_comments ADD COLUMN location_city TEXT NULL`, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+            console.error('添加 location_city 字段失败:', err.message);
         }
     });
     
@@ -2454,6 +2473,9 @@ app.get('/api/subtitles/:videoId/comments', authenticateAnyToken, async (req, re
                 sc.likes_count,
                 sc.replies_count,
                 sc.image_urls,
+                sc.location_country_code,
+                sc.location_region,
+                sc.location_city,
                 strftime('%Y-%m-%dT%H:%M:%SZ', sc.created_at) as createdAt,
                 strftime('%Y-%m-%dT%H:%M:%SZ', sc.updated_at) as updatedAt,
                 CASE WHEN cl.user_id IS NOT NULL THEN 1 ELSE 0 END as user_liked
@@ -2476,6 +2498,11 @@ app.get('/api/subtitles/:videoId/comments', authenticateAnyToken, async (req, re
             likesCount: comment.likes_count || 0,
             repliesCount: comment.replies_count || 0,
             imageUrls: comment.image_urls ? JSON.parse(comment.image_urls) : [],
+            locationDisplay: formatLocationDisplay(
+                comment.location_country_code,
+                comment.location_region,
+                comment.location_city
+            ),
             createdAt: comment.createdAt,
             updatedAt: comment.updatedAt,
             userLiked: comment.user_liked === 1
@@ -2526,6 +2553,9 @@ app.get('/api/comments/:commentId/replies', async (req, res) => {
                 sc.parent_id as parent_comment_id,
                 sc.likes_count,
                 sc.image_urls,
+                sc.location_country_code,
+                sc.location_region,
+                sc.location_city,
                 strftime('%Y-%m-%dT%H:%M:%SZ', sc.created_at) as createdAt,
                 strftime('%Y-%m-%dT%H:%M:%SZ', sc.updated_at) as updatedAt
             FROM subtitle_comments sc
@@ -2545,6 +2575,11 @@ app.get('/api/comments/:commentId/replies', async (req, res) => {
             parentCommentId: reply.parent_comment_id,
             likesCount: reply.likes_count || 0,
             imageUrls: reply.image_urls ? JSON.parse(reply.image_urls) : [],
+            locationDisplay: formatLocationDisplay(
+                reply.location_country_code,
+                reply.location_region,
+                reply.location_city
+            ),
             createdAt: reply.createdAt,
             updatedAt: reply.updatedAt
         }));
@@ -2564,6 +2599,96 @@ app.get('/api/comments/:commentId/replies', async (req, res) => {
     }
 });
 
+// 获取客户端真实IP地址
+function getClientIp(req) {
+    // 优先从 X-Forwarded-For 获取（支持代理/负载均衡）
+    const forwarded = req.headers['x-forwarded-for'];
+    if (forwarded) {
+        // X-Forwarded-For 可能包含多个IP，取第一个
+        const ips = forwarded.split(',').map(ip => ip.trim());
+        for (const ip of ips) {
+            // 跳过私有IP地址
+            if (!ip.startsWith('10.') && !ip.startsWith('192.168.') && !ip.startsWith('172.')) {
+                return ip;
+            }
+        }
+    }
+    
+    // 备选方案
+    return req.headers['x-real-ip'] || 
+           req.headers['x-client-ip'] || 
+           req.connection?.remoteAddress || 
+           req.socket?.remoteAddress || 
+           req.ip || 
+           '127.0.0.1';
+}
+
+// 使用 ip-api.com 解析IP地理位置（带fallback到geoip-lite）
+async function parseIpLocation(ip) {
+    // 跳过本地IP
+    if (!ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) {
+        return { country_code: null, region: null, city: null };
+    }
+    
+    try {
+        // 首先尝试 ip-api.com（免费版，每分钟1000次请求）
+        const response = await axios.get(`http://ip-api.com/json/${ip}?lang=zh-CN`, {
+            timeout: 3000,
+            headers: { 'User-Agent': 'SubtitleCommentSystem/1.0' }
+        });
+        
+        if (response.data && response.data.status === 'success') {
+            return {
+                country_code: response.data.countryCode || null,
+                region: response.data.regionName || null,
+                city: response.data.city || null
+            };
+        }
+    } catch (error) {
+        console.warn('ip-api.com 解析失败，回退到 geoip-lite:', error.message);
+    }
+    
+    // 回退到 geoip-lite
+    try {
+        const geo = geoip.lookup(ip);
+        if (geo) {
+            return {
+                country_code: geo.country || null,
+                region: geo.region || null,
+                city: geo.city || null
+            };
+        }
+    } catch (error) {
+        console.warn('geoip-lite 解析失败:', error.message);
+    }
+    
+    return { country_code: null, region: null, city: null };
+}
+
+// 格式化地理位置显示文本
+function formatLocationDisplay(countryCode, region, city) {
+    if (!countryCode) return null;
+    
+    // 中国大陆：仅显示城市，无城市则显示省份
+    if (countryCode === 'CN') {
+        return city || region || null;
+    }
+    
+    // 台湾、香港、澳门：显示"地区 + 城市"，无城市则仅显示地区
+    if (countryCode === 'TW') {
+        return city ? `台湾 ${city}` : '台湾';
+    }
+    if (countryCode === 'HK') {
+        return city ? `香港 ${city}` : '香港';
+    }
+    if (countryCode === 'MO') {
+        return city ? `澳门 ${city}` : '澳门';
+    }
+    
+    // 其他地区不显示位置信息
+    return null;
+}
+
 // 发表评论
 app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, res) => {
     try {
@@ -2582,6 +2707,11 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
         if (content.trim().length > 500) {
             return res.status(400).json({ error: '评论内容不能超过500字符' });
         }
+        
+        // 解析用户IP地理位置
+        const clientIp = getClientIp(req);
+        const location = await parseIpLocation(clientIp);
+        const locationDisplay = formatLocationDisplay(location.country_code, location.region, location.city);
         
         // 验证时间戳：允许 0，空串/未传视为 null；兼容前端 body.timestamp 或 body.timestampSeconds
         const tsRaw = (timestampSeconds !== undefined && timestampSeconds !== null && timestampSeconds !== '') 
@@ -2641,9 +2771,11 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
         // 插入评论
         const result = await runAsync(`
             INSERT INTO subtitle_comments (
-                user_id, video_id, content, timestamp, parent_id, status, image_urls
-            ) VALUES (?, ?, ?, ?, ?, "approved", ?)
-        `, [userId, videoId, content.trim(), timestamp, parentCommentId || null, imageUrlsJson]);
+                user_id, video_id, content, timestamp, parent_id, status, image_urls,
+                location_country_code, location_region, location_city
+            ) VALUES (?, ?, ?, ?, ?, "approved", ?, ?, ?, ?)
+        `, [userId, videoId, content.trim(), timestamp, parentCommentId || null, imageUrlsJson,
+            location.country_code, location.region, location.city]);
         
         // 如果是回复，更新父评论的回复数
         if (parentCommentId) {
@@ -2665,12 +2797,24 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
                 sc.likes_count,
                 sc.replies_count,
                 sc.image_urls,
+                sc.location_country_code,
+                sc.location_region,
+                sc.location_city,
                 sc.created_at,
                 sc.updated_at
             FROM subtitle_comments sc
             LEFT JOIN users u ON sc.user_id = u.id
             WHERE sc.id = ?
         `, [result.lastID]);
+        
+        // 计算locationDisplay
+        if (newComment) {
+            newComment.locationDisplay = formatLocationDisplay(
+                newComment.location_country_code,
+                newComment.location_region,
+                newComment.location_city
+            );
+        }
         
         res.status(201).json({
             message: '评论发表成功',
@@ -2684,6 +2828,7 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
                 likesCount: newComment.likes_count || 0,
                 repliesCount: newComment.replies_count || 0,
                 imageUrls: newComment.image_urls ? JSON.parse(newComment.image_urls) : [],
+                locationDisplay: newComment.locationDisplay,
                 createdAt: new Date(newComment.created_at + 'Z').toISOString(),
                 updatedAt: new Date(newComment.updated_at + 'Z').toISOString()
             }

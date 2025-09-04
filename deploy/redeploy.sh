@@ -60,9 +60,14 @@ npm run build
 
 echo "📁 同步前台构建产物..."
 sudo rsync -av --delete "$PROJECT_ROOT/frontend/dist/" "$PROJECT_ROOT/frontend-dist/"
-# 如需覆盖运行时配置，可保留 config.js（按需启用）
-if [ -f "$PROJECT_ROOT/frontend/public/config.js" ]; then
-    sudo cp -f "$PROJECT_ROOT/frontend/public/config.js" "$PROJECT_ROOT/frontend-dist/config.js"
+# 使用生产环境配置文件
+if [ -f "$PROJECT_ROOT/frontend/public/config.production.js" ]; then
+    sudo cp -f "$PROJECT_ROOT/frontend/public/config.production.js" "$PROJECT_ROOT/frontend-dist/config.js"
+else
+    echo "⚠️  警告: 生产配置文件 config.production.js 不存在，使用默认 config.js"
+    if [ -f "$PROJECT_ROOT/frontend/public/config.js" ]; then
+        sudo cp -f "$PROJECT_ROOT/frontend/public/config.js" "$PROJECT_ROOT/frontend-dist/config.js"
+    fi
 fi
 # 管理后台 (admin/dist -> admin-dist)
 sudo rsync -av --delete "$PROJECT_ROOT/admin/dist/" "$PROJECT_ROOT/admin-dist/"

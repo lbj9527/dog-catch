@@ -104,6 +104,17 @@ npm run dev
 
 function Start-Frontend {
   Ensure-NodeModules $FrontendDir
+  
+  # 确保使用本地开发配置
+  $configLocal = Join-Path $FrontendDir 'public\config.local.js'
+  $configMain = Join-Path $FrontendDir 'public\config.js'
+  if (Test-Path $configLocal) {
+    Write-Log 'Using config.local.js for local development...'
+    Copy-Item -Path $configLocal -Destination $configMain -Force
+  } else {
+    Write-Log 'Warning: config.local.js not found, using existing config.js'
+  }
+  
   $cmd = @"
 cd "$FrontendDir"
 npm run dev

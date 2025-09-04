@@ -1,7 +1,7 @@
-// 本地开发环境配置
+// 生产环境配置
 window.PLAYER_CONFIG = {
-  // 本地开发默认为本地后端；线上可通过替换该文件或 URL 参数 ?api= 覆盖
-  API_BASE_URL: 'http://localhost:8000',
+  // 生产环境API地址
+  API_BASE_URL: 'https://api.sub-dog.top',
   SUBTITLE_NEED_LOGIN: true,
   ALLOW_PLAY_WITHOUT_LOGIN: true,
   CAPTCHA_ENABLED: false,  // 禁用图形验证码

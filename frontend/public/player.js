@@ -2911,6 +2911,10 @@ class VideoPlayer {
         const timeAgo = this.formatTimeAgo(created_at);
         const avatar = this.generateUserAvatar(username);
         
+        // 格式化地理位置显示
+        const locationDisplay = comment.locationDisplay;
+        const timestampText = locationDisplay ? `${timeAgo} · ${locationDisplay}` : timeAgo;
+        
         // 生成图片HTML（缩略图形式）
         let imagesHtml = '';
         if (imageUrls.length > 0) {
@@ -2931,7 +2935,7 @@ class VideoPlayer {
             ${imagesHtml}
             <div class="comment-actions">
                 <div class="comment-actions-left">
-                    <span class="timestamp">${timeAgo}</span>
+                    <span class="timestamp">${timestampText}</span>
                     <button class="comment-reply-btn" data-comment-id="${id}" data-username="${username}">回复</button>
                     ${repliesCount > 0 ? `<button class="replies-toggle-btn" data-comment-id="${id}" data-count="${repliesCount}">查看 ${repliesCount} 条回复</button>` : ''}
                 </div>
@@ -2978,6 +2982,10 @@ class VideoPlayer {
             const avatar = this.generateUserAvatar(username);
             const timeAgo = this.formatTimeAgo(created_at);
             
+            // 格式化地理位置显示
+            const locationDisplay = reply.locationDisplay;
+            const timestampText = locationDisplay ? `${timeAgo} · ${locationDisplay}` : timeAgo;
+            
             // 生成回复图片HTML（缩略图形式）
             let replyImagesHtml = '';
             if (imageUrls.length > 0) {
@@ -2999,7 +3007,7 @@ class VideoPlayer {
                     ${replyImagesHtml}
                     <div class="comment-actions">
                         <div class="comment-actions-left">
-                            <span class="timestamp">${timeAgo}</span>
+                            <span class="timestamp">${timestampText}</span>
                         </div>
                         <div class="comment-actions-right">
                             <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">

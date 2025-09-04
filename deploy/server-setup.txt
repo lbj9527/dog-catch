@@ -13,7 +13,7 @@ sudo mkdir -p /var/log/pm2
 
 # 3) 服务器端构建与发布（已在服务器克隆源码）
 # 后端：无需上传，直接使用 /opt/dog-catch/backend
-# 前台：在服务器使用 Vite 构建并发布到 /opt/dog-catch/frontend-dist（请确认 public/config.js 中 API_BASE_URL=https://api.sub-dog.top）
+# 前台：在服务器使用 Vite 构建并发布到 /opt/dog-catch/frontend-dist（部署脚本会自动使用 config.production.js 作为生产配置）
 cd /opt/dog-catch/frontend
 npm ci
 npm run build
