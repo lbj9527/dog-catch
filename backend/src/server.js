@@ -2454,8 +2454,8 @@ app.get('/api/subtitles/:videoId/comments', authenticateAnyToken, async (req, re
                 sc.likes_count,
                 sc.replies_count,
                 sc.image_urls,
-                sc.created_at,
-                sc.updated_at,
+                strftime('%Y-%m-%dT%H:%M:%SZ', sc.created_at) as createdAt,
+                strftime('%Y-%m-%dT%H:%M:%SZ', sc.updated_at) as updatedAt,
                 CASE WHEN cl.user_id IS NOT NULL THEN 1 ELSE 0 END as user_liked
             FROM subtitle_comments sc
             LEFT JOIN users u ON sc.user_id = u.id
@@ -2476,8 +2476,8 @@ app.get('/api/subtitles/:videoId/comments', authenticateAnyToken, async (req, re
             likesCount: comment.likes_count || 0,
             repliesCount: comment.replies_count || 0,
             imageUrls: comment.image_urls ? JSON.parse(comment.image_urls) : [],
-            createdAt: comment.created_at,
-            updatedAt: comment.updated_at,
+            createdAt: comment.createdAt,
+            updatedAt: comment.updatedAt,
             userLiked: comment.user_liked === 1
         }));
         
@@ -2526,8 +2526,8 @@ app.get('/api/comments/:commentId/replies', async (req, res) => {
                 sc.parent_id as parent_comment_id,
                 sc.likes_count,
                 sc.image_urls,
-                sc.created_at,
-                sc.updated_at
+                strftime('%Y-%m-%dT%H:%M:%SZ', sc.created_at) as createdAt,
+                strftime('%Y-%m-%dT%H:%M:%SZ', sc.updated_at) as updatedAt
             FROM subtitle_comments sc
             LEFT JOIN users u ON sc.user_id = u.id
             WHERE sc.parent_id = ? AND sc.status = "approved"
@@ -2545,8 +2545,8 @@ app.get('/api/comments/:commentId/replies', async (req, res) => {
             parentCommentId: reply.parent_comment_id,
             likesCount: reply.likes_count || 0,
             imageUrls: reply.image_urls ? JSON.parse(reply.image_urls) : [],
-            createdAt: reply.created_at,
-            updatedAt: reply.updated_at
+            createdAt: reply.createdAt,
+            updatedAt: reply.updatedAt
         }));
         
         res.json({
@@ -2684,8 +2684,8 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
                 likesCount: newComment.likes_count || 0,
                 repliesCount: newComment.replies_count || 0,
                 imageUrls: newComment.image_urls ? JSON.parse(newComment.image_urls) : [],
-                createdAt: newComment.created_at,
-                updatedAt: newComment.updated_at
+                createdAt: new Date(newComment.created_at + 'Z').toISOString(),
+                updatedAt: new Date(newComment.updated_at + 'Z').toISOString()
             }
         });
     } catch (error) {

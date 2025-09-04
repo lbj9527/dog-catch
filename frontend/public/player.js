@@ -3090,7 +3090,7 @@ class VideoPlayer {
             // 处理回复或顶级评论
             if (this.replyingToCommentId) {
                 // 回复模式：即时插入新回复
-                await this.handleNewReply(this.replyingToCommentId, responseData);
+                await this.handleNewReply(this.replyingToCommentId, responseData.data);
                 this.exitReplyMode();
             } else {
                 // 顶级评论：重新加载评论列表
@@ -3182,16 +3182,30 @@ class VideoPlayer {
 
     // 格式化时间
     formatTimeAgo(timestamp) {
+        // 处理空值情况
+        if (!timestamp) {
+            return '刚刚';
+        }
+        
         const now = new Date();
-        // 确保时间戳被正确解析，SQLite返回的是UTC时间字符串
-        // 如果timestamp不包含时区信息，SQLite的CURRENT_TIMESTAMP是UTC时间
-        // 需要将其作为UTC时间处理
         let time;
-        if (typeof timestamp === 'string' && !timestamp.includes('T') && !timestamp.includes('Z')) {
-            // SQLite格式: '2025-09-03 13:14:12' (UTC时间)
-            time = new Date(timestamp + 'Z'); // 添加Z表示UTC时间
+        
+        if (typeof timestamp === 'string') {
+            // 处理 SQLite 格式: '2025-09-03 13:14:12' (UTC时间)
+            if (!timestamp.includes('T') && !timestamp.includes('Z')) {
+                // 将空格替换为T，并添加Z表示UTC时间
+                const isoString = timestamp.replace(' ', 'T') + 'Z';
+                time = new Date(isoString);
+            } else {
+                time = new Date(timestamp);
+            }
         } else {
             time = new Date(timestamp);
+        }
+        
+        // 检查解析结果是否有效
+        if (isNaN(time.getTime())) {
+            return '刚刚';
         }
         
         const diff = now - time;
@@ -4067,7 +4081,9 @@ class VideoPlayer {
     
     // 渲染单个回复项
     renderReplyItem(reply) {
-        const timeAgo = this.formatTimeAgo(reply.createdAt ?? reply.created_at);
+        // 确保时间字段有默认值，避免 Invalid Date
+        const timestamp = reply.createdAt ?? reply.created_at ?? new Date().toISOString();
+        const timeAgo = this.formatTimeAgo(timestamp);
         return `
             <div class="reply-item" data-reply-id="${reply.id}">
                 <div class="reply-content">
@@ -4083,7 +4099,27 @@ class VideoPlayer {
     
     // 更新回复切换按钮UI
     updateRepliesToggleUi(commentId, isExpanded, totalReplies) {
-        const toggleBtn = document.querySelector(`[data-comment-id="${commentId}"] .replies-toggle-btn`);
+        let toggleBtn = document.querySelector(`[data-comment-id="${commentId}"] .replies-toggle-btn`);
+        
+        // 如果按钮不存在且有回复，则创建按钮
+        if (!toggleBtn && totalReplies > 0) {
+            const commentActionsLeft = document.querySelector(`[data-comment-id="${commentId}"] .comment-actions-left`);
+            if (commentActionsLeft) {
+                toggleBtn = document.createElement('button');
+                toggleBtn.className = 'replies-toggle-btn';
+                toggleBtn.setAttribute('data-comment-id', commentId);
+                toggleBtn.setAttribute('data-count', String(totalReplies));
+                
+                // 插入到回复按钮之后
+                const replyBtn = commentActionsLeft.querySelector('.comment-reply-btn');
+                if (replyBtn && replyBtn.nextSibling) {
+                    commentActionsLeft.insertBefore(toggleBtn, replyBtn.nextSibling);
+                } else {
+                    commentActionsLeft.appendChild(toggleBtn);
+                }
+            }
+        }
+        
         if (!toggleBtn) return;
         
         if (totalReplies === 0) {
@@ -4106,6 +4142,13 @@ class VideoPlayer {
         // 确保回复区域已展开
         if (!this.repliesExpanded.has(parentCommentId)) {
             this.repliesExpanded.add(parentCommentId);
+        }
+        
+        // 标准化新回复数据的时间字段，避免 Invalid Date
+        if (!newReplyData.createdAt && !newReplyData.created_at) {
+            newReplyData.createdAt = new Date().toISOString();
+        } else if (!newReplyData.createdAt && newReplyData.created_at) {
+            newReplyData.createdAt = newReplyData.created_at;
         }
         
         // 更新缓存中的回复数据
