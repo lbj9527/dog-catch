@@ -1779,12 +1779,15 @@ body.modal-open { overflow: hidden; }
     justify-content: space-between;
     align-items: center;
     padding-left: 48px;
+    flex-wrap: nowrap;
 }
 
 .comment-actions-left {
     display: flex;
     align-items: center;
     gap: 12px;
+    flex: 1;
+    min-width: 0;
 }
 
 .comment-actions-right {
@@ -1796,6 +1799,39 @@ body.modal-open { overflow: hidden; }
     font-size: 12px;
     color: #888;
     margin: 0;
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    line-height: 24px;
+}
+
+/* 统一动作区按钮高度和对齐 */
+.comment-actions-left > .comment-reply-btn,
+.comment-actions-left > .replies-toggle-btn,
+.comment-actions-right > .like-btn {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    line-height: 24px;
+    margin: 0;
+}
+
+/* 回复切换按钮样式（与回复按钮保持一致） */
+.replies-toggle-btn {
+    background: transparent;
+    border: none;
+    color: #888;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    margin: 0;
+}
+
+.replies-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
 }
 
 .like-btn {
@@ -1810,6 +1846,13 @@ body.modal-open { overflow: hidden; }
     padding: 4px 8px;
     border-radius: 4px;
     transition: all 0.2s;
+}
+
+/* 爱心图标对齐修正 */
+.like-btn .like-icon {
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
 }
 
 .like-btn:hover {
@@ -3159,22 +3202,13 @@ body.modal-open { overflow: hidden; }
     }
 }
 
-/* 楼中楼回复样式 */
-.replies-toggle-btn {
-    background: none;
-    border: none;
-    color: #666;
-    font-size: 12px;
-    cursor: pointer;
-    padding: 4px 8px;
+/* 楼中楼回复样式 - 仅在回复区域内生效 */
+.replies-section .replies-toggle-btn {
+    display: inline-flex; /* 保持与动作区一致，避免错位 */
+    align-items: center;
     margin-top: 8px;
-    border-radius: 4px;
-    transition: all 0.2s ease;
-}
-
-.replies-toggle-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    height: 24px;
+    line-height: 24px;
 }
 
 .replies-section {

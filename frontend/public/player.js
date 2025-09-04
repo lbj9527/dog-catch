@@ -4123,11 +4123,13 @@ class VideoPlayer {
         if (!toggleBtn) return;
         
         if (totalReplies === 0) {
-            toggleBtn.style.display = 'none';
+            toggleBtn.hidden = true;
             return;
         }
         
-        toggleBtn.style.display = 'block';
+        // 让CSS接管显示与布局，避免内联display覆盖inline-flex
+        toggleBtn.hidden = false;
+        toggleBtn.style.removeProperty('display');
         toggleBtn.textContent = isExpanded 
             ? `收起回复 (${totalReplies})` 
             : `查看 ${totalReplies} 条回复`;
