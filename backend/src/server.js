@@ -2709,14 +2709,19 @@ function formatLocationDisplay(countryCode, region, city) {
         return `${countryName} ${leaf}`;
     }
 
-    // 其他国家/地区：显示"国家 [地区] [城市]"，并做简单去重
-    const parts = [countryName];
+    // 其他国家/地区：显示"国家 [城市]"，若国家和城市名相同则只显示城市
     const eq = (a, b) => a && b && a.replace(/\s+/g, '') === b.replace(/\s+/g, '');
-
-    if (r && !eq(r, countryName)) parts.push(r);
-    if (c && !eq(c, r)) parts.push(c);
-
-    return parts.join(' ');
+    
+    // 优先使用城市，无城市则使用地区
+    const location = c || r;
+    if (!location) return countryName;
+    
+    // 如果国家名和位置名相同，只显示位置名
+    if (eq(countryName, location)) {
+        return location;
+    }
+    
+    return `${countryName} ${location}`;
 }
 
 // 发表评论
