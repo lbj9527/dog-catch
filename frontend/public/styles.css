@@ -1393,11 +1393,12 @@ body.modal-open {
 .stage.social-mode .social-panel.mobile-inline.is-expanded {
   top: 0;           /* 覆盖至 player-box 顶部 */
   margin-top: 0;    /* 去掉 1px 间距 */
-  height: 100dvh;
-  min-height: 100dvh;
-  max-height: 100dvh;
+  height: 100svh;
+  min-height: 100svh;
+  max-height: 100svh;
+  height: 100dvh;   /* 兼容覆盖：支持 dvh 的浏览器使用更准确的动态视口高度 */
   border-radius: 12px 12px 0 0;
-  padding-bottom: max(env(safe-area-inset-bottom), 8px);
+  padding-bottom: 0; /* 移除硬编码 8px，安全区适配转移到输入条 */
   box-shadow: 0 -10px 30px rgba(0,0,0,0.35);
   /* 修复：恢复flex容器属性以确保正确的布局 */
   display: flex;
@@ -1506,6 +1507,8 @@ body.modal-open { overflow: hidden; }
         padding-left: 0;
         padding-right: 0;
         margin: 0;
+        /* 安全区适配：仅在输入条底部添加安全区高度，避免被刘海遮挡 */
+        padding-bottom: env(safe-area-inset-bottom, 0px);
     }
 }
 
@@ -2255,7 +2258,7 @@ body.modal-open { overflow: hidden; }
 /* 移动端适配 */
 @media (max-width: 880px) {
     .comment-compose {
-        padding: 1px;
+        padding: 0; /* 移除 1px 内边距，消除折叠态底缝 */
     }
     
     .comment-user-info {

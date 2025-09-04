@@ -100,6 +100,21 @@ export class SocialPanel {
     const stage = document.querySelector(this.stageSelector);
     if (stage) stage.appendChild(panel);
 
+    // 新增：窗口尺寸变化时，折叠态动态更新高度，使输入条贴住视口底部
+    this._onViewportChange = () => {
+      const isMobile = typeof this.getIsMobile === 'function' ? !!this.getIsMobile() : window.innerWidth <= 880;
+      if (!isMobile) return;
+      const s = document.querySelector(this.stageSelector);
+      const inSocial = s && s.classList.contains('social-mode');
+      if (!inSocial) return;
+      // 仅在折叠态更新
+      if (this.el && this.el.classList.contains('mobile-inline') && !this._expanded) {
+        this._updateMobileInlineHeight();
+      }
+    };
+    window.addEventListener('resize', this._onViewportChange, { passive: true });
+    window.addEventListener('orientationchange', this._onViewportChange, { passive: true });
+
     return panel;
   }
 
@@ -127,6 +142,19 @@ export class SocialPanel {
     });
   }
 
+  // 新增：折叠态（mobile-inline 非 is-expanded）动态计算面板高度，使底部贴住视口
+  _updateMobileInlineHeight() {
+    const el = this.getElement();
+    if (!el || !el.classList.contains('mobile-inline') || this._expanded) return;
+    const playerBox = document.querySelector(this.playerBoxSelector);
+    if (!playerBox) return;
+    const boxRect = playerBox.getBoundingClientRect();
+    const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    // 目标高度 = 视口底部到 playerBox 底边的距离，限制在 [320, 720]
+    const target = Math.max(320, Math.min(720, Math.round(vh - boxRect.bottom)));
+    el.style.height = `${target}px`;
+  }
+
   // 新增：设置是否增高（满屏高、隐藏视频）
   _setExpanded(expanded) {
     this._expanded = !!expanded;
@@ -149,6 +177,8 @@ export class SocialPanel {
           <path d="M20 9V5a1 1 0 0 0-1-1h-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       `;
+      // 展开态使用 CSS 控制高度，移除内联高度
+      el.style.height = '';
     } else {
       el.classList.remove('is-expanded');
       playerBox.classList.remove('is-panel-expanded');
@@ -164,6 +194,8 @@ export class SocialPanel {
           <path d="M20 9V5a1 1 0 0 0-1-1h-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       `;
+      // 折叠态：根据视口动态更新高度
+      this._updateMobileInlineHeight();
     }
   }
 
@@ -211,6 +243,8 @@ export class SocialPanel {
       // 下一帧添加打开类，触发过渡
       requestAnimationFrame(() => {
         el.classList.add('is-open');
+        // 打开后根据视口动态设高，保证输入条贴底
+        this._updateMobileInlineHeight();
       });
     }
   }
@@ -256,6 +290,8 @@ export class SocialPanel {
           this._unwrapPlayerColumn(stage);
           // 恢复顶部 header
           this._setMobileHeaderHidden(false);
+          // 清理内联高度
+          el.style.height = '';
           // 通知播放器更新尺寸
           this._notifyPlayerSizeUpdate();
         }, 220); // 与 CSS 过渡时间对齐
@@ -294,6 +330,8 @@ export class SocialPanel {
     if (state.isSocialMode) {
       if (state.isMobile) {
         this._mountMobile(stage, el);
+        // 挂载后计算一次高度，保证折叠态贴底
+        this._updateMobileInlineHeight();
       } else {
         this._mountDesktop(stage, el);
       }
