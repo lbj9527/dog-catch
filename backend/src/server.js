@@ -2874,7 +2874,7 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
     }
 });
 
-// 点赞/取消点赞评论
+// 点赞/取消点赞评论（并发安全 + 幂等）
 app.post('/api/comments/:commentId/like', authenticateUserToken, async (req, res) => {
     try {
         const { commentId } = req.params;
@@ -2900,12 +2900,14 @@ app.post('/api/comments/:commentId/like', authenticateUserToken, async (req, res
         );
         
         if (existingLike) {
-            // 取消点赞
-            await runAsync('DELETE FROM comment_likes WHERE id = ?', [existingLike.id]);
-            await runAsync(
-                'UPDATE subtitle_comments SET likes_count = likes_count - 1 WHERE id = ?',
-                [commentId]
-            );
+            // 取消点赞：仅当确实删除了一条记录时才递减计数，避免竞争条件导致 likes_count 变负
+            const del = await runAsync('DELETE FROM comment_likes WHERE id = ?', [existingLike.id]);
+            if (del && del.changes > 0) {
+                await runAsync(
+                    'UPDATE subtitle_comments SET likes_count = CASE WHEN likes_count > 0 THEN likes_count - 1 ELSE 0 END WHERE id = ?',
+                    [commentId]
+                );
+            }
             
             // 获取更新后的点赞数
             const updatedComment = await getAsync(
@@ -2913,33 +2915,50 @@ app.post('/api/comments/:commentId/like', authenticateUserToken, async (req, res
                 [commentId]
             );
             
-            res.json({ 
+            return res.json({ 
                 message: '取消点赞成功', 
                 liked: false,
                 likes_count: updatedComment ? updatedComment.likes_count : 0
             });
         } else {
-            // 添加点赞
-            await runAsync(
-                'INSERT INTO comment_likes (user_id, comment_id) VALUES (?, ?)',
-                [userId, commentId]
-            );
-            await runAsync(
-                'UPDATE subtitle_comments SET likes_count = likes_count + 1 WHERE id = ?',
-                [commentId]
-            );
-            
-            // 获取更新后的点赞数
-            const updatedComment = await getAsync(
-                'SELECT likes_count FROM subtitle_comments WHERE id = ?',
-                [commentId]
-            );
-            
-            res.json({ 
-                message: '点赞成功', 
-                liked: true,
-                likes_count: updatedComment ? updatedComment.likes_count : 0
-            });
+            // 添加点赞：处理并发导致的唯一约束冲突，保证幂等，不返回500
+            try {
+                const ins = await runAsync(
+                    'INSERT INTO comment_likes (user_id, comment_id) VALUES (?, ?)',
+                    [userId, commentId]
+                );
+                if (ins && ins.changes > 0) {
+                    await runAsync(
+                        'UPDATE subtitle_comments SET likes_count = likes_count + 1 WHERE id = ?',
+                        [commentId]
+                    );
+                }
+                
+                const updatedComment = await getAsync(
+                    'SELECT likes_count FROM subtitle_comments WHERE id = ?',
+                    [commentId]
+                );
+                
+                return res.json({ 
+                    message: '点赞成功', 
+                    liked: true,
+                    likes_count: updatedComment ? updatedComment.likes_count : 0
+                });
+            } catch (e) {
+                // UNIQUE 冲突（并发重复点击或快速多次请求）：视为已成功点赞
+                if (String(e && e.message).includes('UNIQUE') || String(e && e.code).includes('SQLITE_CONSTRAINT')) {
+                    const updatedComment = await getAsync(
+                        'SELECT likes_count FROM subtitle_comments WHERE id = ?',
+                        [commentId]
+                    );
+                    return res.json({
+                        message: '已点赞',
+                        liked: true,
+                        likes_count: updatedComment ? updatedComment.likes_count : 0
+                    });
+                }
+                throw e;
+            }
         }
     } catch (error) {
         console.error('点赞操作失败:', error);
