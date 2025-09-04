@@ -60,8 +60,11 @@ npm run build
 
 echo "📁 同步前台构建产物..."
 sudo rsync -av --delete "$PROJECT_ROOT/frontend/dist/" "$PROJECT_ROOT/frontend-dist/"
-# 使用生产环境配置文件
+
+# 使用生产环境配置文件（必须在rsync之后执行，避免被--delete删除）
+echo "🔧 配置生产环境配置文件..."
 if [ -f "$PROJECT_ROOT/frontend/public/config.production.js" ]; then
+    echo "✅ 使用 config.production.js 作为生产配置"
     sudo cp -f "$PROJECT_ROOT/frontend/public/config.production.js" "$PROJECT_ROOT/frontend-dist/config.js"
 else
     echo "⚠️  警告: 生产配置文件 config.production.js 不存在，使用默认 config.js"
