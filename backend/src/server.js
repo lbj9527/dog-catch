@@ -2432,9 +2432,9 @@ app.get('/api/subtitles/:videoId/comments', authenticateAnyToken, async (req, re
             return res.status(400).json({ error: '视频ID不能为空' });
         }
         
-        // 获取评论总数
+        // 获取评论总数（只统计父评论，不包含回复）
         const countResult = await getAsync(
-            'SELECT COUNT(*) as total FROM subtitle_comments WHERE video_id = ? AND status = "approved"',
+            'SELECT COUNT(*) as total FROM subtitle_comments WHERE video_id = ? AND status = "approved" AND parent_id IS NULL',
             [videoId]
         );
         const total = countResult ? countResult.total : 0;
