@@ -373,6 +373,188 @@
           @success="handleWishlistBatchUploadSuccess"
         />
       </el-tab-pane>
+
+      <!-- 通知管理 -->
+      <el-tab-pane label="通知管理" name="notifications">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <el-button type="primary" @click="showBroadcastDialog = true">
+              <el-icon><Bell /></el-icon>
+              发送系统通知
+            </el-button>
+            <el-button @click="refreshNotifications" :loading="notifications.loading">
+              <el-icon><Refresh /></el-icon>
+              刷新
+            </el-button>
+          </div>
+          <div class="toolbar-right">
+            <el-input
+              v-model="notifications.searchQuery"
+              placeholder="搜索通知内容..."
+              prefix-icon="Search"
+              style="width: 300px; margin-right: 16px"
+              @input="handleNotificationSearch"
+              clearable
+            />
+            <span style="color:#666">共 {{ notifications.total }} 条</span>
+          </div>
+        </div>
+
+        <!-- 通知统计卡片 -->
+        <div class="stats-cards">
+          <el-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-number">{{ notificationStats.total }}</div>
+              <div class="stat-label">总通知数</div>
+            </div>
+            <div class="stat-icon">
+              <el-icon><Bell /></el-icon>
+            </div>
+          </el-card>
+          <el-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-number">{{ notificationStats.system }}</div>
+              <div class="stat-label">系统通知</div>
+            </div>
+            <div class="stat-icon">
+              <el-icon><Message /></el-icon>
+            </div>
+          </el-card>
+          <el-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-number">{{ notificationStats.mention }}</div>
+              <div class="stat-label">@提及通知</div>
+            </div>
+            <div class="stat-icon">
+              <el-icon><ChatDotRound /></el-icon>
+            </div>
+          </el-card>
+          <el-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-number">{{ notificationStats.today }}</div>
+              <div class="stat-label">今日发送</div>
+            </div>
+            <div class="stat-icon">
+              <el-icon><Calendar /></el-icon>
+            </div>
+          </el-card>
+        </div>
+
+        <!-- 通知列表 -->
+        <el-card class="table-card">
+          <el-table :data="notifications.items" v-loading="notifications.loading" height="400" stripe style="width:100%">
+            <el-table-column prop="id" label="ID" width="80" align="right" />
+            <el-table-column label="类型" width="120" align="center">
+              <template #default="scope">
+                <el-tag :type="scope.row.type === 'system' ? 'primary' : 'success'">
+                  {{ scope.row.type === 'system' ? '系统通知' : '@提及' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="title" label="标题" min-width="200" />
+            <el-table-column label="内容" min-width="300">
+              <template #default="scope">
+                <div v-if="!scope.row.content || !scope.row.content.trim()" style="color: #ccc;">-</div>
+                <el-popover
+                  v-else
+                  trigger="click"
+                  placement="right"
+                  :width="480"
+                  popper-class="note-popover"
+                >
+                  <template #reference>
+                    <div class="note-clamp-2" role="button" tabindex="0">
+                      {{ scope.row.content }}
+                      <el-link v-if="isLongText(scope.row.content)" type="primary" size="small" style="margin-left: 8px;">查看全部</el-link>
+                    </div>
+                  </template>
+                  <div class="note-full-content">{{ scope.row.content }}</div>
+                  <div class="popover-actions">
+                    <el-button size="small" plain @click="copyText(scope.row.content)">复制内容</el-button>
+                  </div>
+                </el-popover>
+              </template>
+            </el-table-column>
+            <el-table-column label="接收用户" width="120" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.user_id">单个用户</span>
+                <el-tag v-else type="warning">全体用户</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="created_at" label="发送时间" width="180">
+              <template #default="scope">
+                {{ formatDate(scope.row.created_at) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" align="center" fixed="right">
+              <template #default="scope">
+                <el-button
+                  size="small"
+                  type="danger"
+                  :loading="notifications.deletingId === scope.row.id"
+                  @click="deleteNotification(scope.row)"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pagination-wrapper" style="margin-top:16px; text-align: center;">
+            <el-pagination
+              :current-page="notifications.page"
+              :page-size="notifications.limit"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="notifications.total"
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleNotificationSizeChange"
+              @current-change="handleNotificationCurrentChange"
+            />
+          </div>
+        </el-card>
+
+        <!-- 发送系统通知对话框 -->
+        <el-dialog
+          v-model="showBroadcastDialog"
+          title="发送系统通知"
+          width="600px"
+          :close-on-click-modal="false"
+        >
+          <el-form :model="broadcastForm" :rules="broadcastRules" ref="broadcastFormRef" label-width="80px">
+            <el-form-item label="通知标题" prop="title">
+              <el-input
+                v-model="broadcastForm.title"
+                placeholder="请输入通知标题"
+                maxlength="100"
+                show-word-limit
+              />
+            </el-form-item>
+            <el-form-item label="通知内容" prop="content">
+              <el-input
+                v-model="broadcastForm.content"
+                type="textarea"
+                :rows="4"
+                placeholder="请输入通知内容"
+                maxlength="500"
+                show-word-limit
+              />
+            </el-form-item>
+            <el-form-item label="跳转链接">
+              <el-input
+                v-model="broadcastForm.link"
+                placeholder="可选，点击通知后跳转的链接"
+              />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <span class="dialog-footer">
+              <el-button @click="showBroadcastDialog = false">取消</el-button>
+              <el-button type="primary" @click="sendBroadcast" :loading="broadcasting">
+                发送通知
+              </el-button>
+            </span>
+          </template>
+        </el-dialog>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -381,7 +563,7 @@
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { subtitleAPI, wishlistAPI } from '../utils/api'
+import { subtitleAPI, wishlistAPI, notificationAPI } from '../utils/api'
 import UploadDialog from '../components/UploadDialog.vue'
 import BatchUploadDialog from '../components/BatchUploadDialog.vue'
 import PreviewDialog from '../components/PreviewDialog.vue'
@@ -399,12 +581,18 @@ const onTabClick = async (pane) => {
   const name = pane?.paneName ?? pane?.name ?? ''
   if (name === 'wishlist' && wishlist.items.length === 0) {
     await loadWishlistPage()
+  } else if (name === 'notifications' && notifications.items.length === 0) {
+    await loadNotifications()
+    await loadNotificationStats()
   }
 }
 
 watch(activeTab, async (name) => {
   if (name === 'wishlist' && wishlist.items.length === 0) {
     await loadWishlistPage()
+  } else if (name === 'notifications' && notifications.items.length === 0) {
+    await loadNotifications()
+    await loadNotificationStats()
   }
 })
 // 响应式数据
@@ -442,6 +630,46 @@ const wishlist = reactive({
   total: 0,
   exporting: false
 })
+
+// 通知管理数据
+const notifications = reactive({
+  items: [],
+  loading: false,
+  searchQuery: '',
+  page: 1,
+  limit: 20,
+  total: 0,
+  deletingId: 0
+})
+
+// 通知统计数据
+const notificationStats = reactive({
+  total: 0,
+  system: 0,
+  mention: 0,
+  today: 0
+})
+
+// 系统广播相关
+const showBroadcastDialog = ref(false)
+const broadcasting = ref(false)
+const broadcastFormRef = ref()
+const broadcastForm = reactive({
+  title: '',
+  content: '',
+  link: ''
+})
+
+const broadcastRules = {
+  title: [
+    { required: true, message: '请输入通知标题', trigger: 'blur' },
+    { min: 1, max: 100, message: '标题长度在 1 到 100 个字符', trigger: 'blur' }
+  ],
+  content: [
+    { required: true, message: '请输入通知内容', trigger: 'blur' },
+    { min: 1, max: 500, message: '内容长度在 1 到 500 个字符', trigger: 'blur' }
+  ]
+}
 
 // 当前用户
 const currentUser = computed(() => {
@@ -789,6 +1017,124 @@ const formatFileSize = (bytes) => {
 }
 
 const formatDate = (dateString) => new Date(dateString).toLocaleString('zh-CN')
+
+// 通知管理方法
+const loadNotifications = async () => {
+  if (notifications.loading) return
+  notifications.loading = true
+  try {
+    const params = {
+      page: notifications.page,
+      limit: notifications.limit
+    }
+    if (notifications.searchQuery.trim()) {
+      params.search = notifications.searchQuery.trim()
+    }
+    const res = await notificationAPI.getList(params)
+    notifications.items = res.data || []
+    notifications.total = res.pagination?.total || 0
+  } catch (e) {
+    console.error('加载通知失败:', e)
+    ElMessage.error('加载通知失败')
+  } finally {
+    notifications.loading = false
+  }
+}
+
+const loadNotificationStats = async () => {
+  try {
+    const res = await notificationAPI.getStats()
+    Object.assign(notificationStats, res)
+  } catch (e) {
+    console.error('加载通知统计失败:', e)
+  }
+}
+
+const refreshNotifications = () => {
+  notifications.page = 1
+  loadNotifications()
+  loadNotificationStats()
+}
+
+const handleNotificationSearch = () => {
+  notifications.page = 1
+  loadNotifications()
+}
+
+const handleNotificationSizeChange = (limit) => {
+  notifications.limit = limit
+  notifications.page = 1
+  loadNotifications()
+}
+
+const handleNotificationCurrentChange = (page) => {
+  notifications.page = page
+  loadNotifications()
+}
+
+const sendBroadcast = async () => {
+  if (!broadcastFormRef.value) return
+  
+  try {
+    await broadcastFormRef.value.validate()
+  } catch {
+    return
+  }
+  
+  broadcasting.value = true
+  try {
+    await notificationAPI.broadcast({
+      title: broadcastForm.title,
+      content: broadcastForm.content,
+      link: broadcastForm.link || null
+    })
+    
+    ElMessage.success('系统通知发送成功')
+    showBroadcastDialog.value = false
+    
+    // 重置表单
+    Object.assign(broadcastForm, {
+      title: '',
+      content: '',
+      link: ''
+    })
+    
+    // 刷新通知列表和统计
+    refreshNotifications()
+  } catch (e) {
+    console.error('发送通知失败:', e)
+    ElMessage.error('发送通知失败')
+  } finally {
+    broadcasting.value = false
+  }
+}
+
+const deleteNotification = async (notification) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除通知"${notification.title}"吗？`,
+      '确认删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
+    notifications.deletingId = notification.id
+    await notificationAPI.delete(notification.id)
+    
+    ElMessage.success('删除成功')
+    refreshNotifications()
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('删除通知失败:', e)
+      ElMessage.error('删除失败')
+    }
+  } finally {
+    notifications.deletingId = 0
+  }
+}
 
 onMounted(() => { loadData(); loadWishlistPage() })
 </script>

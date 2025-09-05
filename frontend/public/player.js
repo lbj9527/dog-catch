@@ -48,6 +48,17 @@ class VideoPlayer {
         
         // 楼中楼回复状态管理
         this.repliesCache = new Map(); // key: commentId, value: {items: [], page, totalPages, total}
+        
+        // 通知系统相关状态
+        this.notificationState = {
+            unreadCount: 0,
+            isPolling: false,
+            pollInterval: null,
+            notifications: [],
+            currentPage: 1,
+            hasMore: true,
+            loading: false
+        };
         this.repliesExpanded = new Set(); // 已展开的评论ID集合
         
         // 新增：社交面板实例
@@ -639,6 +650,15 @@ class VideoPlayer {
             };
         }
         
+        // 通知菜单项点击事件
+        const menuNotifications = document.getElementById('menuNotifications');
+        if (menuNotifications) {
+            menuNotifications.onclick = () => {
+                if (userMenu) userMenu.style.display = 'none';
+                this.showNotificationPanel();
+            };
+        }
+        
         // 心愿单菜单项点击事件
         if (menuWishlist) {
             menuWishlist.onclick = () => {
@@ -703,6 +723,18 @@ class VideoPlayer {
         if (wlLoadMoreBtn) {
             wlLoadMoreBtn.onclick = () => this.wlLoadList(false);
         }
+        
+        // 通知铃铛点击事件
+        const notificationBell = document.getElementById('notificationBell');
+        if (notificationBell) {
+            notificationBell.onclick = (e) => {
+                e.stopPropagation();
+                this.showNotificationPanel();
+            };
+        }
+        
+        // 通知面板相关事件
+        this.setupNotificationEvents();
         
         // 点击页面其他地方关闭用户菜单
         document.addEventListener('click', (e) => {
@@ -1075,6 +1107,23 @@ class VideoPlayer {
         const menuWishlist = document.getElementById('menuWishlist');
         if (menuWishlist) {
             menuWishlist.style.display = logged ? '' : 'none';
+        }
+        
+        // 控制通知相关UI显示
+        const notificationBell = document.getElementById('notificationBell');
+        const menuNotifications = document.getElementById('menuNotifications');
+        if (notificationBell) {
+            notificationBell.style.display = logged ? '' : 'none';
+        }
+        if (menuNotifications) {
+            menuNotifications.style.display = logged ? '' : 'none';
+        }
+        
+        // 如果用户已登录，启动通知轮询
+        if (logged) {
+            this.startNotificationPolling();
+        } else {
+            this.stopNotificationPolling();
         }
         
         if (!logged && REQUIRE_SUBTITLE_LOGIN) {
@@ -4221,6 +4270,379 @@ class VideoPlayer {
             }
             // 移除焦点陷阱
             this.removeFocusTrap();
+        }
+    }
+    
+    // ==================== 通知系统相关方法 ====================
+    
+    setupNotificationEvents() {
+        const closeBtn = document.getElementById('closeNotificationPanel');
+        const overlay = document.getElementById('notificationOverlay');
+        const markAllReadBtn = document.getElementById('markAllReadBtn');
+        
+        if (closeBtn) {
+            closeBtn.onclick = () => this.hideNotificationPanel();
+        }
+        
+        if (overlay) {
+            overlay.onclick = () => this.hideNotificationPanel();
+        }
+        
+        if (markAllReadBtn) {
+            markAllReadBtn.onclick = () => this.markAllNotificationsRead();
+        }
+        
+        // ESC键关闭面板
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const panel = document.getElementById('notificationPanel');
+                if (panel && panel.style.display !== 'none') {
+                    this.hideNotificationPanel();
+                }
+            }
+        });
+    }
+    
+    async showNotificationPanel() {
+        const panel = document.getElementById('notificationPanel');
+        const overlay = document.getElementById('notificationOverlay');
+        
+        if (!panel || !overlay) return;
+        
+        // 显示面板和遮罩
+        overlay.style.display = 'block';
+        panel.style.display = 'flex';
+        document.body.classList.add('modal-open');
+        
+        // 加载通知列表
+        await this.loadNotifications(true);
+    }
+    
+    hideNotificationPanel() {
+        const panel = document.getElementById('notificationPanel');
+        const overlay = document.getElementById('notificationOverlay');
+        
+        if (panel) panel.style.display = 'none';
+        if (overlay) overlay.style.display = 'none';
+        document.body.classList.remove('modal-open');
+    }
+    
+    async loadNotifications(reset = false, retryCount = 0) {
+        if (!this.isLoggedIn()) return;
+        
+        if (reset) {
+            this.notificationState.currentPage = 1;
+            this.notificationState.notifications = [];
+            this.notificationState.hasMore = true;
+        }
+        
+        if (this.notificationState.loading || !this.notificationState.hasMore) return;
+        
+        const maxRetries = 2;
+        const timeout = 8000; // 8秒超时
+        
+        this.notificationState.loading = true;
+        this.showNotificationLoading();
+        
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+            
+            const response = await fetch(`${API_BASE_URL}/api/notifications?page=${this.notificationState.currentPage}&limit=20`, {
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`
+                },
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (!response.ok) {
+                if (response.status === 401) {
+                    console.warn('认证失败，停止通知轮询');
+                    this.stopNotificationPolling();
+                    return;
+                }
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (reset) {
+                this.notificationState.notifications = data.notifications || [];
+            } else {
+                this.notificationState.notifications.push(...(data.notifications || []));
+            }
+            
+            this.notificationState.hasMore = data.hasMore || false;
+            this.notificationState.currentPage++;
+            
+            this.renderNotifications();
+            
+        } catch (error) {
+            console.error('加载通知失败:', error);
+            
+            if (error.name === 'AbortError') {
+                console.warn('通知加载请求超时');
+            }
+            
+            if (retryCount < maxRetries) {
+                const delay = (retryCount + 1) * 1000; // 1秒、2秒递增延迟
+                console.log(`${delay/1000}秒后重试加载通知 (${retryCount + 1}/${maxRetries})`);
+                
+                setTimeout(() => {
+                    this.loadNotifications(reset, retryCount + 1);
+                }, delay);
+                return; // 不执行finally块，保持loading状态
+            } else {
+                this.showNotificationError('加载通知失败，请稍后重试');
+            }
+        } finally {
+            this.notificationState.loading = false;
+            this.hideNotificationLoading();
+        }
+    }
+    
+    renderNotifications() {
+        const listEl = document.getElementById('notificationList');
+        const emptyEl = document.getElementById('notificationEmpty');
+        
+        if (!listEl || !emptyEl) return;
+        
+        if (this.notificationState.notifications.length === 0) {
+            listEl.innerHTML = '';
+            emptyEl.style.display = 'block';
+            return;
+        }
+        
+        emptyEl.style.display = 'none';
+        
+        const html = this.notificationState.notifications.map(notification => {
+            const isUnread = !notification.is_read;
+            const typeClass = notification.type === 'mention' ? 'mention' : 'system';
+            const typeText = notification.type === 'mention' ? '@提及' : '系统通知';
+            
+            return `
+                <div class="notification-item ${isUnread ? 'unread' : ''}" data-id="${notification.id}" data-link="${notification.link_url || ''}">
+                    <div class="notification-title">${this.escapeHtml(notification.title)}</div>
+                    <div class="notification-content-text">${this.escapeHtml(notification.content)}</div>
+                    <div class="notification-meta">
+                        <span class="notification-time">${this.formatTimeAgo(notification.created_at)}</span>
+                        <span class="notification-type ${typeClass}">${typeText}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        listEl.innerHTML = html;
+        
+        // 绑定点击事件
+        listEl.querySelectorAll('.notification-item').forEach(item => {
+            item.onclick = () => this.handleNotificationClick(item);
+        });
+    }
+    
+    async handleNotificationClick(item) {
+        const notificationId = item.dataset.id;
+        const linkUrl = item.dataset.link;
+        
+        // 标记为已读
+        if (item.classList.contains('unread')) {
+            await this.markNotificationRead(notificationId);
+            item.classList.remove('unread');
+            
+            // 更新未读数
+            this.notificationState.unreadCount = Math.max(0, this.notificationState.unreadCount - 1);
+            this.updateNotificationBadge();
+        }
+        
+        // 如果有链接，跳转到对应页面
+        if (linkUrl && linkUrl.trim()) {
+            this.hideNotificationPanel();
+            
+            // 如果是当前页面的锚点链接，直接滚动
+            if (linkUrl.startsWith('#')) {
+                const targetEl = document.querySelector(linkUrl);
+                if (targetEl) {
+                    targetEl.scrollIntoView({ behavior: 'smooth' });
+                }
+            } else {
+                // 否则跳转到新页面
+                window.open(linkUrl, '_blank');
+            }
+        }
+    }
+    
+    async markNotificationRead(notificationId) {
+        if (!this.isLoggedIn()) return;
+        
+        try {
+            await fetch(`${API_BASE_URL}/api/notifications/${notificationId}/read`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`
+                }
+            });
+        } catch (error) {
+            console.error('标记通知已读失败:', error);
+        }
+    }
+    
+    async markAllNotificationsRead() {
+        if (!this.isLoggedIn()) return;
+        
+        try {
+            await fetch(`${API_BASE_URL}/api/notifications/read-all`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`
+                }
+            });
+            
+            // 更新UI
+            this.notificationState.unreadCount = 0;
+            this.updateNotificationBadge();
+            
+            // 移除所有未读标记
+            const unreadItems = document.querySelectorAll('.notification-item.unread');
+            unreadItems.forEach(item => item.classList.remove('unread'));
+            
+            this.showToast('所有通知已标记为已读', 'success');
+            
+        } catch (error) {
+            console.error('标记所有通知已读失败:', error);
+            this.showToast('操作失败，请重试', 'error');
+        }
+    }
+    
+    async fetchUnreadCount(retryCount = 0) {
+        if (!this.isLoggedIn()) return;
+        
+        const maxRetries = 3;
+        const timeout = 5000; // 5秒超时
+        
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+            
+            const response = await fetch(`${API_BASE_URL}/api/notifications/unread-count`, {
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`
+                },
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (response.ok) {
+                const data = await response.json();
+                this.notificationState.unreadCount = data.count || 0;
+                this.updateNotificationBadge();
+                // 重置重试计数
+                this.notificationRetryCount = 0;
+            } else if (response.status === 401) {
+                // 认证失败，停止轮询
+                console.warn('认证失败，停止通知轮询');
+                this.stopNotificationPolling();
+            } else {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        } catch (error) {
+            console.error('获取未读通知数失败:', error);
+            
+            // 如果是认证错误或达到最大重试次数，不再重试
+            if (error.name === 'AbortError') {
+                console.warn('请求超时');
+            }
+            
+            if (retryCount < maxRetries) {
+                // 指数退避重试：1秒、2秒、4秒
+                const delay = Math.pow(2, retryCount) * 1000;
+                console.log(`${delay/1000}秒后重试 (${retryCount + 1}/${maxRetries})`);
+                
+                setTimeout(() => {
+                    this.fetchUnreadCount(retryCount + 1);
+                }, delay);
+            } else {
+                console.error('达到最大重试次数，停止重试');
+            }
+        }
+    }
+    
+    updateNotificationBadge() {
+        const badge = document.getElementById('notificationBadge');
+        if (!badge) return;
+        
+        const count = this.notificationState.unreadCount;
+        if (count > 0) {
+            badge.textContent = count > 99 ? '99+' : count.toString();
+            badge.style.display = 'flex';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+    
+    // 防抖函数，避免频繁请求
+    debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func.apply(this, args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+    
+    startNotificationPolling() {
+        if (this.notificationState.isPolling) return;
+        
+        this.notificationState.isPolling = true;
+        
+        // 创建防抖的获取函数，避免重复请求
+        if (!this.debouncedFetchUnreadCount) {
+            this.debouncedFetchUnreadCount = this.debounce(this.fetchUnreadCount.bind(this), 1000);
+        }
+        
+        // 立即获取一次未读数
+        this.fetchUnreadCount();
+        
+        // 每10秒轮询一次，使用防抖优化
+        this.notificationState.pollInterval = setInterval(() => {
+            this.debouncedFetchUnreadCount();
+        }, 10000);
+    }
+    
+    stopNotificationPolling() {
+        if (!this.notificationState.isPolling) return;
+        
+        this.notificationState.isPolling = false;
+        
+        if (this.notificationState.pollInterval) {
+            clearInterval(this.notificationState.pollInterval);
+            this.notificationState.pollInterval = null;
+        }
+        
+        // 清空未读数
+        this.notificationState.unreadCount = 0;
+        this.updateNotificationBadge();
+    }
+    
+    showNotificationLoading() {
+        const loadingEl = document.getElementById('notificationLoading');
+        if (loadingEl) loadingEl.style.display = 'block';
+    }
+    
+    hideNotificationLoading() {
+        const loadingEl = document.getElementById('notificationLoading');
+        if (loadingEl) loadingEl.style.display = 'none';
+    }
+    
+    showNotificationError(message) {
+        const listEl = document.getElementById('notificationList');
+        if (listEl) {
+            listEl.innerHTML = `<div class="notification-empty"><p>${message}</p></div>`;
         }
     }
 }

@@ -185,4 +185,27 @@ export const wishlistAPI = {
   }
 }
 
+// 通知管理API
+export const notificationAPI = {
+  // 发送系统广播通知
+  broadcast(data) {
+    return api.post('/api/admin/notifications/broadcast', data)
+  },
+  
+  // 获取通知统计
+  getStats() {
+    return api.get('/api/admin/notifications/stats')
+  },
+  
+  // 获取通知列表（管理员视角）
+  getList(params = {}) {
+    return api.get('/api/admin/notifications', { params })
+  },
+  
+  // 删除通知
+  delete(id) {
+    return api.delete(`/api/admin/notifications/${id}`)
+  }
+}
+
 export default api

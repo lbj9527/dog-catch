@@ -888,6 +888,30 @@ db.serialize(() => {
     db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_comment_likes_user_comment ON comment_likes(user_id, comment_id)', () => {});
     db.run('CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id)', () => {});
     
+    // 新增：通知表
+    db.run(`CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        title TEXT,
+        content TEXT NOT NULL,
+        link_url TEXT,
+        payload_json TEXT,
+        is_read INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        read_at DATETIME,
+        sender_user_id INTEGER,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE SET NULL,
+        CHECK (type IN ('mention', 'system_broadcast')),
+        CHECK (is_read IN (0, 1))
+    )`);
+    
+    // 为 notifications 表创建索引
+    db.run('CREATE INDEX IF NOT EXISTS idx_notifications_user_read_created ON notifications(user_id, is_read, created_at DESC)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(type)', () => {});
+    
     // 创建默认管理员账号 (用户名: admin, 密码: admin123)
     const defaultPassword = bcrypt.hashSync('admin123', 10);
     db.run(`INSERT OR IGNORE INTO admins (username, password_hash) VALUES (?, ?)`, 
@@ -901,6 +925,8 @@ app.use(helmet());
 const defaultCors = [
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:5173',  // 管理端开发地址
+    'http://localhost:5174',  // 播放器开发地址
     'https://player.sub-dog.top',
     'https://api.sub-dog.top'
 ];
@@ -2844,6 +2870,17 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
             );
         }
         
+        // 异步处理@提及通知（不阻塞响应）
+        createMentionNotifications(
+            content.trim(), 
+            userId, 
+            videoId, 
+            result.lastID, 
+            parentCommentId
+        ).catch(err => {
+            console.error('处理@提及通知时出错:', err);
+        });
+        
         res.status(201).json({
             message: '评论发表成功',
             data: {
@@ -3007,6 +3044,391 @@ app.delete('/api/admin/users/:id', authenticateAdminToken, async (req, res) => {
         res.status(500).json({ error: '删除用户失败' });
     }
 });
+
+// ==================== 通知系统 API ====================
+
+// 获取用户未读通知数量（带缓存优化）
+app.get('/api/notifications/unread-count', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        
+        // 设置缓存控制头，减少频繁请求
+        res.set({
+            'Cache-Control': 'private, max-age=5', // 5秒缓存
+            'ETag': `"unread-${userId}-${Date.now()}"`
+        });
+        
+        const result = await getAsync(
+            'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0',
+            [userId]
+        );
+        res.json({ unreadCount: result.count || 0 });
+    } catch (e) {
+        console.error('获取未读通知数量失败:', e);
+        res.status(500).json({ error: '获取未读通知数量失败' });
+    }
+});
+
+// 获取用户通知列表
+app.get('/api/notifications', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const page = parseInt(req.query.page) || 1;
+        const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+        const offset = (page - 1) * limit;
+        
+        // 获取通知列表
+        const notifications = await getAllAsync(`
+            SELECT 
+                n.id,
+                n.type,
+                n.title,
+                n.content,
+                n.link_url,
+                n.payload_json,
+                n.is_read,
+                n.created_at,
+                n.read_at,
+                u.username as sender_username
+            FROM notifications n
+            LEFT JOIN users u ON n.sender_user_id = u.id
+            WHERE n.user_id = ?
+            ORDER BY n.created_at DESC
+            LIMIT ? OFFSET ?
+        `, [userId, limit, offset]);
+        
+        // 获取总数
+        const countResult = await getAsync(
+            'SELECT COUNT(*) as total FROM notifications WHERE user_id = ?',
+            [userId]
+        );
+        
+        // 格式化通知数据
+        const formattedNotifications = notifications.map(notification => ({
+            id: notification.id,
+            type: notification.type,
+            title: notification.title,
+            content: notification.content,
+            linkUrl: notification.link_url,
+            payload: notification.payload_json ? JSON.parse(notification.payload_json) : null,
+            isRead: notification.is_read === 1,
+            createdAt: notification.created_at,
+            readAt: notification.read_at,
+            senderUsername: notification.sender_username
+        }));
+        
+        res.json({
+            notifications: formattedNotifications,
+            pagination: {
+                page,
+                limit,
+                total: countResult.total || 0,
+                totalPages: Math.ceil((countResult.total || 0) / limit)
+            }
+        });
+    } catch (e) {
+        console.error('获取通知列表失败:', e);
+        res.status(500).json({ error: '获取通知列表失败' });
+    }
+});
+
+// 标记通知为已读
+app.patch('/api/notifications/:id/read', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const notificationId = parseInt(req.params.id);
+        
+        if (!notificationId) {
+            return res.status(400).json({ error: '通知ID无效' });
+        }
+        
+        // 验证通知属于当前用户并更新
+        const result = await runAsync(
+            'UPDATE notifications SET is_read = 1, read_at = datetime(\'now\') WHERE id = ? AND user_id = ? AND is_read = 0',
+            [notificationId, userId]
+        );
+        
+        if (result.changes === 0) {
+            return res.status(404).json({ error: '通知不存在或已读' });
+        }
+        
+        res.json({ message: '标记成功' });
+    } catch (e) {
+        console.error('标记通知已读失败:', e);
+        res.status(500).json({ error: '标记通知已读失败' });
+    }
+});
+
+// 批量标记通知为已读
+app.patch('/api/notifications/read-all', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        
+        await runAsync(
+            'UPDATE notifications SET is_read = 1, read_at = datetime(\'now\') WHERE user_id = ? AND is_read = 0',
+            [userId]
+        );
+        
+        res.json({ message: '全部标记成功' });
+    } catch (e) {
+        console.error('批量标记通知已读失败:', e);
+        res.status(500).json({ error: '批量标记通知已读失败' });
+    }
+});
+
+// 输入验证和清理函数
+function sanitizeInput(input) {
+    if (typeof input !== 'string') return '';
+    // 移除潜在的HTML标签和脚本
+    return input.replace(/<[^>]*>/g, '').trim();
+}
+
+function validateUrl(url) {
+    if (!url) return true; // 可选字段
+    try {
+        const parsed = new URL(url);
+        // 只允许http和https协议
+        return ['http:', 'https:'].includes(parsed.protocol);
+    } catch {
+        return false;
+    }
+}
+
+// 管理员发送系统广播通知（增强安全性）
+app.post('/api/admin/notifications/broadcast', authenticateAdminToken, async (req, res) => {
+    try {
+        let { title, content, linkUrl } = req.body;
+        
+        // 输入验证和清理
+        title = sanitizeInput(title);
+        content = sanitizeInput(content);
+        linkUrl = linkUrl ? sanitizeInput(linkUrl) : null;
+        
+        if (!title || !content) {
+            return res.status(400).json({ error: '标题和内容不能为空' });
+        }
+        
+        if (title.length > 100) {
+            return res.status(400).json({ error: '标题长度不能超过100字符' });
+        }
+        
+        if (content.length > 500) {
+            return res.status(400).json({ error: '内容长度不能超过500字符' });
+        }
+        
+        if (linkUrl && !validateUrl(linkUrl)) {
+            return res.status(400).json({ error: '链接格式无效' });
+        }
+        
+        // 获取所有用户ID（用于计数和空检查）
+        const users = await getAllAsync('SELECT id FROM users WHERE status = \'active\'');
+        
+        if (users.length === 0) {
+            return res.json({ message: '没有活跃用户，广播已跳过', sentCount: 0 });
+        }
+        
+        // 使用单条 INSERT...SELECT 语句批量插入通知（避免 finalize 竞态）
+        await runAsync(`
+            INSERT INTO notifications (
+                user_id, type, title, content, link_url, 
+                payload_json, is_read, created_at
+            ) 
+            SELECT id, 'system_broadcast', ?, ?, ?, NULL, 0, datetime('now')
+            FROM users WHERE status = 'active'
+        `, [title, content, linkUrl || null]);
+        
+        res.json({ 
+            message: '系统广播发送成功', 
+            sentCount: users.length 
+        });
+    } catch (e) {
+        console.error('发送系统广播失败:', {
+            message: e.message,
+            code: e.code,
+            titleLength: title ? title.length : 0,
+            contentLength: content ? content.length : 0,
+            hasLinkUrl: !!linkUrl
+        });
+        res.status(500).json({ error: '发送系统广播失败' });
+    }
+});
+
+// 管理员获取通知统计
+app.get('/api/admin/notifications/stats', authenticateAdminToken, async (req, res) => {
+    try {
+        // 获取总通知数
+        const totalResult = await getAsync('SELECT COUNT(*) as count FROM notifications');
+        const total = totalResult.count;
+        
+        // 获取系统广播通知数
+        const systemResult = await getAsync('SELECT COUNT(*) as count FROM notifications WHERE type = \'system_broadcast\'');
+        const systemBroadcast = systemResult.count;
+        
+        // 获取@提及通知数
+        const mentionResult = await getAsync('SELECT COUNT(*) as count FROM notifications WHERE type = \'mention\'');
+        const mention = mentionResult.count;
+        
+        // 获取今日发送的通知数
+        const todayResult = await getAsync(`
+            SELECT COUNT(*) as count FROM notifications 
+            WHERE date(created_at) = date('now')
+        `);
+        const today = todayResult.count;
+        
+        res.json({
+            total,
+            systemBroadcast,
+            mention,
+            today
+        });
+    } catch (e) {
+        console.error('获取通知统计失败:', e);
+        res.status(500).json({ error: '获取通知统计失败' });
+    }
+});
+
+// 管理员获取通知列表
+app.get('/api/admin/notifications', authenticateAdminToken, async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const pageSize = parseInt(req.query.pageSize) || 20;
+        const search = req.query.search || '';
+        const offset = (page - 1) * pageSize;
+        
+        let whereClause = '';
+        let params = [];
+        
+        if (search) {
+            whereClause = 'WHERE (n.title LIKE ? OR n.content LIKE ? OR u.username LIKE ?)';
+            const searchPattern = `%${search}%`;
+            params = [searchPattern, searchPattern, searchPattern];
+        }
+        
+        // 获取通知列表
+        const notifications = await getAllAsync(`
+            SELECT 
+                n.id,
+                n.type,
+                n.title,
+                n.content,
+                n.link_url,
+                n.is_read,
+                n.created_at,
+                u.username as receiver_username
+            FROM notifications n
+            LEFT JOIN users u ON n.user_id = u.id
+            ${whereClause}
+            ORDER BY n.created_at DESC
+            LIMIT ? OFFSET ?
+        `, [...params, pageSize, offset]);
+        
+        // 获取总数
+        const countResult = await getAsync(`
+            SELECT COUNT(*) as count
+            FROM notifications n
+            LEFT JOIN users u ON n.user_id = u.id
+            ${whereClause}
+        `, params);
+        
+        res.json({
+            notifications,
+            total: countResult.count,
+            page,
+            pageSize
+        });
+    } catch (e) {
+        console.error('获取通知列表失败:', e);
+        res.status(500).json({ error: '获取通知列表失败' });
+    }
+});
+
+// 管理员删除通知
+app.delete('/api/admin/notifications/:id', authenticateAdminToken, async (req, res) => {
+    try {
+        const notificationId = req.params.id;
+        
+        const result = await runAsync('DELETE FROM notifications WHERE id = ?', [notificationId]);
+        
+        if (result.changes === 0) {
+            return res.status(404).json({ error: '通知不存在' });
+        }
+        
+        res.json({ message: '通知删除成功' });
+    } catch (e) {
+        console.error('删除通知失败:', e);
+        res.status(500).json({ error: '删除通知失败' });
+    }
+});
+
+// 创建@提及通知的辅助函数
+async function createMentionNotifications(content, senderUserId, videoId, commentId, parentCommentId = null) {
+    try {
+        // @提及的正则表达式：支持中文、字母、数字、下划线
+        const mentionRegex = /@([\u4e00-\u9fa5a-zA-Z0-9_]+)/g;
+        const mentions = [];
+        let match;
+        
+        while ((match = mentionRegex.exec(content)) !== null) {
+            const username = match[1];
+            if (username && !mentions.includes(username)) {
+                mentions.push(username);
+            }
+        }
+        
+        if (mentions.length === 0) return;
+        
+        // 查询被@的用户ID（排除发送者自己）
+        const placeholders = mentions.map(() => '?').join(',');
+        const mentionedUsers = await getAllAsync(
+            `SELECT id, username FROM users WHERE username IN (${placeholders}) AND id != ? AND status = 'active'`,
+            [...mentions, senderUserId]
+        );
+        
+        if (mentionedUsers.length === 0) return;
+        
+        // 获取发送者用户名
+        const sender = await getAsync('SELECT username FROM users WHERE id = ?', [senderUserId]);
+        const senderUsername = sender ? sender.username : '未知用户';
+        
+        // 生成通知链接
+        const linkUrl = `/player.html?v=${videoId}#comment-${commentId}`;
+        
+        // 为每个被@的用户创建通知
+        const notificationPromises = mentionedUsers.map(user => {
+            const title = `${senderUsername} 在评论中提到了你`;
+            const notificationContent = content.length > 100 ? content.substring(0, 100) + '...' : content;
+            
+            const payload = {
+                videoId,
+                commentId,
+                parentCommentId,
+                senderUserId,
+                senderUsername
+            };
+            
+            return runAsync(`
+                INSERT INTO notifications (
+                    user_id, type, title, content, link_url, 
+                    payload_json, is_read, created_at, sender_user_id
+                ) VALUES (?, 'mention', ?, ?, ?, ?, 0, datetime('now'), ?)
+            `, [
+                user.id, 
+                title, 
+                notificationContent, 
+                linkUrl, 
+                JSON.stringify(payload), 
+                senderUserId
+            ]);
+        });
+        
+        await Promise.all(notificationPromises);
+        
+        console.log(`创建了 ${mentionedUsers.length} 个@提及通知`);
+    } catch (e) {
+        console.error('创建@提及通知失败:', e);
+        // 不抛出错误，避免影响主要的评论发表流程
+    }
+}
 
 // 错误处理中间件
 app.use((err, req, res, next) => {
