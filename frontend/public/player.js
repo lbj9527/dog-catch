@@ -4677,10 +4677,11 @@ class VideoPlayer {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), timeout);
             
-            const response = await fetch(`${API_BASE_URL}/api/notifications/unread-count`, {
+            const response = await fetch(`${API_BASE_URL}/api/notifications/unread-count?_t=${Date.now()}`, {
                 headers: {
                     'Authorization': `Bearer ${this.userToken}`
                 },
+                cache: 'no-store',
                 signal: controller.signal
             });
             
@@ -4688,7 +4689,10 @@ class VideoPlayer {
             
             if (response.ok) {
                 const data = await response.json();
-                this.notificationState.unreadCount = data.count || 0;
+                // 优先读取 unreadCount，其次读取 count，确保兼容性
+                const count = data.unreadCount !== undefined ? data.unreadCount : (data.count || 0);
+                // 确保是数字类型
+                this.notificationState.unreadCount = typeof count === 'number' ? count : parseInt(count) || 0;
                 this.updateNotificationBadge();
                 // 重置重试计数
                 this.notificationRetryCount = 0;
