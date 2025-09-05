@@ -4262,12 +4262,75 @@ class VideoPlayer {
         }
     }
     
+    // ==================== 通知隐藏列表工具方法 ====================
+    
+    // 获取用户作用域的存储键
+    getUserScopedStorageKey() {
+        try {
+            if (this.userToken) {
+                const payload = JSON.parse(atob(this.userToken.split('.')[1]));
+                const userId = payload.id || payload.userId || payload.email || 'anonymous';
+                return `dc_hidden_notifications_v1:${userId}`;
+            }
+        } catch (e) {
+            console.warn('解析用户token失败，使用匿名存储:', e);
+        }
+        return 'dc_hidden_notifications_v1:anonymous';
+    }
+    
+    // 从localStorage读取隐藏列表
+    loadHiddenSet() {
+        try {
+            const key = this.getUserScopedStorageKey();
+            const stored = localStorage.getItem(key);
+            if (stored) {
+                const hiddenArray = JSON.parse(stored);
+                return new Set(hiddenArray);
+            }
+        } catch (e) {
+            console.warn('读取隐藏列表失败:', e);
+        }
+        return new Set();
+    }
+    
+    // 保存隐藏列表到localStorage
+    saveHiddenSet(hiddenSet) {
+        try {
+            const key = this.getUserScopedStorageKey();
+            const hiddenArray = Array.from(hiddenSet);
+            localStorage.setItem(key, JSON.stringify(hiddenArray));
+        } catch (e) {
+            console.warn('保存隐藏列表失败:', e);
+        }
+    }
+    
+    // 检查通知是否已隐藏
+    isHidden(id) {
+        const hiddenSet = this.loadHiddenSet();
+        return hiddenSet.has(String(id));
+    }
+    
+    // 添加单个通知到隐藏列表
+    addHidden(id) {
+        const hiddenSet = this.loadHiddenSet();
+        hiddenSet.add(String(id));
+        this.saveHiddenSet(hiddenSet);
+    }
+    
+    // 批量添加通知到隐藏列表
+    addHiddenBatch(ids) {
+        const hiddenSet = this.loadHiddenSet();
+        ids.forEach(id => hiddenSet.add(String(id)));
+        this.saveHiddenSet(hiddenSet);
+    }
+
     // ==================== 通知系统相关方法 ====================
     
     setupNotificationEvents() {
         const closeBtn = document.getElementById('closeNotificationPanel');
         const overlay = document.getElementById('notificationOverlay');
         const markAllReadBtn = document.getElementById('markAllReadBtn');
+        const deleteAllBtn = document.getElementById('deleteAllBtn');
         
         if (closeBtn) {
             closeBtn.onclick = () => this.hideNotificationPanel();
@@ -4279,6 +4342,10 @@ class VideoPlayer {
         
         if (markAllReadBtn) {
             markAllReadBtn.onclick = () => this.markAllNotificationsRead();
+        }
+        
+        if (deleteAllBtn) {
+            deleteAllBtn.onclick = () => this.handleDeleteAllNotifications();
         }
         
         // ESC键关闭面板
@@ -4398,7 +4465,12 @@ class VideoPlayer {
         
         if (!listEl || !emptyEl) return;
         
-        if (this.notificationState.notifications.length === 0) {
+        // 过滤已隐藏的通知
+        const visibleNotifications = this.notificationState.notifications.filter(notification => {
+            return !this.isHidden(notification.id);
+        });
+        
+        if (visibleNotifications.length === 0) {
             listEl.innerHTML = '';
             emptyEl.style.display = 'block';
             return;
@@ -4406,7 +4478,7 @@ class VideoPlayer {
         
         emptyEl.style.display = 'none';
         
-        const html = this.notificationState.notifications.map(notification => {
+        const html = visibleNotifications.map(notification => {
             const isUnread = !notification.isRead;
             const typeClass = notification.type === 'mention' ? 'mention' : 'system';
             const typeText = notification.type === 'mention' ? '@提及' : '系统通知';
@@ -4416,8 +4488,11 @@ class VideoPlayer {
                     <div class="notification-title">${this.escapeHtml(notification.title)}</div>
                     <div class="notification-content-text">${this.escapeHtml(notification.content)}</div>
                     <div class="notification-meta">
-                        <span class="notification-time">${this.formatTimeAgo(notification.createdAt)}</span>
-                        <span class="notification-type ${typeClass}">${typeText}</span>
+                        <div class="meta-left">
+                            <span class="notification-time">${this.formatTimeAgo(notification.createdAt)}</span>
+                            <span class="notification-type ${typeClass}">${typeText}</span>
+                        </div>
+                        <button class="notification-delete" title="删除此消息" aria-label="删除此消息">删除</button>
                     </div>
                 </div>
             `;
@@ -4427,10 +4502,76 @@ class VideoPlayer {
         
         // 绑定点击事件
         listEl.querySelectorAll('.notification-item').forEach(item => {
-            item.onclick = () => this.handleNotificationClick(item);
+            // 绑定通知项点击事件（排除删除按钮）
+            item.addEventListener('click', (e) => {
+                if (!e.target.closest('.notification-delete')) {
+                    this.handleNotificationClick(item);
+                }
+            });
+            
+            // 绑定删除按钮点击事件
+            const deleteBtn = item.querySelector('.notification-delete');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.handleNotificationDelete(item.dataset.id);
+                });
+            }
         });
     }
     
+    // 处理单个通知删除
+    handleNotificationDelete(notificationId) {
+        try {
+            // 添加到隐藏列表
+            this.addHidden(notificationId);
+            
+            // 重新渲染通知列表
+            this.renderNotifications();
+            
+            // 更新未读计数（如果删除的是未读通知）
+            const deletedNotification = this.notificationState.notifications.find(n => n.id == notificationId);
+            if (deletedNotification && !deletedNotification.isRead) {
+                this.notificationState.unreadCount = Math.max(0, this.notificationState.unreadCount - 1);
+                this.updateNotificationBadge();
+            }
+            
+            console.log('通知已隐藏:', notificationId);
+        } catch (error) {
+            console.error('删除通知失败:', error);
+        }
+    }
+    
+    // 处理全部删除
+    handleDeleteAllNotifications() {
+        try {
+            // 获取当前可见的通知ID列表
+            const visibleNotifications = this.notificationState.notifications.filter(notification => {
+                return !this.isHidden(notification.id);
+            });
+            
+            if (visibleNotifications.length === 0) {
+                return;
+            }
+            
+            // 批量添加到隐藏列表
+            const visibleIds = visibleNotifications.map(n => n.id);
+            this.addHiddenBatch(visibleIds);
+            
+            // 重新渲染通知列表
+            this.renderNotifications();
+            
+            // 更新未读计数（减去被删除的未读通知数量）
+            const deletedUnreadCount = visibleNotifications.filter(n => !n.isRead).length;
+            this.notificationState.unreadCount = Math.max(0, this.notificationState.unreadCount - deletedUnreadCount);
+            this.updateNotificationBadge();
+            
+            console.log('已隐藏所有可见通知:', visibleIds.length, '条');
+        } catch (error) {
+            console.error('批量删除通知失败:', error);
+        }
+    }
+
     async handleNotificationClick(item) {
         const notificationId = item.dataset.id;
         const linkUrl = item.dataset.link;
