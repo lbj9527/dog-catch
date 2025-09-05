@@ -3291,7 +3291,7 @@ app.get('/api/admin/notifications/stats', authenticateAdminToken, async (req, re
 app.get('/api/admin/notifications', authenticateAdminToken, async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
-        const pageSize = parseInt(req.query.pageSize) || 20;
+        const pageSize = parseInt(req.query.pageSize || req.query.limit) || 20;
         const search = req.query.search || '';
         const offset = (page - 1) * pageSize;
         
@@ -3308,10 +3308,15 @@ app.get('/api/admin/notifications', authenticateAdminToken, async (req, res) => 
         const notifications = await getAllAsync(`
             SELECT 
                 n.id,
-                n.type,
+                CASE 
+                    WHEN n.type = 'system_broadcast' THEN 'system'
+                    WHEN n.type = 'mention' THEN 'mention'
+                    ELSE n.type
+                END as type,
                 n.title,
                 n.content,
-                n.link_url,
+                n.link_url as link,
+                n.user_id,
                 n.is_read,
                 n.created_at,
                 u.username as receiver_username
@@ -3331,10 +3336,12 @@ app.get('/api/admin/notifications', authenticateAdminToken, async (req, res) => 
         `, params);
         
         res.json({
-            notifications,
-            total: countResult.count,
-            page,
-            pageSize
+            data: notifications,
+            pagination: {
+                total: countResult.count,
+                page,
+                limit: pageSize
+            }
         });
     } catch (e) {
         console.error('获取通知列表失败:', e);
