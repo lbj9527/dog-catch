@@ -650,14 +650,7 @@ class VideoPlayer {
             };
         }
         
-        // 通知菜单项点击事件
-        const menuNotifications = document.getElementById('menuNotifications');
-        if (menuNotifications) {
-            menuNotifications.onclick = () => {
-                if (userMenu) userMenu.style.display = 'none';
-                this.showNotificationPanel();
-            };
-        }
+
         
         // 心愿单菜单项点击事件
         if (menuWishlist) {
@@ -1111,12 +1104,8 @@ class VideoPlayer {
         
         // 控制通知相关UI显示
         const notificationBell = document.getElementById('notificationBell');
-        const menuNotifications = document.getElementById('menuNotifications');
         if (notificationBell) {
             notificationBell.style.display = logged ? '' : 'none';
-        }
-        if (menuNotifications) {
-            menuNotifications.style.display = logged ? '' : 'none';
         }
         
         // 如果用户已登录，启动通知轮询
@@ -4418,16 +4407,16 @@ class VideoPlayer {
         emptyEl.style.display = 'none';
         
         const html = this.notificationState.notifications.map(notification => {
-            const isUnread = !notification.is_read;
+            const isUnread = !notification.isRead;
             const typeClass = notification.type === 'mention' ? 'mention' : 'system';
             const typeText = notification.type === 'mention' ? '@提及' : '系统通知';
             
             return `
-                <div class="notification-item ${isUnread ? 'unread' : ''}" data-id="${notification.id}" data-link="${notification.link_url || ''}">
+                <div class="notification-item ${isUnread ? 'unread' : ''}" data-id="${notification.id}" data-link="${notification.linkUrl || ''}">
                     <div class="notification-title">${this.escapeHtml(notification.title)}</div>
                     <div class="notification-content-text">${this.escapeHtml(notification.content)}</div>
                     <div class="notification-meta">
-                        <span class="notification-time">${this.formatTimeAgo(notification.created_at)}</span>
+                        <span class="notification-time">${this.formatTimeAgo(notification.createdAt)}</span>
                         <span class="notification-type ${typeClass}">${typeText}</span>
                     </div>
                 </div>
@@ -4450,6 +4439,12 @@ class VideoPlayer {
         if (item.classList.contains('unread')) {
             await this.markNotificationRead(notificationId);
             item.classList.remove('unread');
+            
+            // 更新内存中的通知状态
+            const notification = this.notificationState.notifications.find(n => n.id == notificationId);
+            if (notification) {
+                notification.isRead = true;
+            }
             
             // 更新未读数
             this.notificationState.unreadCount = Math.max(0, this.notificationState.unreadCount - 1);
@@ -4477,14 +4472,20 @@ class VideoPlayer {
         if (!this.isLoggedIn()) return;
         
         try {
-            await fetch(`${API_BASE_URL}/api/notifications/${notificationId}/read`, {
-                method: 'POST',
+            const response = await fetch(`${API_BASE_URL}/api/notifications/${notificationId}/read`, {
+                method: 'PATCH',
                 headers: {
                     'Authorization': `Bearer ${this.userToken}`
                 }
             });
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `HTTP ${response.status}`);
+            }
         } catch (error) {
             console.error('标记通知已读失败:', error);
+            this.showToast('标记已读失败，请重试', 'error');
         }
     }
     
@@ -4492,16 +4493,26 @@ class VideoPlayer {
         if (!this.isLoggedIn()) return;
         
         try {
-            await fetch(`${API_BASE_URL}/api/notifications/read-all`, {
-                method: 'POST',
+            const response = await fetch(`${API_BASE_URL}/api/notifications/read-all`, {
+                method: 'PATCH',
                 headers: {
                     'Authorization': `Bearer ${this.userToken}`
                 }
             });
             
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `HTTP ${response.status}`);
+            }
+            
             // 更新UI
             this.notificationState.unreadCount = 0;
             this.updateNotificationBadge();
+            
+            // 更新内存中所有通知状态
+            this.notificationState.notifications.forEach(notification => {
+                notification.isRead = true;
+            });
             
             // 移除所有未读标记
             const unreadItems = document.querySelectorAll('.notification-item.unread');
