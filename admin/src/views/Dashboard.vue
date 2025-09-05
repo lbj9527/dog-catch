@@ -477,8 +477,9 @@
             </el-table-column>
             <el-table-column label="接收用户" width="120" align="center">
               <template #default="scope">
-                <span v-if="scope.row.user_id">单个用户</span>
-                <el-tag v-else type="warning">全体用户</el-tag>
+                <span v-if="scope.row.receiver_username">{{ scope.row.receiver_username }}</span>
+                <el-tag v-else-if="!scope.row.user_id" type="warning">全体用户</el-tag>
+                <span v-else>用户#{{ scope.row.user_id }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="created_at" label="发送时间" width="180">
