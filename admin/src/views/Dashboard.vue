@@ -482,6 +482,21 @@
                 <span v-else>用户#{{ scope.row.user_id }}</span>
               </template>
             </el-table-column>
+            <el-table-column label="删除状态" width="120" align="center">
+              <template #default="scope">
+                <span v-if="!scope.row.user_id" style="color: #999;">-</span>
+                <el-tag v-else-if="scope.row.is_deleted === 1" type="danger" size="small">
+                  已删除
+                </el-tag>
+                <el-tag v-else type="success" size="small">
+                  未删除
+                </el-tag>
+                <div v-if="scope.row.is_deleted === 1 && scope.row.deleted_at" 
+                     style="color: #999; font-size: 11px; margin-top: 2px;">
+                  {{ formatDate(scope.row.deleted_at) }}
+                </div>
+              </template>
+            </el-table-column>
             <el-table-column prop="created_at" label="发送时间" width="180">
               <template #default="scope">
                 {{ formatDate(scope.row.created_at) }}

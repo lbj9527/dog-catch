@@ -4521,54 +4521,83 @@ class VideoPlayer {
     }
     
     // 处理单个通知删除
-    handleNotificationDelete(notificationId) {
+    async handleNotificationDelete(notificationId) {
         try {
-            // 添加到隐藏列表
-            this.addHidden(notificationId);
+            // 调用后端删除接口
+            const response = await fetch(`${API_BASE_URL}/api/notifications/${notificationId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || '删除失败');
+            }
+            
+            // 从本地通知列表中移除
+            this.notificationState.notifications = this.notificationState.notifications.filter(n => n.id != notificationId);
             
             // 重新渲染通知列表
             this.renderNotifications();
             
-            // 更新未读计数（如果删除的是未读通知）
-            const deletedNotification = this.notificationState.notifications.find(n => n.id == notificationId);
-            if (deletedNotification && !deletedNotification.isRead) {
-                this.notificationState.unreadCount = Math.max(0, this.notificationState.unreadCount - 1);
-                this.updateNotificationBadge();
-            }
+            // 重新获取未读计数以保持同步
+            await this.fetchUnreadCount();
             
-            console.log('通知已隐藏:', notificationId);
+            console.log('通知已删除:', notificationId);
+            this.showToast('通知已删除', 'success');
         } catch (error) {
             console.error('删除通知失败:', error);
+            this.showToast(error.message || '删除通知失败', 'error');
         }
     }
     
     // 处理全部删除
-    handleDeleteAllNotifications() {
+    async handleDeleteAllNotifications() {
         try {
-            // 获取当前可见的通知ID列表
-            const visibleNotifications = this.notificationState.notifications.filter(notification => {
-                return !this.isHidden(notification.id);
-            });
+            // 获取当前通知ID列表
+            const currentNotifications = this.notificationState.notifications;
             
-            if (visibleNotifications.length === 0) {
+            if (currentNotifications.length === 0) {
+                this.showToast('没有可删除的通知', 'info');
                 return;
             }
             
-            // 批量添加到隐藏列表
-            const visibleIds = visibleNotifications.map(n => n.id);
-            this.addHiddenBatch(visibleIds);
+            const notificationIds = currentNotifications.map(n => n.id);
+            
+            // 调用后端批量删除接口
+            const response = await fetch(`${API_BASE_URL}/api/notifications/delete`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ ids: notificationIds })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || '批量删除失败');
+            }
+            
+            const result = await response.json();
+            
+            // 清空本地通知列表
+            this.notificationState.notifications = [];
             
             // 重新渲染通知列表
             this.renderNotifications();
             
-            // 更新未读计数（减去被删除的未读通知数量）
-            const deletedUnreadCount = visibleNotifications.filter(n => !n.isRead).length;
-            this.notificationState.unreadCount = Math.max(0, this.notificationState.unreadCount - deletedUnreadCount);
-            this.updateNotificationBadge();
+            // 重新获取未读计数以保持同步
+            await this.fetchUnreadCount();
             
-            console.log('已隐藏所有可见通知:', visibleIds.length, '条');
+            console.log('批量删除通知成功:', result.deletedCount, '条');
+            this.showToast(`已删除 ${result.deletedCount} 条通知`, 'success');
         } catch (error) {
             console.error('批量删除通知失败:', error);
+            this.showToast(error.message || '批量删除通知失败', 'error');
         }
     }
 

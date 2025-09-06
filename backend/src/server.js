@@ -901,16 +901,46 @@ db.serialize(() => {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         read_at DATETIME,
         sender_user_id INTEGER,
+        is_deleted INTEGER DEFAULT 0,
+        deleted_at DATETIME,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE SET NULL,
         CHECK (type IN ('mention', 'system_broadcast')),
-        CHECK (is_read IN (0, 1))
+        CHECK (is_read IN (0, 1)),
+        CHECK (is_deleted IN (0, 1))
     )`);
+    
+    // 检查并添加软删除列（兼容旧数据库）
+    db.all("PRAGMA table_info(notifications)", (err, columns) => {
+        if (err) {
+            console.error('检查 notifications 表结构失败:', err);
+            return;
+        }
+        
+        const hasIsDeleted = columns.some(col => col.name === 'is_deleted');
+        const hasDeletedAt = columns.some(col => col.name === 'deleted_at');
+        
+        if (!hasIsDeleted) {
+            db.run('ALTER TABLE notifications ADD COLUMN is_deleted INTEGER DEFAULT 0', (err) => {
+                if (err) console.error('添加 is_deleted 列失败:', err);
+                else console.log('已添加 is_deleted 列到 notifications 表');
+            });
+        }
+        
+        if (!hasDeletedAt) {
+            db.run('ALTER TABLE notifications ADD COLUMN deleted_at DATETIME', (err) => {
+                if (err) console.error('添加 deleted_at 列失败:', err);
+                else console.log('已添加 deleted_at 列到 notifications 表');
+            });
+        }
+    });
     
     // 为 notifications 表创建索引
     db.run('CREATE INDEX IF NOT EXISTS idx_notifications_user_read_created ON notifications(user_id, is_read, created_at DESC)', () => {});
     db.run('CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC)', () => {});
     db.run('CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(type)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_notifications_user_deleted ON notifications(user_id, is_deleted)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_notifications_user_deleted_created ON notifications(user_id, is_deleted, created_at DESC)', () => {});
     
     // 创建默认管理员账号 (用户名: admin, 密码: admin123)
     const defaultPassword = bcrypt.hashSync('admin123', 10);
@@ -3059,7 +3089,7 @@ app.get('/api/notifications/unread-count', authenticateUserToken, async (req, re
         });
         
         const result = await getAsync(
-            'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0',
+            'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0 AND is_deleted = 0',
             [userId]
         );
         res.json({ unreadCount: result.count || 0 });
@@ -3092,14 +3122,14 @@ app.get('/api/notifications', authenticateUserToken, async (req, res) => {
                 u.username as sender_username
             FROM notifications n
             LEFT JOIN users u ON n.sender_user_id = u.id
-            WHERE n.user_id = ?
+            WHERE n.user_id = ? AND n.is_deleted = 0
             ORDER BY n.created_at DESC
             LIMIT ? OFFSET ?
         `, [userId, limit, offset]);
         
         // 获取总数
         const countResult = await getAsync(
-            'SELECT COUNT(*) as total FROM notifications WHERE user_id = ?',
+            'SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND is_deleted = 0',
             [userId]
         );
         
@@ -3144,7 +3174,7 @@ app.patch('/api/notifications/:id/read', authenticateUserToken, async (req, res)
         
         // 验证通知属于当前用户并更新
         const result = await runAsync(
-            'UPDATE notifications SET is_read = 1, read_at = datetime(\'now\') WHERE id = ? AND user_id = ? AND is_read = 0',
+            'UPDATE notifications SET is_read = 1, read_at = datetime(\'now\') WHERE id = ? AND user_id = ? AND is_read = 0 AND is_deleted = 0',
             [notificationId, userId]
         );
         
@@ -3159,13 +3189,40 @@ app.patch('/api/notifications/:id/read', authenticateUserToken, async (req, res)
     }
 });
 
+// 软删除单条通知
+app.delete('/api/notifications/:id', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const notificationId = parseInt(req.params.id);
+        
+        if (!notificationId) {
+            return res.status(400).json({ error: '通知ID无效' });
+        }
+        
+        // 验证通知属于当前用户并软删除
+        const result = await runAsync(
+            'UPDATE notifications SET is_deleted = 1, deleted_at = datetime(\'now\') WHERE id = ? AND user_id = ? AND is_deleted = 0',
+            [notificationId, userId]
+        );
+        
+        if (result.changes === 0) {
+            return res.status(404).json({ error: '通知不存在或已删除' });
+        }
+        
+        res.json({ message: '删除成功' });
+    } catch (e) {
+        console.error('删除通知失败:', e);
+        res.status(500).json({ error: '删除通知失败' });
+    }
+});
+
 // 批量标记通知为已读
 app.patch('/api/notifications/read-all', authenticateUserToken, async (req, res) => {
     try {
         const userId = req.user.id;
         
         await runAsync(
-            'UPDATE notifications SET is_read = 1, read_at = datetime(\'now\') WHERE user_id = ? AND is_read = 0',
+            'UPDATE notifications SET is_read = 1, read_at = datetime(\'now\') WHERE user_id = ? AND is_read = 0 AND is_deleted = 0',
             [userId]
         );
         
@@ -3173,6 +3230,43 @@ app.patch('/api/notifications/read-all', authenticateUserToken, async (req, res)
     } catch (e) {
         console.error('批量标记通知已读失败:', e);
         res.status(500).json({ error: '批量标记通知已读失败' });
+    }
+});
+
+// 批量软删除通知
+app.post('/api/notifications/delete', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { ids } = req.body;
+        
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: '请提供要删除的通知ID列表' });
+        }
+        
+        if (ids.length > 100) {
+            return res.status(400).json({ error: '单次最多删除100条通知' });
+        }
+        
+        // 验证所有ID都是有效数字
+        const validIds = ids.filter(id => Number.isInteger(id) && id > 0);
+        if (validIds.length !== ids.length) {
+            return res.status(400).json({ error: '包含无效的通知ID' });
+        }
+        
+        // 批量软删除属于当前用户的通知
+        const placeholders = validIds.map(() => '?').join(',');
+        const result = await runAsync(
+            `UPDATE notifications SET is_deleted = 1, deleted_at = datetime('now') WHERE id IN (${placeholders}) AND user_id = ? AND is_deleted = 0`,
+            [...validIds, userId]
+        );
+        
+        res.json({ 
+            message: '批量删除成功',
+            deletedCount: result.changes
+        });
+    } catch (e) {
+        console.error('批量删除通知失败:', e);
+        res.status(500).json({ error: '批量删除通知失败' });
     }
 });
 
@@ -3318,6 +3412,8 @@ app.get('/api/admin/notifications', authenticateAdminToken, async (req, res) => 
                 n.link_url as link,
                 n.user_id,
                 n.is_read,
+                n.is_deleted,
+                n.deleted_at,
                 n.created_at,
                 u.username as receiver_username
             FROM notifications n
