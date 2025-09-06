@@ -4842,7 +4842,6 @@ class VideoPlayer {
 
     async handleNotificationClick(item) {
         const notificationId = item.dataset.id;
-        const linkUrl = item.dataset.link;
         
         // 标记为已读
         if (item.classList.contains('unread')) {
@@ -4858,27 +4857,6 @@ class VideoPlayer {
             // 更新未读数
             this.notificationState.unreadCount = Math.max(0, this.notificationState.unreadCount - 1);
             this.updateNotificationBadge();
-        }
-        
-        // 如果有链接且是锚点链接，解析新格式hash并导航
-        if (linkUrl && linkUrl.trim() && linkUrl.startsWith('#')) {
-            this.hideNotificationPanel();
-            
-            // 解析新格式hash：#comment=123&panel=subtitle-comment
-            const hashParams = new URLSearchParams(linkUrl.substring(1));
-            const commentId = hashParams.get('comment');
-            const panelId = hashParams.get('panel');
-            
-            if (commentId && panelId) {
-                // 使用新的导航方法
-                this.navigateToComment(commentId, panelId);
-            } else {
-                // 兼容其他锚点链接
-                const targetEl = document.querySelector(linkUrl);
-                if (targetEl) {
-                    targetEl.scrollIntoView({ behavior: 'smooth' });
-                }
-            }
         }
     }
     
