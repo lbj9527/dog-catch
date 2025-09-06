@@ -74,6 +74,9 @@ class VideoPlayer {
         this.initiallyLoggedIn = !!this.userToken;
         this._hasAutoOpenedSocial = false;
         
+        // 哈希处理去重防抖
+        this._lastHashHandled = null;
+        
         this.init();
     }
 
@@ -376,6 +379,13 @@ class VideoPlayer {
     // 根据面板类型打开面板
     async openPanelByType(panelType, hashParams = {}) {
         try {
+            // 去重防抖：避免重复处理同一哈希意图
+            const hashKey = `${panelType}-${hashParams.comment || ''}`;
+            if (this._lastHashHandled === hashKey) {
+                return;
+            }
+            this._lastHashHandled = hashKey;
+            
             // 打开对应面板
             if (!this.socialPanel || !this.socialPanel.isVisible() || this.socialState.activeFeature !== panelType) {
                 this.toggleSocialFeature(panelType);
@@ -385,14 +395,11 @@ class VideoPlayer {
             if (panelType === 'subtitle-comment' && hashParams.comment) {
                 const commentId = parseInt(hashParams.comment, 10);
                 if (!isNaN(commentId)) {
-                    // 等待评论加载完成后定位
+                    // 等待评论加载完成后自动加载直到找到评论
                     await this.waitForCommentsLoaded();
-                    // 使用socialPanel的focusComment方法
-                    if (this.socialPanel) {
-                        this.socialPanel.focusComment(commentId.toString());
-                    } else {
-                        // 兜底方案
-                        this.scrollToComment(commentId);
+                    const success = await this.focusCommentWithAutoLoad(commentId.toString());
+                    if (!success) {
+                        this.showToast('未找到指定评论，可能已被删除或不在当前排序', 'warning');
                     }
                 }
             }
@@ -418,8 +425,11 @@ class VideoPlayer {
             // 2. 等待评论面板加载完成
             await this.waitForCommentsLoaded();
             
-            // 3. 定位到指定评论
-            this.scrollToComment(commentId);
+            // 3. 定位到指定评论（使用自动加载逻辑）
+            const success = await this.focusCommentWithAutoLoad(commentId.toString());
+            if (!success) {
+                this.showToast('未找到指定评论，可能已被删除或不在当前排序', 'warning');
+            }
             
         } catch (error) {
             console.error('导航到评论失败:', error);
@@ -428,15 +438,127 @@ class VideoPlayer {
     }
     
     // 等待评论加载完成
-    async waitForCommentsLoaded(maxRetries = 10, retryDelay = 500) {
+    async waitForCommentsLoaded(maxRetries = 15, retryDelay = 500) {
         for (let i = 0; i < maxRetries; i++) {
             const commentsList = document.querySelector('.comments-list');
-            if (commentsList && commentsList.children.length > 0) {
+            const loadingSpinner = document.querySelector('.loading-comments, .loading-spinner');
+            const commentElements = document.querySelectorAll('.comments-list [data-comment-id]');
+            
+            // 更稳健的判断条件：有评论元素存在且没有加载动画
+            if (commentsList && 
+                commentElements.length > 0 && 
+                !loadingSpinner) {
+                console.info(`评论加载完成，共${commentElements.length}条评论，重试${i}次`);
                 return true;
             }
+            
+            console.info(`等待评论加载，第${i+1}次重试，当前评论数：${commentElements.length}，加载中：${!!loadingSpinner}`);
             await new Promise(resolve => setTimeout(resolve, retryDelay));
         }
         throw new Error('评论加载超时');
+    }
+    
+    // 自动加载直到找到评论的定位逻辑
+    async focusCommentWithAutoLoad(commentId, maxPages = 10) {
+        try {
+            // 首先检查当前页面是否已有目标评论
+            let commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
+            if (commentElement) {
+                // 使用socialPanel的focusComment方法
+                if (this.socialPanel) {
+                    const success = this.socialPanel.focusComment(commentId);
+                    if (!success) {
+                        // 如果socialPanel方法失败，使用兜底方案
+                        this.scrollToComment(parseInt(commentId, 10));
+                    }
+                } else {
+                    // 兜底方案
+                    this.scrollToComment(parseInt(commentId, 10));
+                }
+                return true;
+            }
+            
+            // 如果当前页面没有，尝试逐页加载
+            for (let page = 1; page <= maxPages; page++) {
+                const loadMoreBtn = document.querySelector('.load-more-btn, .load-more-comments');
+                if (!loadMoreBtn || 
+                    loadMoreBtn.style.display === 'none' || 
+                    loadMoreBtn.style.visibility === 'hidden' ||
+                    loadMoreBtn.disabled ||
+                    loadMoreBtn.hasAttribute('disabled')) {
+                    // 没有更多评论可加载
+                    console.info(`第${page}页：没有更多评论可加载，按钮状态不可用`);
+                    break;
+                }
+                
+                // 记录点击前的评论数量
+                const commentsBefore = document.querySelectorAll('.comments-list [data-comment-id]').length;
+                
+                // 点击加载更多
+                console.info(`第${page}页：点击加载更多，当前评论数：${commentsBefore}`);
+                loadMoreBtn.click();
+                
+                // 智能等待新评论加载完成
+                let waitTime = 0;
+                const maxWaitTime = 5000; // 最多等待5秒
+                const checkInterval = 200; // 每200ms检查一次
+                
+                while (waitTime < maxWaitTime) {
+                    await new Promise(resolve => setTimeout(resolve, checkInterval));
+                    waitTime += checkInterval;
+                    
+                    // 检查目标评论是否已出现
+                    commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
+                    if (commentElement) {
+                        console.info(`第${page}页：找到目标评论，等待时间：${waitTime}ms`);
+                        break;
+                    }
+                    
+                    // 检查评论数量是否增加（表示本页加载完成）
+                    const commentsAfter = document.querySelectorAll('.comments-list [data-comment-id]').length;
+                    const loadingSpinner = document.querySelector('.loading-comments, .loading-spinner');
+                    
+                    if (commentsAfter > commentsBefore && !loadingSpinner) {
+                        console.info(`第${page}页：评论加载完成，数量从${commentsBefore}增加到${commentsAfter}，等待时间：${waitTime}ms`);
+                        break;
+                    }
+                }
+                
+                if (waitTime >= maxWaitTime) {
+                    console.warn(`第${page}页：等待超时(${maxWaitTime}ms)，继续下一页`);
+                }
+                
+                // 再次检查是否找到目标评论
+                commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
+                if (commentElement) {
+                    // 使用socialPanel的focusComment方法
+                    if (this.socialPanel) {
+                        const success = this.socialPanel.focusComment(commentId);
+                        if (!success) {
+                            // 如果socialPanel方法失败，使用兜底方案
+                            this.scrollToComment(parseInt(commentId, 10));
+                        }
+                    } else {
+                        // 兜底方案
+                        this.scrollToComment(parseInt(commentId, 10));
+                    }
+                    return true;
+                }
+            }
+            
+            // 未找到评论，提供详细诊断信息
+            const totalComments = document.querySelectorAll('.comments-list [data-comment-id]').length;
+            const loadMoreBtn = document.querySelector('.load-more-btn, .load-more-comments');
+            const hasMoreBtn = loadMoreBtn && loadMoreBtn.style.display !== 'none' && !loadMoreBtn.disabled;
+            
+            console.warn(`Comment with ID ${commentId} not found after loading ${maxPages} pages. ` +
+                        `总评论数：${totalComments}，还有更多按钮：${hasMoreBtn}`);
+            return false;
+            
+        } catch (error) {
+            console.error('自动加载定位评论失败:', error);
+            return false;
+        }
     }
     
     // 自动登录后自动打开社交面板
@@ -1927,6 +2049,7 @@ class VideoPlayer {
         let bg = 'rgba(0,0,0,0.8)';
         if (type === 'success') bg = 'rgba(16, 185, 129, 0.95)';
         else if (type === 'error') bg = 'rgba(239, 68, 68, 0.95)';
+        else if (type === 'warning') bg = 'rgba(245, 158, 11, 0.95)';
         else if (type === 'info') bg = 'rgba(59, 130, 246, 0.95)';
         toast.style.background = bg;
 

@@ -436,10 +436,10 @@ export class SocialPanel {
 
   // 定位到指定评论
   focusComment(commentId) {
-    if (!commentId || !this.el) return false;
+    if (!commentId) return false;
     
-    // 查找评论元素
-    const commentElement = this.el.querySelector(`[data-comment-id="${commentId}"]`);
+    // 在整个文档中查找评论元素，而不是仅在socialPanel容器内
+    const commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
     if (!commentElement) {
       console.warn(`Comment with ID ${commentId} not found`);
       return false;
