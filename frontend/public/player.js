@@ -4483,10 +4483,21 @@ class VideoPlayer {
             const typeClass = notification.type === 'mention' ? 'mention' : 'system';
             const typeText = notification.type === 'mention' ? '@提及' : '系统通知';
             
+            // 检查是否有有效的外部链接
+            const hasValidLink = notification.linkUrl && 
+                notification.linkUrl.trim() && 
+                (notification.linkUrl.startsWith('http://') || notification.linkUrl.startsWith('https://'));
+            
+            // 构建通知内容，如果有有效链接则添加"立即查看"
+            let contentHtml = this.escapeHtml(notification.content);
+            if (hasValidLink) {
+                contentHtml += ` <a href="${notification.linkUrl}" target="_blank" rel="noopener noreferrer" class="notification-link" aria-label="打开通知链接">立即查看</a>`;
+            }
+            
             return `
                 <div class="notification-item ${isUnread ? 'unread' : ''}" data-id="${notification.id}" data-link="${notification.linkUrl || ''}">
                     <div class="notification-title">${this.escapeHtml(notification.title)}</div>
-                    <div class="notification-content-text">${this.escapeHtml(notification.content)}</div>
+                    <div class="notification-content-text">${contentHtml}</div>
                     <div class="notification-meta">
                         <div class="meta-left">
                             <span class="notification-time">${this.formatTimeAgo(notification.createdAt)}</span>
@@ -4502,9 +4513,9 @@ class VideoPlayer {
         
         // 绑定点击事件
         listEl.querySelectorAll('.notification-item').forEach(item => {
-            // 绑定通知项点击事件（排除删除按钮）
+            // 绑定通知项点击事件（排除删除按钮和立即查看链接）
             item.addEventListener('click', (e) => {
-                if (!e.target.closest('.notification-delete')) {
+                if (!e.target.closest('.notification-delete') && !e.target.closest('.notification-link')) {
                     this.handleNotificationClick(item);
                 }
             });
@@ -4515,6 +4526,16 @@ class VideoPlayer {
                 deleteBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.handleNotificationDelete(item.dataset.id);
+                });
+            }
+            
+            // 绑定立即查看链接点击事件
+            const linkBtn = item.querySelector('.notification-link');
+            if (linkBtn) {
+                linkBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    // 异步标记已读，不阻塞链接打开
+                    this.handleNotificationLinkClick(item);
                 });
             }
         });
@@ -4621,21 +4642,43 @@ class VideoPlayer {
             this.updateNotificationBadge();
         }
         
-        // 如果有链接，跳转到对应页面
-        if (linkUrl && linkUrl.trim()) {
+        // 如果有链接且是锚点链接，直接滚动
+        if (linkUrl && linkUrl.trim() && linkUrl.startsWith('#')) {
             this.hideNotificationPanel();
-            
-            // 如果是当前页面的锚点链接，直接滚动
-            if (linkUrl.startsWith('#')) {
-                const targetEl = document.querySelector(linkUrl);
-                if (targetEl) {
-                    targetEl.scrollIntoView({ behavior: 'smooth' });
-                }
-            } else {
-                // 否则跳转到新页面
-                window.open(linkUrl, '_blank');
+            const targetEl = document.querySelector(linkUrl);
+            if (targetEl) {
+                targetEl.scrollIntoView({ behavior: 'smooth' });
             }
         }
+    }
+    
+    // 处理立即查看链接点击
+    async handleNotificationLinkClick(item) {
+        const notificationId = item.dataset.id;
+        
+        // 异步标记为已读，不阻塞链接打开
+        if (item.classList.contains('unread')) {
+            // 立即更新UI
+            item.classList.remove('unread');
+            
+            // 更新内存中的通知状态
+            const notification = this.notificationState.notifications.find(n => n.id == notificationId);
+            if (notification) {
+                notification.isRead = true;
+            }
+            
+            // 更新未读数
+            this.notificationState.unreadCount = Math.max(0, this.notificationState.unreadCount - 1);
+            this.updateNotificationBadge();
+            
+            // 异步发送标记已读请求，不等待结果
+            this.markNotificationRead(notificationId).catch(error => {
+                console.error('标记通知已读失败:', error);
+            });
+        }
+        
+        // 关闭通知面板
+        this.hideNotificationPanel();
     }
     
     async markNotificationRead(notificationId) {

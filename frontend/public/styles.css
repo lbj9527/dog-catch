@@ -778,6 +778,25 @@ body.modal-open {
     border-radius: 2px;
 }
 
+/* 立即查看链接样式 */
+.notification-link {
+    font-style: italic;
+    text-decoration: underline;
+    color: inherit;
+    font-size: 10px;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+.notification-link:hover {
+    opacity: 0.8;
+}
+
+.notification-link:focus-visible {
+    outline: 2px solid #007bff;
+    outline-offset: 2px;
+}
+
 .notification-item:last-child {
     border-bottom: none;
 }

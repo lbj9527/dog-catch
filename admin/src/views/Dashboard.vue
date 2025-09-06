@@ -1102,7 +1102,7 @@ const sendBroadcast = async () => {
     await notificationAPI.broadcast({
       title: broadcastForm.title,
       content: broadcastForm.content,
-      link: broadcastForm.link || null
+      linkUrl: broadcastForm.link || null
     })
     
     ElMessage.success('系统通知发送成功')
