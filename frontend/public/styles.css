@@ -2081,6 +2081,13 @@ body.modal-open { overflow: hidden; }
     opacity: 0.6;
 }
 
+/* 评论高亮样式 */
+.comment-highlighted {
+    background: rgba(74, 158, 255, 0.15) !important;
+    border-left: 3px solid #4a9eff !important;
+    transition: background-color 0.3s ease, border-left 0.3s ease;
+}
+
 /* 评论项样式 */
 .comment-item {
     padding: 1px 1px 8px 1px;

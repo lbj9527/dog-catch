@@ -2778,7 +2778,7 @@ function formatLocationDisplay(countryCode, region, city) {
 app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, res) => {
     try {
         const { videoId } = req.params;
-        const { content, timestampSeconds, parentCommentId, imageUrls } = req.body;
+        const { content, timestampSeconds, parentCommentId, imageUrls, pageUrl, panel } = req.body;
         const userId = req.user.id;
         
         if (!videoId) {
@@ -2791,6 +2791,33 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
         
         if (content.trim().length > 500) {
             return res.status(400).json({ error: '评论内容不能超过500字符' });
+        }
+        
+        // 校验pageUrl字段（可选）
+        if (pageUrl !== undefined && pageUrl !== null) {
+            if (typeof pageUrl !== 'string' || pageUrl.trim().length === 0) {
+                return res.status(400).json({ error: 'pageUrl必须是非空字符串' });
+            }
+            if (pageUrl.length > 2000) {
+                return res.status(400).json({ error: 'pageUrl长度不能超过2000字符' });
+            }
+            // 安全性检查：仅允许 http/https 协议
+            try {
+                const urlObj = new URL(pageUrl.trim());
+                if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+                    return res.status(400).json({ error: 'pageUrl必须使用http或https协议' });
+                }
+            } catch {
+                return res.status(400).json({ error: 'pageUrl格式不正确' });
+            }
+        }
+        
+        // 校验panel字段（可选）
+        if (panel !== undefined && panel !== null) {
+            const panelNum = parseInt(panel, 10);
+            if (isNaN(panelNum) || panelNum < 1 || panelNum > 3) {
+                return res.status(400).json({ error: 'panel必须是1-3之间的数字（1=字幕评论，2=用户广场，3=实时聊天）' });
+            }
         }
         
         // 解析用户IP地理位置
@@ -2906,7 +2933,9 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
             userId, 
             videoId, 
             result.lastID, 
-            parentCommentId
+            parentCommentId,
+            pageUrl,
+            panel
         ).catch(err => {
             console.error('处理@提及通知时出错:', err);
         });
@@ -3464,7 +3493,7 @@ app.delete('/api/admin/notifications/:id', authenticateAdminToken, async (req, r
 });
 
 // 创建@提及通知的辅助函数
-async function createMentionNotifications(content, senderUserId, videoId, commentId, parentCommentId = null) {
+async function createMentionNotifications(content, senderUserId, videoId, commentId, parentCommentId = null, pageUrl = null, panel = null) {
     try {
         // @提及的正则表达式：支持中文、字母、数字、下划线
         const mentionRegex = /@([\u4e00-\u9fa5a-zA-Z0-9_]+)/g;
@@ -3493,8 +3522,18 @@ async function createMentionNotifications(content, senderUserId, videoId, commen
         const sender = await getAsync('SELECT username FROM users WHERE id = ?', [senderUserId]);
         const senderUsername = sender ? sender.username : '未知用户';
         
-        // 生成通知链接
-        const linkUrl = `/player.html?v=${videoId}#comment-${commentId}`;
+        // 生成通知链接 - 使用新的hash格式
+        let linkUrl;
+        if (pageUrl && pageUrl.trim()) {
+            // 使用前端传递的完整页面URL，添加新的hash格式
+            const cleanPageUrl = pageUrl.trim();
+            const separator = cleanPageUrl.includes('#') ? '&' : '#';
+            const panelParam = panel ? `&panel=${panel}` : '&panel=subtitle-comment';
+            linkUrl = `${cleanPageUrl}${separator}panel=subtitle-comment&comment=${commentId}`;
+        } else {
+            // 回退到默认格式，使用新的hash协议
+            linkUrl = `/player.html?v=${videoId}#panel=subtitle-comment&comment=${commentId}`;
+        }
         
         // 为每个被@的用户创建通知
         const notificationPromises = mentionedUsers.map(user => {

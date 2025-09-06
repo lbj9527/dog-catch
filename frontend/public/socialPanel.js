@@ -122,6 +122,24 @@ export class SocialPanel {
     return this.el || this.ensureCreated();
   }
 
+  // 判断面板是否可见
+  isVisible() {
+    const el = this.getElement();
+    if (!el) return false;
+    
+    // 优先使用 aria-hidden 属性判断
+    if (el.getAttribute('aria-hidden') === 'false') {
+      return true;
+    }
+    
+    // 兼容动画类名判断
+    if (el.classList.contains('animate-in') || el.classList.contains('is-open')) {
+      return true;
+    }
+    
+    return false;
+  }
+
   setContent(titleText = '', html = '') {
     const el = this.getElement();
     if (!el) return;
@@ -414,5 +432,33 @@ export class SocialPanel {
         // 默认情况下隐藏评论数
         this.commentsCountEl.style.display = 'none';
     }
+  }
+
+  // 定位到指定评论
+  focusComment(commentId) {
+    if (!commentId || !this.el) return false;
+    
+    // 查找评论元素
+    const commentElement = this.el.querySelector(`[data-comment-id="${commentId}"]`);
+    if (!commentElement) {
+      console.warn(`Comment with ID ${commentId} not found`);
+      return false;
+    }
+    
+    // 滚动到评论位置
+    commentElement.scrollIntoView({ 
+      behavior: 'smooth', 
+      block: 'center' 
+    });
+    
+    // 高亮显示评论
+    commentElement.classList.add('comment-highlighted');
+    
+    // 3秒后移除高亮
+    setTimeout(() => {
+      commentElement.classList.remove('comment-highlighted');
+    }, 3000);
+    
+    return true;
   }
 }

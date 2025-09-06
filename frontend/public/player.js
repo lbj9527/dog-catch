@@ -70,6 +70,10 @@ class VideoPlayer {
             buttonsContainerSelector: '.like-controls'
         });
         
+        // 自动登录检测相关状态
+        this.initiallyLoggedIn = !!this.userToken;
+        this._hasAutoOpenedSocial = false;
+        
         this.init();
     }
 
@@ -307,6 +311,17 @@ class VideoPlayer {
         
         // 初始化自适应播放器尺寸
         this.initAdaptivePlayerSize();
+        
+        // 处理URL hash定位（@提及通知跳转）
+        this.handleHashNavigation();
+        
+        // 监听hash变化
+        window.addEventListener('hashchange', () => {
+            this.handleHashNavigation();
+        });
+        
+        // 自动登录后自动打开社交面板
+        this.autoOpenSocialPanelIfApplicable();
     }
     
     isLoggedIn() { return !!this.userToken; }
@@ -324,6 +339,147 @@ class VideoPlayer {
                 this.updatePlayerSize();
             }, 100); // 防抖100ms
         });
+    }
+    
+    // 解析哈希参数
+    parseHashParams() {
+        const hash = window.location.hash;
+        if (!hash) return {};
+        
+        try {
+            const params = new URLSearchParams(hash.substring(1));
+            const result = {};
+            for (const [key, value] of params) {
+                result[key] = value;
+            }
+            return result;
+        } catch (error) {
+            console.warn('解析哈希参数失败:', error);
+            return {};
+        }
+    }
+    
+    // 处理哈希意图（统一的哈希协议处理）
+    handleHashIntent() {
+        const hashParams = this.parseHashParams();
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        // 处理panel参数
+        if (hashParams.panel) {
+            this.openPanelByType(hashParams.panel, hashParams);
+        } else if (urlParams.get('autoOpen') === '1') {
+            // 兜底：如果没有panel但有autoOpen参数，打开默认面板
+            this.toggleSocialFeature('subtitle-comment');
+        }
+    }
+    
+    // 根据面板类型打开面板
+    async openPanelByType(panelType, hashParams = {}) {
+        try {
+            // 打开对应面板
+            if (!this.socialPanel || !this.socialPanel.isVisible() || this.socialState.activeFeature !== panelType) {
+                this.toggleSocialFeature(panelType);
+            }
+            
+            // 处理特定面板的参数
+            if (panelType === 'subtitle-comment' && hashParams.comment) {
+                const commentId = parseInt(hashParams.comment, 10);
+                if (!isNaN(commentId)) {
+                    // 等待评论加载完成后定位
+                    await this.waitForCommentsLoaded();
+                    // 使用socialPanel的focusComment方法
+                    if (this.socialPanel) {
+                        this.socialPanel.focusComment(commentId.toString());
+                    } else {
+                        // 兜底方案
+                        this.scrollToComment(commentId);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('打开面板失败:', error);
+            this.showToast('无法打开指定面板', 'error');
+        }
+    }
+    
+    // 处理URL hash导航（@提及通知跳转）- 保持向后兼容
+    handleHashNavigation() {
+        this.handleHashIntent();
+    }
+    
+    // 导航到指定评论
+    async navigateToComment(commentId, panelId = 'subtitle-comment') {
+        try {
+            // 1. 根据panelId打开对应的面板
+            if (!this.socialPanel || !this.socialPanel.isVisible() || this.socialState.activeFeature !== panelId) {
+                this.toggleSocialFeature(panelId);
+            }
+            
+            // 2. 等待评论面板加载完成
+            await this.waitForCommentsLoaded();
+            
+            // 3. 定位到指定评论
+            this.scrollToComment(commentId);
+            
+        } catch (error) {
+            console.error('导航到评论失败:', error);
+            this.showToast('无法定位到指定评论', 'error');
+        }
+    }
+    
+    // 等待评论加载完成
+    async waitForCommentsLoaded(maxRetries = 10, retryDelay = 500) {
+        for (let i = 0; i < maxRetries; i++) {
+            const commentsList = document.querySelector('.comments-list');
+            if (commentsList && commentsList.children.length > 0) {
+                return true;
+            }
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+        throw new Error('评论加载超时');
+    }
+    
+    // 自动登录后自动打开社交面板
+    autoOpenSocialPanelIfApplicable() {
+        // 只在初始登录且未自动打开过的情况下执行
+        if (this.initiallyLoggedIn && !this._hasAutoOpenedSocial && this.isLoggedIn()) {
+            this._hasAutoOpenedSocial = true;
+            // 延迟执行，确保页面完全初始化
+            setTimeout(() => {
+                // 检查是否有明确的打开意图
+                const hashParams = this.parseHashParams();
+                const urlParams = new URLSearchParams(window.location.search);
+                const hasExplicitIntent = hashParams.panel || urlParams.get('autoOpen') === '1';
+                
+                // 仅在有明确意图时自动打开，避免从油猴脚本普通进入时误触发
+                if (hasExplicitIntent) {
+                    this.handleHashIntent();
+                }
+            }, 100);
+        }
+    }
+    
+    // 滚动到指定评论
+    scrollToComment(commentId) {
+        const commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
+        if (commentElement) {
+            // 滚动到评论位置
+            commentElement.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'center' 
+            });
+            
+            // 短暂高亮显示（可选）
+            commentElement.style.transition = 'background-color 0.3s';
+            commentElement.style.backgroundColor = 'rgba(74, 158, 255, 0.2)';
+            setTimeout(() => {
+                commentElement.style.backgroundColor = '';
+            }, 2000);
+            
+            this.showToast('已定位到评论', 'success');
+        } else {
+            this.showToast('未找到指定评论', 'error');
+        }
     }
     
     updatePlayerSize() {
@@ -1537,9 +1693,21 @@ class VideoPlayer {
                 this.debouncedFetchLikeStatus();
                 // 更新心愿单当前视频输入框
                 this.updateWishlistCurrentInput();
+            } else if (response.status === 404) {
+                // 404容错处理：无字幕时的兜底逻辑
+                console.log('当前视频无字幕，但允许发表评论');
+                this.currentSubtitleId = videoId; // 设置当前字幕ID用于评论
+                // 主动获取点赞状态，即使无字幕也要显示默认状态
+                this.debouncedFetchLikeStatus();
+                // 更新心愿单当前视频输入框
+                this.updateWishlistCurrentInput();
             }
         } catch (e) {
             console.error('加载字幕失败', e);
+            // 网络错误时也设置兜底状态
+            this.currentSubtitleId = videoId;
+            this.debouncedFetchLikeStatus();
+            this.updateWishlistCurrentInput();
         }
     }
 
@@ -1822,6 +1990,19 @@ class VideoPlayer {
                 }
             } else if (response.status === 401) {
                 this.showMessage(window.PLAYER_CONFIG.I18N.like.loginExpired, 'error');
+            } else if (response.status === 404) {
+                // 404容错处理：设置默认点赞状态
+                console.log('当前视频无点赞记录，设置默认状态');
+                this.currentLikeStatus = {
+                    isLiked: false,
+                    likesCount: 0
+                };
+                // 确保展示点赞数
+                const likeCountEl = document.getElementById('likeCount');
+                if (likeCountEl) likeCountEl.style.display = 'inline';
+                this.updateLikeUI();
+                // 同步更新下拉框对应项的点赞数
+                this.updateSubtitleOptionLikeCount(activeId, 0);
             } else {
                 this.showMessage(window.PLAYER_CONFIG.I18N.like.operationFailed, 'error');
             }
@@ -3099,6 +3280,19 @@ class VideoPlayer {
         submitBtn.textContent = '发表中...';
         
         try {
+            // 获取当前页面URL和面板信息
+            const pageUrl = window.location.href;
+            const activeFeature = this.socialState && this.socialState.activeFeature ? this.socialState.activeFeature : null;
+            // 将activeFeature映射为后端要求的数字panel值
+            let panel = null;
+            if (activeFeature === 'subtitle') {
+                panel = 1;
+            } else if (activeFeature === 'plaza') {
+                panel = 2;
+            } else if (activeFeature === 'chat') {
+                panel = 3;
+            }
+            
             const response = await fetch(`${API_BASE_URL}/api/subtitles/${this.currentVideoId}/comments`, {
                 method: 'POST',
                 headers: {
@@ -3109,13 +3303,15 @@ class VideoPlayer {
                     content: content,
                     timestamp: this.player ? Math.floor(this.player.currentTime) : 0,
                     imageUrls: imageUrls,
-                    parentCommentId: this.replyingToCommentId || null
+                    parentCommentId: this.replyingToCommentId || null,
+                    pageUrl: pageUrl,
+                    panel: panel
                 })
             });
             
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.message || `HTTP ${response.status}`);
+                throw new Error(errorData.error || errorData.message || `HTTP ${response.status}`);
             }
             
             const responseData = await response.json();
@@ -4483,15 +4679,37 @@ class VideoPlayer {
             const typeClass = notification.type === 'mention' ? 'mention' : 'system';
             const typeText = notification.type === 'mention' ? '@提及' : '系统通知';
             
-            // 检查是否有有效的外部链接
-            const hasValidLink = notification.linkUrl && 
-                notification.linkUrl.trim() && 
-                (notification.linkUrl.startsWith('http://') || notification.linkUrl.startsWith('https://'));
+            // 检查是否有有效的链接
+            let hasValidLink = false;
+            let linkHref = '';
+            
+            if (notification.linkUrl && notification.linkUrl.trim()) {
+                const linkUrl = notification.linkUrl.trim();
+                
+                // 对mention类型放宽条件，支持相对路径和锚点
+                if (notification.type === 'mention') {
+                    hasValidLink = true;
+                    // 归一化链接
+                    if (linkUrl.startsWith('http://') || linkUrl.startsWith('https://')) {
+                        linkHref = linkUrl;
+                    } else if (linkUrl.startsWith('/')) {
+                        linkHref = location.origin + linkUrl;
+                    } else if (linkUrl.startsWith('#')) {
+                        linkHref = location.origin + location.pathname + location.search + linkUrl;
+                    } else {
+                        linkHref = linkUrl;
+                    }
+                } else {
+                    // 系统通知仍需要完整的http/https链接
+                    hasValidLink = linkUrl.startsWith('http://') || linkUrl.startsWith('https://');
+                    linkHref = linkUrl;
+                }
+            }
             
             // 构建通知内容，如果有有效链接则添加"立即查看"
             let contentHtml = this.escapeHtml(notification.content);
             if (hasValidLink) {
-                contentHtml += ` <a href="${notification.linkUrl}" target="_blank" rel="noopener noreferrer" class="notification-link" aria-label="打开通知链接">立即查看</a>`;
+                contentHtml += ` <a href="${linkHref}" target="_blank" rel="noopener noreferrer" class="notification-link" aria-label="打开通知链接">立即查看</a>`;
             }
             
             return `
@@ -4642,12 +4860,24 @@ class VideoPlayer {
             this.updateNotificationBadge();
         }
         
-        // 如果有链接且是锚点链接，直接滚动
+        // 如果有链接且是锚点链接，解析新格式hash并导航
         if (linkUrl && linkUrl.trim() && linkUrl.startsWith('#')) {
             this.hideNotificationPanel();
-            const targetEl = document.querySelector(linkUrl);
-            if (targetEl) {
-                targetEl.scrollIntoView({ behavior: 'smooth' });
+            
+            // 解析新格式hash：#comment=123&panel=subtitle-comment
+            const hashParams = new URLSearchParams(linkUrl.substring(1));
+            const commentId = hashParams.get('comment');
+            const panelId = hashParams.get('panel');
+            
+            if (commentId && panelId) {
+                // 使用新的导航方法
+                this.navigateToComment(commentId, panelId);
+            } else {
+                // 兼容其他锚点链接
+                const targetEl = document.querySelector(linkUrl);
+                if (targetEl) {
+                    targetEl.scrollIntoView({ behavior: 'smooth' });
+                }
             }
         }
     }
