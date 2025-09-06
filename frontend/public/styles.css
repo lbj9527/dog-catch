@@ -792,14 +792,27 @@ body.modal-open {
 }
 
 .notification-item.unread::before {
-    content: '';
+    content: '未读';
     position: absolute;
     top: 20px;
-    right: 20px;
-    width: 8px;
-    height: 8px;
-    background: #4fc3f7;
-    border-radius: 50%;
+    right: 17px;
+    font-size: 12px;
+    color: #999999;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.notification-item:not(.unread)::before {
+    content: '已读';
+    position: absolute;
+    top: 20px;
+    right: 17px;
+    font-size: 12px;
+    color: #999999;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
 }
 
 .notification-title {
