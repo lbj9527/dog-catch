@@ -425,15 +425,15 @@ class VideoPlayer {
             // 2. 等待评论面板加载完成
             await this.waitForCommentsLoaded();
             
-            // 3. 定位到指定评论（使用自动加载逻辑）
+            // 3. 定位到指定父评论（使用自动加载逻辑）
             const success = await this.focusCommentWithAutoLoad(commentId.toString());
             if (!success) {
-                this.showToast('未找到指定评论，可能已被删除或不在当前排序', 'warning');
+                this.showToast('未找到指定父评论，可能已被删除或不在当前排序', 'warning');
             }
             
         } catch (error) {
             console.error('导航到评论失败:', error);
-            this.showToast('无法定位到指定评论', 'error');
+            this.showToast('无法定位到指定父评论', 'error');
         }
     }
     
@@ -458,11 +458,13 @@ class VideoPlayer {
         throw new Error('评论加载超时');
     }
     
-    // 自动加载直到找到评论的定位逻辑
+    // 自动加载直到找到父评论的定位逻辑
+    // 注意：此方法仅支持父评论ID定位，不处理回复ID
+    // 无论是顶层评论@还是回复@，后端统一传递父评论ID
     async focusCommentWithAutoLoad(commentId, maxPages = 10) {
         try {
-            // 首先检查当前页面是否已有目标评论
-            let commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
+            // 首先检查当前页面是否已有目标父评论（仅查找顶层评论）
+            let commentElement = document.querySelector(`.comments-list [data-comment-id="${commentId}"]`);
             if (commentElement) {
                 // 使用socialPanel的focusComment方法
                 if (this.socialPanel) {
@@ -507,10 +509,10 @@ class VideoPlayer {
                     await new Promise(resolve => setTimeout(resolve, checkInterval));
                     waitTime += checkInterval;
                     
-                    // 检查目标评论是否已出现
-                    commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
+                    // 检查目标父评论是否已出现（仅查找顶层评论）
+                    commentElement = document.querySelector(`.comments-list [data-comment-id="${commentId}"]`);
                     if (commentElement) {
-                        console.info(`第${page}页：找到目标评论，等待时间：${waitTime}ms`);
+                        console.info(`第${page}页：找到目标父评论，等待时间：${waitTime}ms`);
                         break;
                     }
                     
@@ -528,8 +530,8 @@ class VideoPlayer {
                     console.warn(`第${page}页：等待超时(${maxWaitTime}ms)，继续下一页`);
                 }
                 
-                // 再次检查是否找到目标评论
-                commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
+                // 再次检查是否找到目标父评论（仅查找顶层评论）
+                commentElement = document.querySelector(`.comments-list [data-comment-id="${commentId}"]`);
                 if (commentElement) {
                     // 使用socialPanel的focusComment方法
                     if (this.socialPanel) {
@@ -551,12 +553,12 @@ class VideoPlayer {
             const loadMoreBtn = document.querySelector('.load-more-btn, .load-more-comments');
             const hasMoreBtn = loadMoreBtn && loadMoreBtn.style.display !== 'none' && !loadMoreBtn.disabled;
             
-            console.warn(`Comment with ID ${commentId} not found after loading ${maxPages} pages. ` +
-                        `总评论数：${totalComments}，还有更多按钮：${hasMoreBtn}`);
+            console.warn(`父评论ID ${commentId} 在加载${maxPages}页后未找到。` +
+                        `总评论数：${totalComments}，还有更多按钮：${hasMoreBtn}。注意：此方法仅支持父评论ID定位。`);
             return false;
             
         } catch (error) {
-            console.error('自动加载定位评论失败:', error);
+            console.error('自动加载定位父评论失败:', error);
             return false;
         }
     }
@@ -583,7 +585,8 @@ class VideoPlayer {
     
     // 滚动到指定评论
     scrollToComment(commentId) {
-        const commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
+        // 仅查找顶层父评论元素
+        const commentElement = document.querySelector(`.comments-list [data-comment-id="${commentId}"]`);
         if (commentElement) {
             // 滚动到评论位置
             commentElement.scrollIntoView({ 
@@ -598,9 +601,9 @@ class VideoPlayer {
                 commentElement.style.backgroundColor = '';
             }, 2000);
             
-            this.showToast('已定位到评论', 'success');
+            this.showToast('已定位到父评论', 'success');
         } else {
-            this.showToast('未找到指定评论', 'error');
+            this.showToast('未找到指定父评论', 'error');
         }
     }
     

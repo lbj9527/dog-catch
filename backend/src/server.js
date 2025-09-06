@@ -3522,17 +3522,19 @@ async function createMentionNotifications(content, senderUserId, videoId, commen
         const sender = await getAsync('SELECT username FROM users WHERE id = ?', [senderUserId]);
         const senderUsername = sender ? sender.username : '未知用户';
         
-        // 生成通知链接 - 使用新的hash格式
+        // 生成通知链接 - 统一使用父评论ID进行定位
+        // 无论是顶层评论@还是回复@，都定位到父评论
+        const targetCommentId = parentCommentId || commentId; // 如果是回复则用parentCommentId，否则用commentId
+        
         let linkUrl;
         if (pageUrl && pageUrl.trim()) {
             // 使用前端传递的完整页面URL，添加新的hash格式
             const cleanPageUrl = pageUrl.trim();
             const separator = cleanPageUrl.includes('#') ? '&' : '#';
-            const panelParam = panel ? `&panel=${panel}` : '&panel=subtitle-comment';
-            linkUrl = `${cleanPageUrl}${separator}panel=subtitle-comment&comment=${commentId}`;
+            linkUrl = `${cleanPageUrl}${separator}panel=subtitle-comment&comment=${targetCommentId}`;
         } else {
             // 回退到默认格式，使用新的hash协议
-            linkUrl = `/player.html?v=${videoId}#panel=subtitle-comment&comment=${commentId}`;
+            linkUrl = `/player.html?v=${videoId}#panel=subtitle-comment&comment=${targetCommentId}`;
         }
         
         // 为每个被@的用户创建通知

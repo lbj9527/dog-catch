@@ -438,10 +438,11 @@ export class SocialPanel {
   focusComment(commentId) {
     if (!commentId) return false;
     
-    // 在整个文档中查找评论元素，而不是仅在socialPanel容器内
-    const commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
+    // 仅查找顶层父评论元素，不处理回复ID
+    // 统一定位策略：无论是顶层评论@还是回复@，都定位到父评论
+    const commentElement = document.querySelector(`.comments-list [data-comment-id="${commentId}"]`);
     if (!commentElement) {
-      console.warn(`Comment with ID ${commentId} not found`);
+      console.warn(`父评论ID ${commentId} 未找到，注意：此方法仅支持父评论ID定位`);
       return false;
     }
     
