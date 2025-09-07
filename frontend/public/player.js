@@ -4818,8 +4818,6 @@ class VideoPlayer {
                     <div class="reply-actions-left">
                         ${showReplyButton ? `<button class="comment-reply-btn" data-comment-id="${reply.id}" data-username="${this.escapeHtml(reply.username)}">回复</button>` : ''}
                         ${showRepliesToggle ? `<button class="replies-toggle-btn" data-comment-id="${reply.id}" data-count="${repliesCount}">查看 ${repliesCount} 条回复</button>` : ''}
-                    </div>
-                    <div class="reply-actions-right">
                         ${showDeleteButton ? `<button class="reply-delete-btn" data-reply-id="${reply.id}" data-parent-comment-id="${parentCommentId || ''}" title="删除回复">🗑️</button>` : ''}
                     </div>
                 </div>

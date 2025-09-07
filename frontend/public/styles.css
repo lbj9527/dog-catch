@@ -2183,6 +2183,10 @@ body.modal-open { overflow: hidden; }
 /* 统一动作区按钮高度和对齐 */
 .comment-actions-left > .comment-reply-btn,
 .comment-actions-left > .replies-toggle-btn,
+.comment-actions-left > .comment-delete-btn,
+.reply-actions-left > .comment-reply-btn,
+.reply-actions-left > .replies-toggle-btn,
+.reply-actions-left > .reply-delete-btn,
 .comment-actions-right > .like-btn {
     display: inline-flex;
     align-items: center;
