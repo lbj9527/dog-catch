@@ -4548,6 +4548,10 @@ class VideoPlayer {
         const timeAgo = this.formatTimeAgo(timestamp);
         const repliesCount = reply.repliesCount || 0;
         
+        // 新增：对齐主评论/旧版回复，补齐地理位置显示
+        const locationDisplay = reply.locationDisplay ?? reply.location_display ?? '';
+        const timestampText = locationDisplay ? `${timeAgo} · ${locationDisplay}` : timeAgo;
+        
         // 层级样式类
         const levelClass = level > 1 ? `reply-level-${Math.min(level, 3)}` : '';
         
@@ -4572,7 +4576,7 @@ class VideoPlayer {
                 <div class="reply-content">
                     <div class="reply-header">
                         <span class="reply-author">${this.escapeHtml(reply.username)}</span>
-                        <span class="reply-time">${timeAgo}</span>
+                        <span class="reply-time">${timestampText}</span>
                     </div>
                     <div class="reply-text">${this.escapeHtml(reply.content)}</div>
                     ${actionsHtml}
@@ -4647,6 +4651,11 @@ class VideoPlayer {
             newReplyData.createdAt = new Date().toISOString();
         } else if (!newReplyData.createdAt && newReplyData.created_at) {
             newReplyData.createdAt = newReplyData.created_at;
+        }
+        
+        // 新增：标准化地理位置显示字段
+        if (!newReplyData.locationDisplay) {
+            newReplyData.locationDisplay = newReplyData.location_display || newReplyData.location || newReplyData.ipAddress || newReplyData.ip_address || '';
         }
         
         // 更新缓存中的回复数据
