@@ -3082,6 +3082,107 @@ app.get('/api/comments/:commentId/like-status', authenticateUserToken, async (re
     }
 });
 
+// 点赞/取消点赞回复（并发安全 + 幂等）
+app.post('/api/replies/:replyId/like', authenticateUserToken, async (req, res) => {
+    try {
+        const { replyId } = req.params;
+        const userId = req.user.id;
+        
+        if (!replyId) {
+            return res.status(400).json({ error: '回复ID不能为空' });
+        }
+        
+        // 验证回复是否存在
+        const reply = await getAsync(
+            'SELECT id FROM subtitle_comments WHERE id = ? AND parent_id IS NOT NULL AND status = "approved"',
+            [replyId]
+        );
+        if (!reply) {
+            return res.status(404).json({ error: '回复不存在' });
+        }
+        
+        // 检查是否已经点赞
+        const existingLike = await getAsync(
+            'SELECT id FROM comment_likes WHERE user_id = ? AND comment_id = ?',
+            [userId, replyId]
+        );
+        
+        if (existingLike) {
+            // 取消点赞：仅当确实删除了一条记录时才递减计数，避免竞争条件导致 likes_count 变负
+            const del = await runAsync('DELETE FROM comment_likes WHERE id = ?', [existingLike.id]);
+            // 获取实时点赞数
+            const likesCount = await getAsync(
+                'SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?',
+                [replyId]
+            );
+            
+            return res.json({ 
+                message: '取消点赞成功', 
+                liked: false,
+                likes_count: likesCount ? likesCount.count : 0
+            });
+        } else {
+            // 添加点赞：处理并发导致的唯一约束冲突，保证幂等，不返回500
+            try {
+                const ins = await runAsync(
+                    'INSERT INTO comment_likes (user_id, comment_id) VALUES (?, ?)',
+                    [userId, replyId]
+                );
+                // 获取实时点赞数
+                const likesCount = await getAsync(
+                    'SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?',
+                    [replyId]
+                );
+                
+                return res.json({ 
+                    message: '点赞成功', 
+                    liked: true,
+                    likes_count: likesCount ? likesCount.count : 0
+                });
+            } catch (e) {
+                // UNIQUE 冲突（并发重复点击或快速多次请求）：视为已成功点赞
+                if (String(e && e.message).includes('UNIQUE') || String(e && e.code).includes('SQLITE_CONSTRAINT')) {
+                    const likesCount = await getAsync(
+                        'SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?',
+                        [replyId]
+                    );
+                    return res.json({
+                        message: '已点赞',
+                        liked: true,
+                        likes_count: likesCount ? likesCount.count : 0
+                    });
+                }
+                throw e;
+            }
+        }
+    } catch (error) {
+        console.error('回复点赞操作失败:', error);
+        res.status(500).json({ error: '回复点赞操作失败' });
+    }
+});
+
+// 获取用户对回复的点赞状态
+app.get('/api/replies/:replyId/like-status', authenticateUserToken, async (req, res) => {
+    try {
+        const { replyId } = req.params;
+        const userId = req.user.id;
+        
+        if (!replyId) {
+            return res.status(400).json({ error: '回复ID不能为空' });
+        }
+        
+        const like = await getAsync(
+            'SELECT id FROM comment_likes WHERE user_id = ? AND comment_id = ?',
+            [userId, replyId]
+        );
+        
+        res.json({ liked: !!like });
+    } catch (error) {
+        console.error('获取回复点赞状态失败:', error);
+        res.status(500).json({ error: '获取回复点赞状态失败' });
+    }
+});
+
 // 删除评论 API
 app.delete('/api/comments/:commentId', authenticateUserToken, async (req, res) => {
     try {

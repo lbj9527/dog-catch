@@ -2138,6 +2138,19 @@ body.modal-open { overflow: hidden; }
     color: #888;
     margin: 0;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 回复项中的元信息样式 */
+.reply-item .comment-meta {
+    margin: 4px 0;
+    padding-left: 0;
+}
+
+.reply-item .comment-meta .timestamp {
+    font-size: 11px;
+    color: #999;
 }
 
 .comment-content {
@@ -2184,15 +2197,22 @@ body.modal-open { overflow: hidden; }
 .comment-actions-left > .comment-reply-btn,
 .comment-actions-left > .replies-toggle-btn,
 .comment-actions-left > .comment-delete-btn,
-.reply-actions-left > .comment-reply-btn,
-.reply-actions-left > .replies-toggle-btn,
-.reply-actions-left > .reply-delete-btn,
+.comment-actions-left > .reply-delete-btn,
 .comment-actions-right > .like-btn {
     display: inline-flex;
     align-items: center;
     height: 24px;
     line-height: 24px;
     margin: 0;
+}
+
+/* 防御性：确保动作区内的查看回复按钮与其他按钮对齐 */
+.comment-actions-left .replies-toggle-btn {
+    margin-top: 0 !important; /* 覆盖.replies-section .replies-toggle-btn的margin-top */
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    line-height: 24px;
 }
 
 /* 回复切换按钮样式（与回复按钮保持一致） */
@@ -2284,7 +2304,7 @@ body.modal-open { overflow: hidden; }
 }
 
 .reply-item .comment-actions {
-    padding-left: 44px;
+    padding-left: 0; /* 修正：与用户名左对齐，不再额外缩进 */
 }
 
 .reply-item .user-avatar.small {
@@ -2328,14 +2348,20 @@ body.modal-open { overflow: hidden; }
 }
 
 /* 层级回复的内容和操作区域调整 */
-.reply-item.level-2 .comment-content,
-.reply-item.level-2 .comment-actions {
+.reply-item.level-2 .comment-content {
     padding-left: 36px; /* 减少缩进以适应外层margin */
 }
 
-.reply-item.level-3 .comment-content,
-.reply-item.level-3 .comment-actions {
+.reply-item.level-2 .comment-actions {
+    padding-left: 0; /* 操作区与用户名对齐 */
+}
+
+.reply-item.level-3 .comment-content {
     padding-left: 28px; /* 进一步减少缩进 */
+}
+
+.reply-item.level-3 .comment-actions {
+    padding-left: 0; /* 操作区与用户名对齐 */
 }
 
 /* 层级回复的头像尺寸调整 */

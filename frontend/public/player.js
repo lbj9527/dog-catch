@@ -3564,8 +3564,8 @@ class VideoPlayer {
             const username = reply.username || '匿名用户';
             const content = reply.content || '';
             const created_at = reply.created_at || new Date().toISOString();
-            const likes_count = reply.likes_count || 0;
-            const user_liked = reply.user_liked || false;
+            const likes_count = Number(reply.likes_count ?? reply.likesCount ?? 0);
+            const user_liked = !!(reply.user_liked || reply.userLiked);
             const id = reply.id || 'unknown';
             const imageUrls = Array.isArray(reply.imageUrls) ? reply.imageUrls : [];
             
@@ -3768,13 +3768,54 @@ class VideoPlayer {
                         likeBtn.classList.remove('liked');
                         likeIcon.textContent = '🤍';
                     }
-                    likeCount.textContent = data.likes_count || 0;
+                    likeCount.textContent = Number(data.likes_count ?? data.likesCount ?? 0);
                 }
             }
             
         } catch (error) {
             console.error('点赞操作失败:', error);
             this.showCommentError('点赞操作失败，请稍后重试');
+        }
+    }
+
+    // 切换回复点赞状态
+    async toggleReplyLike(replyId) {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/replies/${replyId}/like`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            // 更新UI - 查找回复项
+            const replyEl = document.querySelector(`[data-reply-id="${replyId}"]`);
+            if (replyEl) {
+                const likeBtn = replyEl.querySelector('.like-btn');
+                const likeIcon = replyEl.querySelector('.like-icon');
+                const likeCount = replyEl.querySelector('.like-count');
+                
+                if (likeBtn && likeIcon && likeCount) {
+                    if (data.liked) {
+                        likeBtn.classList.add('liked');
+                        likeIcon.textContent = '❤️';
+                    } else {
+                        likeBtn.classList.remove('liked');
+                        likeIcon.textContent = '🤍';
+                    }
+                    likeCount.textContent = Number(data.likes_count ?? data.likesCount ?? 0);
+                }
+            }
+            
+        } catch (error) {
+            console.error('回复点赞操作失败:', error);
+            this.showCommentError('回复点赞操作失败，请稍后重试');
         }
     }
 
@@ -4561,10 +4602,17 @@ class VideoPlayer {
     // 获取指定评论的回复列表
     async fetchReplies(commentId, page = 1) {
         try {
+            const headers = {
+                'Accept': 'application/json'
+            };
+            
+            // 添加用户认证头，便于后端返回用户点赞状态
+            if (this.userToken) {
+                headers['Authorization'] = `Bearer ${this.userToken}`;
+            }
+            
             const response = await fetch(`${API_BASE_URL.replace(/\/$/, '')}/api/comments/${encodeURIComponent(commentId)}/replies?page=${page}&limit=10`, {
-                headers: {
-                    'Accept': 'application/json'
-                }
+                headers
             });
             
             if (!response.ok) {
@@ -4786,6 +4834,25 @@ class VideoPlayer {
         html += '</div>';
         repliesSection.innerHTML = html;
         repliesSection.style.display = 'block';
+        
+        // 为回复的点赞按钮绑定事件
+        const replyLikeBtns = repliesSection.querySelectorAll('.reply-item .like-btn');
+        replyLikeBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const replyEl = btn.closest('.reply-item');
+                const replyId = replyEl ? replyEl.dataset.replyId : null;
+                if (replyId) {
+                    this.toggleReplyLike(replyId);
+                }
+            });
+        });
+        
+        // 如果用户已登录，批量拉取回复的点赞状态以确保刷新后状态正确
+        if (this.userToken && cached.items.length > 0) {
+            this.hydrateReplyLikeStates(cached.items, repliesSection);
+        }
     }
     
     // 渲染单个回复项
@@ -4799,6 +4866,10 @@ class VideoPlayer {
         const locationDisplay = reply.locationDisplay ?? reply.location_display ?? '';
         const timestampText = locationDisplay ? `${timeAgo} · ${locationDisplay}` : timeAgo;
         
+        // 点赞相关数据
+        const likes_count = Number(reply.likes_count ?? reply.likesCount ?? 0);
+        const user_liked = !!(reply.user_liked || reply.userLiked);
+        
         // 层级样式类
         const levelClass = level > 1 ? `reply-level-${Math.min(level, 3)}` : '';
         
@@ -4811,25 +4882,29 @@ class VideoPlayer {
         const replyUserId = reply.user_id || reply.userId;
         const showDeleteButton = currentUserId && replyUserId && currentUserId.toString() === replyUserId.toString();
         
-        let actionsHtml = '';
-        if (showReplyButton || showRepliesToggle || showDeleteButton) {
-            actionsHtml = `
-                <div class="reply-actions">
-                    <div class="reply-actions-left">
-                        ${showReplyButton ? `<button class="comment-reply-btn" data-comment-id="${reply.id}" data-username="${this.escapeHtml(reply.username)}">回复</button>` : ''}
-                        ${showRepliesToggle ? `<button class="replies-toggle-btn" data-comment-id="${reply.id}" data-count="${repliesCount}">查看 ${repliesCount} 条回复</button>` : ''}
-                        ${showDeleteButton ? `<button class="reply-delete-btn" data-reply-id="${reply.id}" data-parent-comment-id="${parentCommentId || ''}" title="删除回复">🗑️</button>` : ''}
-                    </div>
+        // 工具栏始终显示，包含固定部分（时间戳+点赞）和条件部分（回复/查看回复/删除）
+        const actionsHtml = `
+            <div class="comment-actions">
+                <div class="comment-actions-left">
+                    <span class="timestamp">${timestampText}</span>
+                    ${showReplyButton ? `<button class="comment-reply-btn" data-comment-id="${reply.id}" data-username="${this.escapeHtml(reply.username)}">回复</button>` : ''}
+                    ${showRepliesToggle ? `<button class="replies-toggle-btn" data-comment-id="${reply.id}" data-count="${repliesCount}">查看 ${repliesCount} 条回复</button>` : ''}
+                    ${showDeleteButton ? `<button class="reply-delete-btn" data-reply-id="${reply.id}" data-parent-comment-id="${parentCommentId || ''}" title="删除回复">🗑️</button>` : ''}
                 </div>
-            `;
-        }
+                <div class="comment-actions-right">
+                    <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${reply.id}">
+                        <span class="like-icon">${user_liked ? '❤️' : '🤍'}</span>
+                        <span class="like-count">${likes_count}</span>
+                    </button>
+                </div>
+            </div>
+        `;
         
         return `
-            <div class="reply-item ${levelClass}" data-reply-id="${reply.id}" data-level="${level}">
+            <div class="reply-item ${levelClass}" data-reply-id="${reply.id}" data-comment-id="${reply.id}" data-level="${level}">
                 <div class="reply-content">
                     <div class="reply-header">
                         <span class="reply-author">${this.escapeHtml(reply.username)}</span>
-                        <span class="reply-time">${timestampText}</span>
                     </div>
                     <div class="reply-text">${this.escapeHtml(reply.content)}</div>
                     ${actionsHtml}
@@ -4890,6 +4965,72 @@ class VideoPlayer {
         
         // 回填data-count属性，确保数据一致性
         toggleBtn.dataset.count = String(totalReplies);
+    }
+    
+    // 批量拉取回复点赞状态并更新UI（解决刷新后状态重置问题）
+    async hydrateReplyLikeStates(replies, repliesSection) {
+        if (!this.userToken || !replies.length) return;
+        
+        try {
+            // 批量并发请求点赞状态，限制并发数避免过载
+            const batchSize = 5;
+            for (let i = 0; i < replies.length; i += batchSize) {
+                const batch = replies.slice(i, i + batchSize);
+                const promises = batch.map(async (reply) => {
+                    try {
+                        const response = await fetch(`${API_BASE_URL}/api/replies/${reply.id}/like-status`, {
+                            headers: {
+                                'Authorization': `Bearer ${this.userToken}`
+                            }
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            return { replyId: reply.id, ...data };
+                        }
+                    } catch (error) {
+                        console.warn(`获取回复 ${reply.id} 点赞状态失败:`, error);
+                    }
+                    return null;
+                });
+                
+                const results = await Promise.all(promises);
+                
+                // 更新UI状态
+                results.forEach(result => {
+                    if (result) {
+                        const replyEl = repliesSection.querySelector(`[data-reply-id="${result.replyId}"]`);
+                        if (replyEl) {
+                            const likeBtn = replyEl.querySelector('.like-btn');
+                            const likeIcon = replyEl.querySelector('.like-icon');
+                            const likeCount = replyEl.querySelector('.like-count');
+                            
+                            if (likeBtn && likeIcon && likeCount) {
+                                if (result.liked) {
+                                    likeBtn.classList.add('liked');
+                                    likeIcon.textContent = '❤️';
+                                } else {
+                                    likeBtn.classList.remove('liked');
+                                    likeIcon.textContent = '🤍';
+                                }
+                                const newCount = (result && (result.likes_count ?? result.likesCount));
+                                if (newCount !== undefined && newCount !== null) {
+                                    likeCount.textContent = Number(newCount);
+                                } else if (result && result.liked === true) {
+                                    const current = Number((likeCount.textContent || '').trim() || '0');
+                                    if (current === 0) {
+                                        // 后端未返回点赞数但告知已点赞，做最小正确性兜底：保证至少为1
+                                        likeCount.textContent = '1';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('批量拉取回复点赞状态失败:', error);
+        }
     }
     
     // 处理新回复的即时插入
