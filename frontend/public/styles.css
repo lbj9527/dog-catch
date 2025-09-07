@@ -2289,6 +2289,58 @@ body.modal-open { overflow: hidden; }
     font-size: 12px;
 }
 
+/* 多级回复缩进样式 */
+.reply-item.level-2 {
+    margin-left: 16px;
+    position: relative;
+}
+
+.reply-item.level-3 {
+    margin-left: 32px;
+    position: relative;
+}
+
+/* 层级视觉引导线 */
+.reply-item.level-2::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 1px;
+}
+
+.reply-item.level-3::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 1px;
+}
+
+/* 层级回复的内容和操作区域调整 */
+.reply-item.level-2 .comment-content,
+.reply-item.level-2 .comment-actions {
+    padding-left: 36px; /* 减少缩进以适应外层margin */
+}
+
+.reply-item.level-3 .comment-content,
+.reply-item.level-3 .comment-actions {
+    padding-left: 28px; /* 进一步减少缩进 */
+}
+
+/* 层级回复的头像尺寸调整 */
+.reply-item.level-3 .user-avatar.small {
+    width: 24px;
+    height: 24px;
+    font-size: 11px;
+}
+
 /* 加载和空状态 */
 .loading-comments {
     display: flex;

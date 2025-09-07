@@ -2605,7 +2605,12 @@ app.get('/api/comments/:commentId/replies', async (req, res) => {
                 sc.location_region,
                 sc.location_city,
                 strftime('%Y-%m-%dT%H:%M:%SZ', sc.created_at) as createdAt,
-                strftime('%Y-%m-%dT%H:%M:%SZ', sc.updated_at) as updatedAt
+                strftime('%Y-%m-%dT%H:%M:%SZ', sc.updated_at) as updatedAt,
+                (
+                    SELECT COUNT(*) 
+                    FROM subtitle_comments sc2 
+                    WHERE sc2.parent_id = sc.id AND sc2.status = "approved"
+                ) as replies_count
             FROM subtitle_comments sc
             LEFT JOIN users u ON sc.user_id = u.id
             LEFT JOIN comment_likes cl ON sc.id = cl.comment_id
@@ -2624,6 +2629,7 @@ app.get('/api/comments/:commentId/replies', async (req, res) => {
             timestampSeconds: reply.timestamp,
             parentCommentId: reply.parent_comment_id,
             likesCount: reply.likes_count || 0,
+            repliesCount: reply.replies_count || 0,
             imageUrls: reply.image_urls ? JSON.parse(reply.image_urls) : [],
             locationDisplay: formatLocationDisplay(
                 reply.location_country_code,
