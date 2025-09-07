@@ -2574,6 +2574,46 @@ body.modal-open { overflow: hidden; }
     color: #fff;
 }
 
+/* 删除按钮样式 */
+.comment-delete-btn, .reply-delete-btn {
+    background: transparent;
+    border: none;
+    color: #888;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    margin-left: 8px;
+}
+
+.comment-delete-btn:hover, .reply-delete-btn:hover {
+    background: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+}
+
+/* 已删除内容样式 */
+.deleted-content {
+    color: #666;
+    font-style: italic;
+    opacity: 0.7;
+}
+
+.comment-content.deleted, .reply-content.deleted {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-left: 3px solid #555;
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin: 4px 0;
+}
+
+/* 删除动画 */
+.comment-item.deleting, .reply-item.deleting {
+    opacity: 0;
+    transform: translateX(-10px);
+    transition: all 0.3s ease-out;
+}
+
 /* 回复列表 */
 .comment-replies {
     margin-top: 12px;

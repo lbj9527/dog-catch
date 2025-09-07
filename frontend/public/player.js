@@ -2972,6 +2972,44 @@ class VideoPlayer {
         return '用户';
     }
 
+    // 获取当前用户ID
+    getCurrentUserId() {
+        try {
+            if (this.userToken) {
+                const payload = JSON.parse(atob(this.userToken.split('.')[1]));
+                return payload.id || payload.userId || payload.email || null;
+            }
+        } catch (e) {
+            console.warn('解析用户token失败:', e);
+        }
+        return null;
+    }
+    
+    // 获取顶级评论ID（用于多级回复的删除功能）
+    getTopLevelCommentId(commentId) {
+        // 查找是否为顶级评论
+        const topLevelElement = document.querySelector(`[data-comment-id="${commentId}"]`);
+        if (topLevelElement) {
+            return commentId;
+        }
+        
+        // 查找回复元素，向上追溯找到顶级评论
+        const replyElement = document.querySelector(`[data-reply-id="${commentId}"]`);
+        if (replyElement) {
+            let current = replyElement.parentElement;
+            while (current) {
+                const topLevel = current.querySelector('[data-comment-id]');
+                if (topLevel) {
+                    return topLevel.dataset.commentId;
+                }
+                current = current.parentElement;
+            }
+        }
+        
+        // 如果找不到，返回原ID
+        return commentId;
+    }
+
     // 生成用户头像（用户名首字母+随机背景色）
     generateUserAvatar(username) {
         if (!username) return 'U';
@@ -3114,9 +3152,210 @@ class VideoPlayer {
                 return;
             }
             
+            // 删除评论按钮点击事件
+            if (e.target.classList.contains('comment-delete-btn')) {
+                e.preventDefault();
+                const commentId = e.target.dataset.commentId;
+                if (commentId) {
+                    this.handleDeleteComment(commentId);
+                }
+                return;
+            }
+            
+            // 删除回复按钮点击事件
+            if (e.target.classList.contains('reply-delete-btn')) {
+                e.preventDefault();
+                const replyId = e.target.dataset.replyId;
+                const parentCommentId = e.target.dataset.parentCommentId;
+                if (replyId && parentCommentId) {
+                    this.handleDeleteReply(replyId, parentCommentId);
+                }
+                return;
+            }
+            
             // 点击外部关闭浮层
-            this.handleOutsideClick(e);
+    this.handleOutsideClick(e);
         });
+    }
+
+    // 处理删除评论
+    async handleDeleteComment(commentId) {
+        if (!confirm('确定要删除这条评论吗？删除后无法恢复。')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/comments/${commentId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || '删除失败');
+            }
+            
+            const result = await response.json();
+            
+            // 根据删除类型更新UI
+            if (result.deleteType === 'soft') {
+                this.updateCommentAfterSoftDelete(commentId, result.data);
+            } else {
+                this.removeCommentFromUI(commentId);
+            }
+            
+            this.showCommentSuccess('评论删除成功');
+            
+        } catch (error) {
+            console.error('删除评论失败:', error);
+            this.showCommentError(error.message || '删除评论失败，请稍后重试');
+        }
+    }
+    
+    // 处理删除回复
+    async handleDeleteReply(replyId, parentCommentId) {
+        if (!confirm('确定要删除这条回复吗？删除后无法恢复。')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/replies/${replyId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ parentCommentId })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || '删除失败');
+            }
+            
+            const result = await response.json();
+            
+            // 根据删除类型更新UI
+            if (result.deleteType === 'soft') {
+                this.updateReplyAfterSoftDelete(replyId, result.data);
+            } else {
+                this.removeReplyFromUI(replyId, parentCommentId);
+            }
+            
+            this.showCommentSuccess('回复删除成功');
+            
+        } catch (error) {
+            console.error('删除回复失败:', error);
+            this.showCommentError(error.message || '删除回复失败，请稍后重试');
+        }
+    }
+
+    // 软删除后更新评论UI
+    updateCommentAfterSoftDelete(commentId, updatedData) {
+        const commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
+        if (!commentElement) return;
+        
+        // 更新评论内容为已删除状态
+        const contentElement = commentElement.querySelector('.comment-content');
+        if (contentElement) {
+            contentElement.innerHTML = '<span class="deleted-content">此评论已被删除</span>';
+            contentElement.classList.add('deleted');
+        }
+        
+        // 隐藏删除按钮和其他操作按钮
+        const actionsElement = commentElement.querySelector('.comment-actions');
+        if (actionsElement) {
+            actionsElement.style.display = 'none';
+        }
+        
+        // 更新用户名显示
+        const usernameElement = commentElement.querySelector('.comment-username');
+        if (usernameElement && updatedData.username) {
+            usernameElement.textContent = updatedData.username;
+        }
+    }
+    
+    // 软删除后更新回复UI
+    updateReplyAfterSoftDelete(replyId, updatedData) {
+        const replyElement = document.querySelector(`[data-reply-id="${replyId}"]`);
+        if (!replyElement) return;
+        
+        // 更新回复内容为已删除状态
+        const contentElement = replyElement.querySelector('.reply-content');
+        if (contentElement) {
+            contentElement.innerHTML = '<span class="deleted-content">此回复已被删除</span>';
+            contentElement.classList.add('deleted');
+        }
+        
+        // 隐藏删除按钮和其他操作按钮
+        const actionsElement = replyElement.querySelector('.reply-actions');
+        if (actionsElement) {
+            actionsElement.style.display = 'none';
+        }
+        
+        // 更新用户名显示
+        const usernameElement = replyElement.querySelector('.reply-username');
+        if (usernameElement && updatedData.username) {
+            usernameElement.textContent = updatedData.username;
+        }
+    }
+    
+    // 物理删除后从UI中移除评论
+    removeCommentFromUI(commentId) {
+        const commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
+        if (commentElement) {
+            // 添加淡出动画
+            commentElement.style.transition = 'opacity 0.3s ease-out';
+            commentElement.style.opacity = '0';
+            
+            // 动画结束后移除元素
+            setTimeout(() => {
+                commentElement.remove();
+                // 更新评论总数
+                this.updateCommentsCountAfterDelete();
+            }, 300);
+        }
+    }
+    
+    // 物理删除后从UI中移除回复
+    removeReplyFromUI(replyId, parentCommentId) {
+        const replyElement = document.querySelector(`[data-reply-id="${replyId}"]`);
+        if (replyElement) {
+            // 添加淡出动画
+            replyElement.style.transition = 'opacity 0.3s ease-out';
+            replyElement.style.opacity = '0';
+            
+            // 动画结束后移除元素
+            setTimeout(() => {
+                replyElement.remove();
+                // 更新父评论的回复数量
+                this.updateParentCommentRepliesCount(parentCommentId);
+            }, 300);
+        }
+    }
+    
+    // 删除后更新评论总数
+    updateCommentsCountAfterDelete() {
+        const commentsList = document.querySelector('.comments-list');
+        if (commentsList) {
+            const remainingComments = commentsList.querySelectorAll('[data-comment-id]').length;
+            this.updateCommentsCount(remainingComments);
+        }
+    }
+    
+    // 更新父评论的回复数量
+    updateParentCommentRepliesCount(parentCommentId) {
+        const parentElement = document.querySelector(`[data-comment-id="${parentCommentId}"]`);
+        if (parentElement) {
+            const repliesSection = parentElement.querySelector(`#replies-${parentCommentId}`);
+            if (repliesSection) {
+                const remainingReplies = repliesSection.querySelectorAll('[data-reply-id]').length;
+                this.updateRepliesToggleUi(parentCommentId, true, remainingReplies);
+            }
+        }
     }
 
     // 加载评论列表
@@ -3248,6 +3487,11 @@ class VideoPlayer {
         const replies = Array.isArray(comment.replies) ? comment.replies : [];
         const imageUrls = Array.isArray(comment.imageUrls) ? comment.imageUrls : [];
         const repliesCount = Number(comment.repliesCount ?? comment.replies_count ?? (Array.isArray(comment.replies) ? comment.replies.length : 0)) || 0;
+        const userId = comment.userId || comment.user_id || null;
+        
+        // 判断是否为当前用户的评论
+        const currentUserId = this.getCurrentUserId();
+        const isCurrentUser = currentUserId && userId && String(currentUserId) === String(userId);
         
         const div = document.createElement('div');
         div.className = 'comment-item';
@@ -3283,6 +3527,7 @@ class VideoPlayer {
                     <span class="timestamp">${timestampText}</span>
                     <button class="comment-reply-btn" data-comment-id="${id}" data-username="${username}">回复</button>
                     ${repliesCount > 0 ? `<button class="replies-toggle-btn" data-comment-id="${id}" data-count="${repliesCount}">查看 ${repliesCount} 条回复</button>` : ''}
+                    ${isCurrentUser ? `<button class="comment-delete-btn" data-comment-id="${id}" data-has-replies="${repliesCount > 0}" title="删除评论">🗑️</button>` : ''}
                 </div>
                 <div class="comment-actions-right">
                     <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
@@ -4476,7 +4721,9 @@ class VideoPlayer {
         
         // 渲染回复项
         cached.items.forEach(reply => {
-            html += this.renderReplyItem(reply, level);
+            // 对于第一级回复，parentCommentId就是commentId；对于更深层级，需要追溯到顶级评论
+            const parentCommentId = level === 1 ? commentId : this.getTopLevelCommentId(commentId);
+            html += this.renderReplyItem(reply, level, parentCommentId);
             
             // 如果回复有子回复且已展开，递归渲染
             if (this.repliesExpanded.has(reply.id)) {
@@ -4484,7 +4731,7 @@ class VideoPlayer {
                 if (childCached && childCached.items.length > 0) {
                     html += '<div class="nested-replies">';
                     childCached.items.forEach(childReply => {
-                        html += this.renderReplyItem(childReply, level + 1);
+                        html += this.renderReplyItem(childReply, level + 1, parentCommentId);
                         
                         // 第三级回复（最深层）
                         if (level + 1 === 2 && this.repliesExpanded.has(childReply.id)) {
@@ -4492,7 +4739,7 @@ class VideoPlayer {
                             if (grandChildCached && grandChildCached.items.length > 0) {
                                 html += '<div class="nested-replies">';
                                 grandChildCached.items.forEach(grandChildReply => {
-                                    html += this.renderReplyItem(grandChildReply, level + 2);
+                                    html += this.renderReplyItem(grandChildReply, level + 2, parentCommentId);
                                 });
                                 
                                 // 第三级的加载更多按钮
@@ -4542,7 +4789,7 @@ class VideoPlayer {
     }
     
     // 渲染单个回复项
-    renderReplyItem(reply, level = 1) {
+    renderReplyItem(reply, level = 1, parentCommentId = null) {
         // 确保时间字段有默认值，避免 Invalid Date
         const timestamp = reply.createdAt ?? reply.created_at ?? new Date().toISOString();
         const timeAgo = this.formatTimeAgo(timestamp);
@@ -4559,13 +4806,21 @@ class VideoPlayer {
         const showReplyButton = level <= 2;
         const showRepliesToggle = level <= 2 && repliesCount > 0;
         
+        // 判断是否显示删除按钮（仅当前用户可见）
+        const currentUserId = this.getCurrentUserId();
+        const replyUserId = reply.user_id || reply.userId;
+        const showDeleteButton = currentUserId && replyUserId && currentUserId.toString() === replyUserId.toString();
+        
         let actionsHtml = '';
-        if (showReplyButton || showRepliesToggle) {
+        if (showReplyButton || showRepliesToggle || showDeleteButton) {
             actionsHtml = `
                 <div class="reply-actions">
                     <div class="reply-actions-left">
                         ${showReplyButton ? `<button class="comment-reply-btn" data-comment-id="${reply.id}" data-username="${this.escapeHtml(reply.username)}">回复</button>` : ''}
                         ${showRepliesToggle ? `<button class="replies-toggle-btn" data-comment-id="${reply.id}" data-count="${repliesCount}">查看 ${repliesCount} 条回复</button>` : ''}
+                    </div>
+                    <div class="reply-actions-right">
+                        ${showDeleteButton ? `<button class="reply-delete-btn" data-reply-id="${reply.id}" data-parent-comment-id="${parentCommentId || ''}" title="删除回复">🗑️</button>` : ''}
                     </div>
                 </div>
             `;

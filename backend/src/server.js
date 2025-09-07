@@ -867,6 +867,18 @@ db.serialize(() => {
         }
     });
     
+    // 为 subtitle_comments 表添加软删除相关字段
+    db.run(`ALTER TABLE subtitle_comments ADD COLUMN is_deleted INTEGER DEFAULT 0`, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+            console.error('添加 is_deleted 字段失败:', err.message);
+        }
+    });
+    db.run(`ALTER TABLE subtitle_comments ADD COLUMN deleted_at DATETIME NULL`, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+            console.error('添加 deleted_at 字段失败:', err.message);
+        }
+    });
+    
     // 为 subtitle_comments 表创建索引
     db.run('CREATE INDEX IF NOT EXISTS idx_subtitle_comments_video ON subtitle_comments(video_id)', () => {});
     db.run('CREATE INDEX IF NOT EXISTS idx_subtitle_comments_timestamp ON subtitle_comments(timestamp)', () => {});
@@ -3067,6 +3079,117 @@ app.get('/api/comments/:commentId/like-status', authenticateUserToken, async (re
     } catch (error) {
         console.error('获取点赞状态失败:', error);
         res.status(500).json({ error: '获取点赞状态失败' });
+    }
+});
+
+// 删除评论 API
+app.delete('/api/comments/:commentId', authenticateUserToken, async (req, res) => {
+    try {
+        const commentId = parseInt(req.params.commentId);
+        const userId = req.user.id;
+        const { deleteType = 'soft' } = req.body; // soft 或 physical
+        
+        if (!commentId) {
+            return res.status(400).json({ error: '评论ID无效' });
+        }
+        
+        // 检查评论是否存在且属于当前用户
+        const comment = await getAsync(
+            'SELECT id, user_id, parent_id as parent_comment_id, content FROM subtitle_comments WHERE id = ?',
+            [commentId]
+        );
+        
+        if (!comment) {
+            return res.status(404).json({ error: '评论不存在' });
+        }
+        
+        if (comment.user_id !== userId) {
+            return res.status(403).json({ error: '无权限删除此评论' });
+        }
+        
+        if (deleteType === 'physical') {
+            // 物理删除：删除评论及其所有回复
+            await runAsync('DELETE FROM comment_likes WHERE comment_id = ? OR comment_id IN (SELECT id FROM subtitle_comments WHERE parent_id = ?)', [commentId, commentId]);
+            await runAsync('DELETE FROM subtitle_comments WHERE parent_id = ?', [commentId]);
+            await runAsync('DELETE FROM subtitle_comments WHERE id = ?', [commentId]);
+            
+            res.json({ 
+                message: '评论已永久删除',
+                deleteType: 'physical'
+            });
+        } else {
+            // 软删除：标记为已删除
+            await runAsync(
+                'UPDATE subtitle_comments SET content = ?, is_deleted = 1, deleted_at = datetime("now") WHERE id = ?',
+                ['[该评论已被删除]', commentId]
+            );
+            
+            res.json({ 
+                message: '评论已删除',
+                deleteType: 'soft',
+                newContent: '[该评论已被删除]'
+            });
+        }
+        
+    } catch (e) {
+        console.error('删除评论失败:', e);
+        res.status(500).json({ error: '删除评论失败' });
+    }
+});
+
+// 删除回复 API
+app.delete('/api/replies/:replyId', authenticateUserToken, async (req, res) => {
+    try {
+        const replyId = parseInt(req.params.replyId);
+        const userId = req.user.id;
+        const { deleteType = 'soft', parentCommentId } = req.body;
+        
+        if (!replyId) {
+            return res.status(400).json({ error: '回复ID无效' });
+        }
+        
+        // 检查回复是否存在且属于当前用户
+        const reply = await getAsync(
+            'SELECT id, user_id, parent_id as parent_comment_id, content FROM subtitle_comments WHERE id = ? AND parent_id IS NOT NULL',
+            [replyId]
+        );
+        
+        if (!reply) {
+            return res.status(404).json({ error: '回复不存在' });
+        }
+        
+        if (reply.user_id !== userId) {
+            return res.status(403).json({ error: '无权限删除此回复' });
+        }
+        
+        if (deleteType === 'physical') {
+            // 物理删除：删除回复及其点赞
+            await runAsync('DELETE FROM comment_likes WHERE comment_id = ?', [replyId]);
+            await runAsync('DELETE FROM subtitle_comments WHERE id = ?', [replyId]);
+            
+            res.json({ 
+                message: '回复已永久删除',
+                deleteType: 'physical',
+                parentCommentId: parentCommentId || reply.parent_comment_id
+            });
+        } else {
+            // 软删除：标记为已删除
+            await runAsync(
+                'UPDATE subtitle_comments SET content = ?, is_deleted = 1, deleted_at = datetime("now") WHERE id = ?',
+                ['[该回复已被删除]', replyId]
+            );
+            
+            res.json({ 
+                message: '回复已删除',
+                deleteType: 'soft',
+                newContent: '[该回复已被删除]',
+                parentCommentId: parentCommentId || reply.parent_comment_id
+            });
+        }
+        
+    } catch (e) {
+        console.error('删除回复失败:', e);
+        res.status(500).json({ error: '删除回复失败' });
     }
 });
 
