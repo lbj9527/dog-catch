@@ -2565,20 +2565,7 @@ body.modal-open { overflow: hidden; }
     color: #dc3545;
 }
 
-/* 已删除内容样式 */
-.deleted-content {
-    color: #666;
-    font-style: italic;
-    opacity: 0.7;
-}
-
-.comment-content.deleted, .reply-content.deleted {
-    background-color: rgba(255, 255, 255, 0.05);
-    border-left: 3px solid #555;
-    padding: 8px 12px;
-    border-radius: 4px;
-    margin: 4px 0;
-}
+/* 已移除软删除相关样式 - 现在只支持硬删除 */
 
 /* 删除动画 */
 .comment-item.deleting, .reply-item.deleting {
@@ -3661,12 +3648,7 @@ body.modal-open { overflow: hidden; }
     padding-left: 0;
 }
 
-/* 已删除评论/回复的删除按钮隐藏（CSS兜底） */
-/* 只隐藏自身被删除的元素的删除按钮，不影响子元素 */
-.comment-item.is-deleted > .comment-content > .comment-actions > .comment-actions-left > .comment-delete-btn,
-.reply-item.is-deleted > .reply-content > .comment-actions > .comment-actions-left > .reply-delete-btn {
-    display: none !important;
-}
+/* 已移除软删除按钮隐藏样式 - 现在只支持硬删除 */
 
 .reply-item {
     margin-bottom: 12px;

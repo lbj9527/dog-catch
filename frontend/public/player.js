@@ -3180,7 +3180,7 @@ class VideoPlayer {
 
     // 处理删除评论
     async handleDeleteComment(commentId) {
-        if (!confirm('确定要删除这条评论吗？删除后无法恢复。')) {
+        if (!confirm('确定要删除这条评论吗？将连同所有回复一起删除，删除后无法恢复。')) {
             return;
         }
         
@@ -3200,14 +3200,17 @@ class VideoPlayer {
             
             const result = await response.json();
             
-            // 根据删除类型更新UI
-            if (result.deleteType === 'soft') {
-                this.updateCommentAfterSoftDelete(commentId, result.data);
-            } else {
+            if (result.success && result.deleted) {
+                // 级联删除：移除评论及其所有回复
                 this.removeCommentFromUI(commentId);
+                
+                // 更新评论总数
+                this.updateTotalCommentCountFromDOM();
+                
+                this.showCommentSuccess(`评论删除成功，共删除 ${result.deleted.total} 条`);
+            } else {
+                throw new Error('删除响应格式异常');
             }
-            
-            this.showCommentSuccess('评论删除成功');
             
         } catch (error) {
             console.error('删除评论失败:', error);
@@ -3222,13 +3225,12 @@ class VideoPlayer {
         }
         
         try {
-            const response = await fetch(`${API_BASE_URL}/api/comments/${replyId}`, {
+            const response = await fetch(`${API_BASE_URL}/api/comments/${parentCommentId}/replies/${replyId}`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${this.userToken}`,
                     'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ parentCommentId })
+                }
             });
             
             if (!response.ok) {
@@ -3238,14 +3240,17 @@ class VideoPlayer {
             
             const result = await response.json();
             
-            // 根据删除类型更新UI
-            if (result.deleteType === 'soft') {
-                this.updateReplyAfterSoftDelete(replyId, result.data);
-            } else {
+            if (result.success) {
+                // 硬删除：移除回复并更新父评论计数
                 this.removeReplyFromUI(replyId, parentCommentId);
+                
+                // 更新评论总数
+                this.updateTotalCommentCountFromDOM();
+                
+                this.showCommentSuccess('回复删除成功');
+            } else {
+                throw new Error('删除响应格式异常');
             }
-            
-            this.showCommentSuccess('回复删除成功');
             
         } catch (error) {
             console.error('删除回复失败:', error);
@@ -3253,61 +3258,7 @@ class VideoPlayer {
         }
     }
 
-    // 软删除后更新评论UI
-    updateCommentAfterSoftDelete(commentId, updatedData) {
-        const commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
-        if (!commentElement) return;
-        
-        // 添加已删除状态类
-        commentElement.classList.add('is-deleted');
-        
-        // 更新评论内容为已删除状态
-        const contentElement = commentElement.querySelector('.comment-content');
-        if (contentElement) {
-            contentElement.innerHTML = '<span class="deleted-content">此评论已被删除</span>';
-            contentElement.classList.add('deleted');
-        }
-        
-        // 隐藏删除按钮
-        const deleteBtn = commentElement.querySelector('.comment-delete-btn');
-        if (deleteBtn) {
-            deleteBtn.style.display = 'none';
-        }
-        
-        // 更新用户名显示
-        const usernameElement = commentElement.querySelector('.comment-username');
-        if (usernameElement && updatedData.username) {
-            usernameElement.textContent = updatedData.username;
-        }
-    }
-    
-    // 软删除后更新回复UI
-    updateReplyAfterSoftDelete(replyId, updatedData) {
-        const replyElement = document.querySelector(`[data-reply-id="${replyId}"]`);
-        if (!replyElement) return;
-        
-        // 添加已删除状态类
-        replyElement.classList.add('is-deleted');
-        
-        // 更新回复内容为已删除状态
-        const contentElement = replyElement.querySelector('.reply-content');
-        if (contentElement) {
-            contentElement.innerHTML = '<span class="deleted-content">此回复已被删除</span>';
-            contentElement.classList.add('deleted');
-        }
-        
-        // 隐藏删除按钮
-        const deleteBtn = replyElement.querySelector('.reply-delete-btn');
-        if (deleteBtn) {
-            deleteBtn.style.display = 'none';
-        }
-        
-        // 更新用户名显示
-        const usernameElement = replyElement.querySelector('.reply-author');
-        if (usernameElement && updatedData.username) {
-            usernameElement.textContent = updatedData.username;
-        }
-    }
+    // 已移除软删除相关函数 - 现在只支持硬删除
     
     // 物理删除后从UI中移除评论
     removeCommentFromUI(commentId) {
@@ -3321,7 +3272,7 @@ class VideoPlayer {
             setTimeout(() => {
                 commentElement.remove();
                 // 更新评论总数
-                this.updateCommentsCountAfterDelete();
+        this.updateTotalCommentCountFromDOM();
             }, 300);
         }
     }
@@ -3343,13 +3294,11 @@ class VideoPlayer {
         }
     }
     
-    // 删除后更新评论总数
-    updateCommentsCountAfterDelete() {
-        const commentsList = document.querySelector('.comments-list');
-        if (commentsList) {
-            const remainingComments = commentsList.querySelectorAll('[data-comment-id]').length;
-            this.updateCommentsCount(remainingComments);
-        }
+    // 基于DOM统计并更新评论总数（仅统计顶级评论）
+    updateTotalCommentCountFromDOM() {
+        // 统计当前页面的顶级评论数量
+        const topLevelComments = document.querySelectorAll('.comment-item').length;
+        this.updateCommentsCount(topLevelComments);
     }
     
     // 更新父评论的回复数量
@@ -3499,15 +3448,9 @@ class VideoPlayer {
         const currentUserId = this.getCurrentUserId();
         const isCurrentUser = currentUserId && userId && String(currentUserId) === String(userId);
         
-        // 检查评论是否已删除（只基于显式删除标记和明确占位符判断）
-        const isDeleted = this.isDeletedFlag(comment.is_deleted) || this.isDeletedFlag(comment.isDeleted) || 
-                         (content && content.includes('已被删除'));
-        
+        // 硬删除模式：已删除的评论不会显示在列表中
         const div = document.createElement('div');
         div.className = 'comment-item';
-        if (isDeleted) {
-            div.classList.add('is-deleted');
-        }
         div.dataset.commentId = id;
         
         const timeAgo = this.formatTimeAgo(created_at);
@@ -3540,7 +3483,7 @@ class VideoPlayer {
                     <span class="timestamp">${timestampText}</span>
                     <button class="comment-reply-btn" data-comment-id="${id}" data-username="${username}">回复</button>
                     ${repliesCount > 0 ? `<button class="replies-toggle-btn" data-comment-id="${id}" data-count="${repliesCount}">查看 ${repliesCount} 条回复</button>` : ''}
-                    ${isCurrentUser && !isDeleted ? `<button class="comment-delete-btn" data-comment-id="${id}" data-has-replies="${repliesCount > 0}" title="删除评论">🗑️</button>` : ''}
+                    ${isCurrentUser ? `<button class="comment-delete-btn" data-comment-id="${id}" data-has-replies="${repliesCount > 0}" title="删除评论">🗑️</button>` : ''}
                 </div>
                 <div class="comment-actions-right">
                     <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
@@ -3896,16 +3839,7 @@ class VideoPlayer {
         return div.innerHTML;
     }
 
-    // 已删除状态布尔归一化工具方法
-    isDeletedFlag(value) {
-        // 将后端可能返回的多种形态归一为严格布尔值
-        // 判定为已删除：true、1、"1"、"true"
-        // 判定为未删除：0、"0"、false、null、undefined、""
-        if (value === true || value === 1 || value === "1" || value === "true") {
-            return true;
-        }
-        return false;
-    }
+    // 已移除软删除状态检查工具方法 - 现在只支持硬删除
     
     // ===== 表情、@用户、图片上传功能 =====
     
@@ -4777,7 +4711,7 @@ class VideoPlayer {
         
         // 渲染回复项（仅一层回复）
         cached.items.forEach(reply => {
-            html += this.renderReplyItem(reply, 1, commentId);
+            html += this.renderReplyItem(reply, commentId);
         });
         
         // 加载更多按钮
@@ -4835,10 +4769,8 @@ class VideoPlayer {
         // 判断是否显示删除按钮（仅当前用户可见且未删除）
         const currentUserId = this.getCurrentUserId();
         const replyUserId = reply.user_id || reply.userId;
-        // 只基于显式删除标记和明确占位符判断，不再把空内容视为删除
-        const isDeleted = this.isDeletedFlag(reply.is_deleted) || this.isDeletedFlag(reply.isDeleted) || 
-                         (content && content.includes('已被删除'));
-        const showDeleteButton = currentUserId && replyUserId && currentUserId.toString() === replyUserId.toString() && !isDeleted;
+        // 硬删除模式：已删除的回复不会显示，所以这里不需要检查删除状态
+        const showDeleteButton = currentUserId && replyUserId && currentUserId.toString() === replyUserId.toString();
         
         // 工具栏：时间戳、点赞、删除（不再显示回复按钮和查看回复按钮）
         const actionsHtml = `
@@ -4856,9 +4788,9 @@ class VideoPlayer {
             </div>
         `;
         
-        const deletedClass = isDeleted ? ' is-deleted' : '';
+        // 硬删除模式：已删除的回复不会显示在列表中
         return `
-            <div class="reply-item${deletedClass}" data-reply-id="${reply.id}" data-comment-id="${reply.id}">
+            <div class="reply-item" data-reply-id="${reply.id}" data-comment-id="${reply.id}">
                 <div class="reply-content">
                     <div class="reply-header">
                         <span class="reply-author">${this.escapeHtml(reply.username)}</span>
