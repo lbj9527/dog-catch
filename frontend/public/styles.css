@@ -2286,8 +2286,7 @@ body.modal-open { overflow: hidden; }
 /* 回复列表 */
 .replies-section {
     margin-top: 12px;
-    padding-left: 48px;
-    border-left: 2px solid rgba(255, 255, 255, 0.1);
+    padding-left: 0;
 }
 
 .reply-item {
@@ -2300,7 +2299,7 @@ body.modal-open { overflow: hidden; }
 }
 
 .reply-item .comment-content {
-    padding-left: 44px;
+    padding-left: 0;
 }
 
 .reply-item .comment-actions {
@@ -2313,43 +2312,22 @@ body.modal-open { overflow: hidden; }
     font-size: 12px;
 }
 
-/* 多级回复缩进样式 */
+/* 多级回复缩进样式 - 已改为由容器margin-left控制 */
 .reply-item.level-2 {
-    margin-left: 16px;
+    margin-left: 0;
     position: relative;
 }
 
 .reply-item.level-3 {
-    margin-left: 32px;
+    margin-left: 0;
     position: relative;
 }
 
-/* 层级视觉引导线 */
-.reply-item.level-2::before {
-    content: '';
-    position: absolute;
-    left: -8px;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 1px;
-}
-
-.reply-item.level-3::before {
-    content: '';
-    position: absolute;
-    left: -8px;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 1px;
-}
+/* 层级视觉引导线已移除，统一使用容器竖线 */
 
 /* 层级回复的内容和操作区域调整 */
 .reply-item.level-2 .comment-content {
-    padding-left: 36px; /* 减少缩进以适应外层margin */
+    padding-left: 0; /* 统一不使用padding-left控制缩进 */
 }
 
 .reply-item.level-2 .comment-actions {
@@ -2357,7 +2335,7 @@ body.modal-open { overflow: hidden; }
 }
 
 .reply-item.level-3 .comment-content {
-    padding-left: 28px; /* 进一步减少缩进 */
+    padding-left: 0; /* 统一不使用padding-left控制缩进 */
 }
 
 .reply-item.level-3 .comment-actions {
@@ -3715,7 +3693,14 @@ body.modal-open { overflow: hidden; }
 .replies-container {
     border-left: 2px solid rgba(255, 255, 255, 0.1);
     margin-left: 20px;
-    padding-left: 16px;
+    padding-left: 0;
+}
+
+/* 已删除评论/回复的删除按钮隐藏（CSS兜底） */
+/* 只隐藏自身被删除的元素的删除按钮，不影响子元素 */
+.comment-item.is-deleted > .comment-content > .comment-actions > .comment-actions-left > .comment-delete-btn,
+.reply-item.is-deleted > .reply-content > .comment-actions > .comment-actions-left > .reply-delete-btn {
+    display: none !important;
 }
 
 .reply-item {
@@ -3723,7 +3708,6 @@ body.modal-open { overflow: hidden; }
     padding: 8px 12px;
     background: rgba(0, 0, 0, 0.2);
     border-radius: 6px;
-    border-left: 3px solid rgba(255, 255, 255, 0.2);
 }
 
 .reply-content {
@@ -3780,7 +3764,7 @@ body.modal-open { overflow: hidden; }
 @media (max-width: 768px) {
     .replies-container {
         margin-left: 12px;
-        padding-left: 12px;
+        padding-left: 0;
     }
     
     .reply-item {
