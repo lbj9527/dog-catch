@@ -2852,14 +2852,18 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
             return res.status(400).json({ error: '时间戳格式不正确' });
         }
         
-        // 如果是回复，验证父评论存在；未提供时间戳则继承父评论的时间戳
+        // 如果是回复，验证父评论存在且确保两层结构约束；未提供时间戳则继承父评论的时间戳
         if (parentCommentId) {
             const parentComment = await getAsync(
-                'SELECT id, timestamp FROM subtitle_comments WHERE id = ? AND video_id = ? AND status = "approved"',
+                'SELECT id, timestamp, parent_id FROM subtitle_comments WHERE id = ? AND video_id = ? AND status = "approved"',
                 [parentCommentId, videoId]
             );
             if (!parentComment) {
                 return res.status(400).json({ error: '父评论不存在' });
+            }
+            // 两层结构约束：不允许对回复进行回复
+            if (parentComment.parent_id !== null) {
+                return res.status(400).json({ error: '不支持多层回复，只能回复顶级评论' });
             }
             if (timestamp === null) {
                 timestamp = parentComment.timestamp;
@@ -2981,6 +2985,165 @@ app.post('/api/subtitles/:videoId/comments', authenticateUserToken, async (req, 
     }
 });
 
+// 兼容路由：/api/replies/:replyId/like -> /api/comments/:commentId/like
+app.post('/api/replies/:replyId/like', authenticateUserToken, async (req, res) => {
+    // 直接调用统一的评论点赞逻辑
+    req.params.commentId = req.params.replyId;
+    // 复用下面的评论点赞逻辑
+    const { commentId } = req.params;
+    const userId = req.user.id;
+    
+    try {
+        if (!commentId) {
+            return res.status(400).json({ error: '评论ID不能为空' });
+        }
+        
+        // 验证评论是否存在
+        const comment = await getAsync(
+            'SELECT id FROM subtitle_comments WHERE id = ? AND status = "approved"',
+            [commentId]
+        );
+        if (!comment) {
+            return res.status(404).json({ error: '评论不存在' });
+        }
+        
+        // 检查是否已经点赞
+        const existingLike = await getAsync(
+            'SELECT id FROM comment_likes WHERE user_id = ? AND comment_id = ?',
+            [userId, commentId]
+        );
+        
+        if (existingLike) {
+            // 取消点赞
+            await runAsync('DELETE FROM comment_likes WHERE id = ?', [existingLike.id]);
+            const likesCount = await getAsync(
+                'SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?',
+                [commentId]
+            );
+            
+            return res.json({ 
+                message: '取消点赞成功', 
+                liked: false,
+                likes_count: likesCount ? likesCount.count : 0
+            });
+        } else {
+            // 添加点赞
+            try {
+                await runAsync(
+                    'INSERT INTO comment_likes (user_id, comment_id) VALUES (?, ?)',
+                    [userId, commentId]
+                );
+                const likesCount = await getAsync(
+                    'SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?',
+                    [commentId]
+                );
+                
+                return res.json({ 
+                    message: '点赞成功', 
+                    liked: true,
+                    likes_count: likesCount ? likesCount.count : 0
+                });
+            } catch (e) {
+                if (String(e && e.message).includes('UNIQUE') || String(e && e.code).includes('SQLITE_CONSTRAINT')) {
+                    const likesCount = await getAsync(
+                        'SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?',
+                        [commentId]
+                    );
+                    return res.json({
+                        message: '已点赞',
+                        liked: true,
+                        likes_count: likesCount ? likesCount.count : 0
+                    });
+                }
+                throw e;
+            }
+        }
+    } catch (error) {
+        console.error('点赞操作失败:', error);
+        res.status(500).json({ error: '点赞操作失败' });
+    }
+});
+
+// 兼容路由：/api/replies/:replyId -> /api/comments/:commentId (删除)
+app.delete('/api/replies/:replyId', authenticateUserToken, async (req, res) => {
+    // 直接调用统一的评论删除逻辑
+    req.params.commentId = req.params.replyId;
+    const commentId = parseInt(req.params.commentId);
+    const userId = req.user.id;
+    const { deleteType = 'soft' } = req.body;
+    
+    try {
+        if (!commentId) {
+            return res.status(400).json({ error: '评论ID无效' });
+        }
+        
+        // 检查评论是否存在且属于当前用户
+        const comment = await getAsync(
+            'SELECT id, user_id, parent_id as parent_comment_id, content FROM subtitle_comments WHERE id = ?',
+            [commentId]
+        );
+        
+        if (!comment) {
+            return res.status(404).json({ error: '评论不存在' });
+        }
+        
+        if (comment.user_id !== userId) {
+            return res.status(403).json({ error: '无权限删除此评论' });
+        }
+        
+        // 如果是顶级评论，检查是否有回复，阻止删除
+        if (!comment.parent_comment_id) {
+            const repliesCount = await getAsync(
+                'SELECT COUNT(*) as count FROM subtitle_comments WHERE parent_id = ? AND status = "approved"',
+                [commentId]
+            );
+            if (repliesCount && repliesCount.count > 0) {
+                return res.status(400).json({ 
+                    error: '该评论有回复，无法删除。请先删除所有回复后再删除此评论。',
+                    hasReplies: true,
+                    repliesCount: repliesCount.count
+                });
+            }
+        }
+        
+        if (deleteType === 'physical') {
+            // 物理删除：删除评论及其点赞
+            await runAsync('DELETE FROM comment_likes WHERE comment_id = ?', [commentId]);
+            await runAsync('DELETE FROM subtitle_comments WHERE id = ?', [commentId]);
+            
+            // 如果是回复，更新父评论的回复数
+            if (comment.parent_comment_id) {
+                await runAsync(
+                    'UPDATE subtitle_comments SET replies_count = GREATEST(0, replies_count - 1) WHERE id = ?',
+                    [comment.parent_comment_id]
+                );
+            }
+            
+            res.json({ 
+                message: '评论已永久删除',
+                deleteType: 'physical',
+                parentCommentId: comment.parent_comment_id
+            });
+        } else {
+            // 软删除：标记为已删除
+            await runAsync(
+                'UPDATE subtitle_comments SET content = ?, is_deleted = 1, deleted_at = datetime("now") WHERE id = ?',
+                ['[该评论已被删除]', commentId]
+            );
+            
+            res.json({ 
+                message: '评论已删除',
+                deleteType: 'soft',
+                newContent: '[该评论已被删除]',
+                parentCommentId: comment.parent_comment_id
+            });
+        }
+    } catch (e) {
+        console.error('删除评论失败:', e);
+        res.status(500).json({ error: '删除评论失败' });
+    }
+});
+
 // 点赞/取消点赞评论（并发安全 + 幂等）
 app.post('/api/comments/:commentId/like', authenticateUserToken, async (req, res) => {
     try {
@@ -3083,85 +3246,7 @@ app.get('/api/comments/:commentId/like-status', authenticateUserToken, async (re
 });
 
 // 点赞/取消点赞回复（并发安全 + 幂等）
-app.post('/api/replies/:replyId/like', authenticateUserToken, async (req, res) => {
-    try {
-        const { replyId } = req.params;
-        const userId = req.user.id;
-        
-        if (!replyId) {
-            return res.status(400).json({ error: '回复ID不能为空' });
-        }
-        
-        // 验证回复是否存在
-        const reply = await getAsync(
-            'SELECT id FROM subtitle_comments WHERE id = ? AND parent_id IS NOT NULL AND status = "approved"',
-            [replyId]
-        );
-        if (!reply) {
-            return res.status(404).json({ error: '回复不存在' });
-        }
-        
-        // 检查是否已经点赞
-        const existingLike = await getAsync(
-            'SELECT id FROM comment_likes WHERE user_id = ? AND comment_id = ?',
-            [userId, replyId]
-        );
-        
-        if (existingLike) {
-            // 取消点赞：仅当确实删除了一条记录时才递减计数，避免竞争条件导致 likes_count 变负
-            const del = await runAsync('DELETE FROM comment_likes WHERE id = ?', [existingLike.id]);
-            // 获取实时点赞数
-            const likesCount = await getAsync(
-                'SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?',
-                [replyId]
-            );
-            
-            return res.json({ 
-                message: '取消点赞成功', 
-                liked: false,
-                likes_count: likesCount ? likesCount.count : 0
-            });
-        } else {
-            // 添加点赞：处理并发导致的唯一约束冲突，保证幂等，不返回500
-            try {
-                const ins = await runAsync(
-                    'INSERT INTO comment_likes (user_id, comment_id) VALUES (?, ?)',
-                    [userId, replyId]
-                );
-                // 获取实时点赞数
-                const likesCount = await getAsync(
-                    'SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?',
-                    [replyId]
-                );
-                
-                return res.json({ 
-                    message: '点赞成功', 
-                    liked: true,
-                    likes_count: likesCount ? likesCount.count : 0
-                });
-            } catch (e) {
-                // UNIQUE 冲突（并发重复点击或快速多次请求）：视为已成功点赞
-                if (String(e && e.message).includes('UNIQUE') || String(e && e.code).includes('SQLITE_CONSTRAINT')) {
-                    const likesCount = await getAsync(
-                        'SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?',
-                        [replyId]
-                    );
-                    return res.json({
-                        message: '已点赞',
-                        liked: true,
-                        likes_count: likesCount ? likesCount.count : 0
-                    });
-                }
-                throw e;
-            }
-        }
-    } catch (error) {
-        console.error('回复点赞操作失败:', error);
-        res.status(500).json({ error: '回复点赞操作失败' });
-    }
-});
-
-// 获取用户对回复的点赞状态
+// 兼容路由：/api/replies/:replyId/like-status -> /api/comments/:commentId/like-status
 app.get('/api/replies/:replyId/like-status', authenticateUserToken, async (req, res) => {
     try {
         const { replyId } = req.params;
@@ -3208,15 +3293,38 @@ app.delete('/api/comments/:commentId', authenticateUserToken, async (req, res) =
             return res.status(403).json({ error: '无权限删除此评论' });
         }
         
+        // 如果是顶级评论，检查是否有回复，阻止删除
+        if (!comment.parent_comment_id) {
+            const repliesCount = await getAsync(
+                'SELECT COUNT(*) as count FROM subtitle_comments WHERE parent_id = ? AND status = "approved"',
+                [commentId]
+            );
+            if (repliesCount && repliesCount.count > 0) {
+                return res.status(400).json({ 
+                    error: '该评论有回复，无法删除。请先删除所有回复后再删除此评论。',
+                    hasReplies: true,
+                    repliesCount: repliesCount.count
+                });
+            }
+        }
+        
         if (deleteType === 'physical') {
-            // 物理删除：删除评论及其所有回复
-            await runAsync('DELETE FROM comment_likes WHERE comment_id = ? OR comment_id IN (SELECT id FROM subtitle_comments WHERE parent_id = ?)', [commentId, commentId]);
-            await runAsync('DELETE FROM subtitle_comments WHERE parent_id = ?', [commentId]);
+            // 物理删除：删除评论及其点赞
+            await runAsync('DELETE FROM comment_likes WHERE comment_id = ?', [commentId]);
             await runAsync('DELETE FROM subtitle_comments WHERE id = ?', [commentId]);
+            
+            // 如果是回复，更新父评论的回复数
+            if (comment.parent_comment_id) {
+                await runAsync(
+                    'UPDATE subtitle_comments SET replies_count = GREATEST(0, replies_count - 1) WHERE id = ?',
+                    [comment.parent_comment_id]
+                );
+            }
             
             res.json({ 
                 message: '评论已永久删除',
-                deleteType: 'physical'
+                deleteType: 'physical',
+                parentCommentId: comment.parent_comment_id
             });
         } else {
             // 软删除：标记为已删除
@@ -3228,7 +3336,8 @@ app.delete('/api/comments/:commentId', authenticateUserToken, async (req, res) =
             res.json({ 
                 message: '评论已删除',
                 deleteType: 'soft',
-                newContent: '[该评论已被删除]'
+                newContent: '[该评论已被删除]',
+                parentCommentId: comment.parent_comment_id
             });
         }
         
@@ -3267,6 +3376,12 @@ app.delete('/api/replies/:replyId', authenticateUserToken, async (req, res) => {
             // 物理删除：删除回复及其点赞
             await runAsync('DELETE FROM comment_likes WHERE comment_id = ?', [replyId]);
             await runAsync('DELETE FROM subtitle_comments WHERE id = ?', [replyId]);
+            
+            // 更新父评论的回复数
+            await runAsync(
+                'UPDATE subtitle_comments SET replies_count = GREATEST(0, replies_count - 1) WHERE id = ?',
+                [reply.parent_comment_id]
+            );
             
             res.json({ 
                 message: '回复已永久删除',

@@ -3222,7 +3222,7 @@ class VideoPlayer {
         }
         
         try {
-            const response = await fetch(`${API_BASE_URL}/api/replies/${replyId}`, {
+            const response = await fetch(`${API_BASE_URL}/api/comments/${replyId}`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${this.userToken}`,
@@ -3794,7 +3794,7 @@ class VideoPlayer {
     // 切换回复点赞状态
     async toggleReplyLike(replyId) {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/replies/${replyId}/like`, {
+            const response = await fetch(`${API_BASE_URL}/api/comments/${replyId}/like`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${this.userToken}`
@@ -4721,16 +4721,12 @@ class VideoPlayer {
                 repliesSection.innerHTML = '<div class="loading-placeholder">加载中...</div>';
             }
             
-            // 确定当前层级
-            const replyElement = document.querySelector(`[data-reply-id="${commentId}"]`);
-            const level = replyElement ? parseInt(replyElement.dataset.level || '0', 10) + 1 : 1;
-            
-            await this.loadRepliesForComment(commentId, 1, level);
+            await this.loadRepliesForComment(commentId, 1);
         }
     }
     
-    // 为指定评论加载回复
-    async loadRepliesForComment(commentId, page = 1, level = 1) {
+    // 为指定评论加载回复（两层结构）
+    async loadRepliesForComment(commentId, page = 1) {
         const repliesData = await this.fetchReplies(commentId, page);
         
         // 更新缓存
@@ -4747,7 +4743,7 @@ class VideoPlayer {
         }
         
         // 渲染回复
-        this.paintReplies(commentId, level);
+        this.paintReplies(commentId);
         
         // 更新切换按钮UI
         const cached = this.repliesCache.get(commentId);
@@ -4759,29 +4755,17 @@ class VideoPlayer {
         const cached = this.repliesCache.get(commentId);
         if (!cached || !cached.hasMore) return;
         
-        // 确定当前层级
-        const replyElement = document.querySelector(`[data-reply-id="${commentId}"]`);
-        const level = replyElement ? parseInt(replyElement.dataset.level || '0', 10) + 1 : 1;
-        
         const nextPage = cached.page + 1;
-        await this.loadRepliesForComment(commentId, nextPage, level);
+        await this.loadRepliesForComment(commentId, nextPage);
     }
     
-    // 渲染回复列表
-    paintReplies(commentId, level = 1) {
+    // 渲染回复列表（限制为两层结构）
+    paintReplies(commentId) {
         const cached = this.repliesCache.get(commentId);
         if (!cached || !cached.items.length) return;
         
-        // 查找回复区域 - 支持主评论和回复评论
+        // 查找回复区域 - 仅支持顶级评论的回复
         let repliesSection = document.querySelector(`[data-comment-id="${commentId}"] .replies-section`);
-        if (!repliesSection) {
-            // 如果是回复评论，查找其容器内的回复区域
-            const replyContainer = document.querySelector(`[data-reply-id="${commentId}"]`);
-            if (replyContainer) {
-                repliesSection = replyContainer.querySelector('.replies-section');
-            }
-        }
-        
         if (!repliesSection) return;
         
         // 确保回复区域可见并同步状态
@@ -4791,60 +4775,12 @@ class VideoPlayer {
         
         let html = '<div class="replies-container">';
         
-        // 渲染回复项
+        // 渲染回复项（仅一层回复）
         cached.items.forEach(reply => {
-            // 对于第一级回复，parentCommentId就是commentId；对于更深层级，需要追溯到顶级评论
-            const parentCommentId = level === 1 ? commentId : this.getTopLevelCommentId(commentId);
-            html += this.renderReplyItem(reply, level, parentCommentId);
-            
-            // 如果回复有子回复且已展开，递归渲染
-            if (this.repliesExpanded.has(reply.id)) {
-                const childCached = this.repliesCache.get(reply.id);
-                if (childCached && childCached.items.length > 0) {
-                    html += '<div class="nested-replies">';
-                    childCached.items.forEach(childReply => {
-                        html += this.renderReplyItem(childReply, level + 1, parentCommentId);
-                        
-                        // 第三级回复（最深层）
-                        if (level + 1 === 2 && this.repliesExpanded.has(childReply.id)) {
-                            const grandChildCached = this.repliesCache.get(childReply.id);
-                            if (grandChildCached && grandChildCached.items.length > 0) {
-                                html += '<div class="nested-replies">';
-                                grandChildCached.items.forEach(grandChildReply => {
-                                    html += this.renderReplyItem(grandChildReply, level + 2, parentCommentId);
-                                });
-                                
-                                // 第三级的加载更多按钮
-                                if (grandChildCached.hasMore) {
-                                    html += `
-                                        <div class="load-more-replies">
-                                            <button class="load-more-replies-btn" data-comment-id="${childReply.id}">
-                                                加载更多回复 (${grandChildCached.total - grandChildCached.items.length})
-                                            </button>
-                                        </div>
-                                    `;
-                                }
-                                html += '</div>';
-                            }
-                        }
-                    });
-                    
-                    // 第二级的加载更多按钮
-                    if (childCached.hasMore) {
-                        html += `
-                            <div class="load-more-replies">
-                                <button class="load-more-replies-btn" data-comment-id="${reply.id}">
-                                    加载更多回复 (${childCached.total - childCached.items.length})
-                                </button>
-                            </div>
-                        `;
-                    }
-                    html += '</div>';
-                }
-            }
+            html += this.renderReplyItem(reply, 1, commentId);
         });
         
-        // 第一级的加载更多按钮
+        // 加载更多按钮
         if (cached.hasMore) {
             html += `
                 <div class="load-more-replies">
@@ -4879,12 +4815,11 @@ class VideoPlayer {
         }
     }
     
-    // 渲染单个回复项
-    renderReplyItem(reply, level = 1, parentCommentId = null) {
+    // 渲染单个回复项（两层结构）
+    renderReplyItem(reply, parentCommentId = null) {
         // 确保时间字段有默认值，避免 Invalid Date
         const timestamp = reply.createdAt ?? reply.created_at ?? new Date().toISOString();
         const timeAgo = this.formatTimeAgo(timestamp);
-        const repliesCount = reply.repliesCount || 0;
         
         // 获取回复内容，支持多字段回退
         const content = reply.content ?? reply.text ?? reply.body ?? '';
@@ -4897,13 +4832,6 @@ class VideoPlayer {
         const likes_count = Number(reply.likes_count ?? reply.likesCount ?? 0);
         const user_liked = !!(reply.user_liked || reply.userLiked);
         
-        // 层级样式类
-        const levelClass = level > 1 ? `reply-level-${Math.min(level, 3)}` : '';
-        
-        // 第1级和第2级显示回复按钮，第3级不显示
-        const showReplyButton = level <= 2;
-        const showRepliesToggle = level <= 2 && repliesCount > 0;
-        
         // 判断是否显示删除按钮（仅当前用户可见且未删除）
         const currentUserId = this.getCurrentUserId();
         const replyUserId = reply.user_id || reply.userId;
@@ -4912,13 +4840,11 @@ class VideoPlayer {
                          (content && content.includes('已被删除'));
         const showDeleteButton = currentUserId && replyUserId && currentUserId.toString() === replyUserId.toString() && !isDeleted;
         
-        // 工具栏始终显示，包含固定部分（时间戳+点赞）和条件部分（回复/查看回复/删除）
+        // 工具栏：时间戳、点赞、删除（不再显示回复按钮和查看回复按钮）
         const actionsHtml = `
             <div class="comment-actions">
                 <div class="comment-actions-left">
                     <span class="timestamp">${timestampText}</span>
-                    ${showReplyButton ? `<button class="comment-reply-btn" data-comment-id="${reply.id}" data-username="${this.escapeHtml(reply.username)}">回复</button>` : ''}
-                    ${showRepliesToggle ? `<button class="replies-toggle-btn" data-comment-id="${reply.id}" data-count="${repliesCount}">查看 ${repliesCount} 条回复</button>` : ''}
                     ${showDeleteButton ? `<button class="reply-delete-btn" data-reply-id="${reply.id}" data-parent-comment-id="${parentCommentId || ''}" title="删除回复">🗑️</button>` : ''}
                 </div>
                 <div class="comment-actions-right">
@@ -4932,7 +4858,7 @@ class VideoPlayer {
         
         const deletedClass = isDeleted ? ' is-deleted' : '';
         return `
-            <div class="reply-item ${levelClass}${deletedClass}" data-reply-id="${reply.id}" data-comment-id="${reply.id}" data-level="${level}">
+            <div class="reply-item${deletedClass}" data-reply-id="${reply.id}" data-comment-id="${reply.id}">
                 <div class="reply-content">
                     <div class="reply-header">
                         <span class="reply-author">${this.escapeHtml(reply.username)}</span>
@@ -4940,7 +4866,6 @@ class VideoPlayer {
                     <div class="reply-text">${this.escapeHtml(reply.content)}</div>
                     ${actionsHtml}
                 </div>
-                <div class="replies-section" style="display: none;"></div>
             </div>
         `;
     }
@@ -5009,7 +4934,7 @@ class VideoPlayer {
                 const batch = replies.slice(i, i + batchSize);
                 const promises = batch.map(async (reply) => {
                     try {
-                        const response = await fetch(`${API_BASE_URL}/api/replies/${reply.id}/like-status`, {
+                        const response = await fetch(`${API_BASE_URL}/api/comments/${reply.id}/like-status`, {
                             headers: {
                                 'Authorization': `Bearer ${this.userToken}`
                             }
@@ -5101,12 +5026,8 @@ class VideoPlayer {
         cached.total += 1;
         this.repliesCache.set(parentCommentId, cached);
         
-        // 确定当前层级
-        const replyElement = document.querySelector(`[data-reply-id="${parentCommentId}"]`);
-        const level = replyElement ? parseInt(replyElement.dataset.level || '0', 10) + 1 : 1;
-        
-        // 重新渲染回复列表
-        this.paintReplies(parentCommentId, level);
+        // 重新渲染回复列表（两层结构）
+        this.paintReplies(parentCommentId);
         
         // 确保回复区域可见 - 支持主评论和回复评论
         let repliesSection = document.querySelector(`[data-comment-id="${parentCommentId}"] .replies-section`);
