@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Subtitle Dog</title>
-    <link href="https://vjs.zencdn.net/8.6.1/video-js.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.css">
     <link rel="stylesheet" href="/styles.css">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
 </head>
@@ -51,24 +51,7 @@
 
     <div class="stage">
         <div class="player-box">
-            <video
-                id="videoPlayer"
-                class="video-js vjs-default-skin"
-                controls
-                preload="auto"
-                width="960"
-                height="540"
-                playsinline
-                webkit-playsinline
-                x5-playsinline
-                x5-video-player-type="h5"
-                crossorigin="anonymous"
-            >
-                <p class="vjs-no-js">
-                    您的浏览器不支持视频播放，请升级浏览器或
-                    <a href="#" target="_blank" id="fallbackLink">直接访问视频链接</a>
-                </p>
-            </video>
+            <div id="videoPlayer" style="width: 960px; height: 540px;"></div>
             <!-- 点赞按钮区域 -->
             <div class="like-controls">
                 <button id="likeButton" class="like-button" title="点赞字幕">
@@ -323,7 +306,8 @@
     <!-- 通知面板遮罩 -->
     <div id="notificationOverlay" class="notification-overlay" style="display:none;"></div>
 
-    <script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.js"></script>
     <script src="./config.js"></script>
     <script type="module" src="./player.js"></script>
   </body>

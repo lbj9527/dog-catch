@@ -293,8 +293,8 @@ class VideoPlayer {
         await this.verifyTokenAndSyncUI();
         await this.refreshAuthUi();
         
-        // 初始化Video.js播放器
-        this.initVideoJs();
+        // 初始化DPlayer播放器
+        this.initDPlayer();
         
         // 处理视频源（播放不需要登录）
         if (params.type === 'hls' || this.currentVideoUrl.includes('.m3u8')) {
@@ -819,7 +819,10 @@ class VideoPlayer {
         this.setupLikeButton();
         
         // 设置fallback链接
-        document.getElementById('fallbackLink').href = this.currentVideoUrl;
+        const fallbackLink = document.getElementById('fallbackLink');
+        if (fallbackLink) {
+            fallbackLink.href = this.currentVideoUrl;
+        }
     }
 
     setupAuthUi() {
@@ -1456,44 +1459,39 @@ class VideoPlayer {
         this.showMessage('已退出登录');
     }
 
-    // 初始化Video.js播放器
-    initVideoJs() {
+    // 初始化DPlayer播放器
+    initDPlayer() {
         // 若同 id 的实例已存在（脚本重复注入或热更），先销毁旧实例
         try {
-            const old = (window.videojs && window.videojs.players && window.videojs.players['videoPlayer']) || null;
-            if (old && typeof old.dispose === 'function') {
-                old.dispose();
-            }
-            if (this.player && typeof this.player.dispose === 'function') {
-                this.player.dispose();
+            if (this.player && typeof this.player.destroy === 'function') {
+                this.player.destroy();
             }
         } catch {}
 
         const el = document.getElementById('videoPlayer');
         if (!el) { console.error('video element not found'); return; }
-        this.player = videojs(el, {
-            controls: true,
-            fluid: true,
-            responsive: true,
-            playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2],
-            html5: {
-                vhs: {
-                    overrideNative: true,
-                    // 调优以提升seek恢复速度
-                    // 目标缓冲时长（秒），缩短到更快达成可播放状态
-                    targetDuration: 10,
-                    // 增加并发请求，有助于更快抓取初始化段/关键帧附近分片
-                    bandwidth: 1e7,
-                    // 允许更激进地切换清晰度以尽快恢复播放
-                    enableLowInitialPlaylist: true,
-                    fastQualityChange: true,
-                    // 降低初始缓冲需求
-                    playbackRateSwitching: true
-                },
-                nativeAudioTracks: true,
-                nativeVideoTracks: true
-            }
+        
+        this.player = new DPlayer({
+            container: el,
+            video: {
+                url: '', // 初始为空，后续通过 switchVideo 设置
+                type: 'auto'
+            },
+            autoplay: false,
+            screenshot: true,
+            hotkey: true,
+            preload: 'auto',
+            volume: 0.7,
+            playbackSpeed: [0.5, 0.75, 1, 1.25, 1.5, 2],
+            theme: '#b7daff',
+            loop: false,
+            lang: 'zh-cn',
+            mutex: true,
+            preventClickToggle: false
         });
+        
+        // 设置跨域属性以支持字幕
+        this.player.video.setAttribute('crossorigin', 'anonymous');
         
         // 播放器事件监听
         this.setupPlayerEvents();
@@ -1511,36 +1509,17 @@ class VideoPlayer {
         });
         
         this.player.on('error', () => {
-            const error = this.player.error();
-            let errorMsg = '播放失败';
-            
-            if (error) {
-                switch(error.code) {
-                    case 1:
-                        errorMsg = '视频加载被中止';
-                        break;
-                    case 2:
-                        errorMsg = '网络错误，请检查网络连接';
-                        break;
-                    case 3:
-                        errorMsg = '视频解码错误';
-                        break;
-                    case 4:
-                        errorMsg = '视频格式不支持或源不可用';
-                        break;
-                    default:
-                        errorMsg = '播放失败，可能为跨域或防盗链限制';
-                }
-            }
-            
-            this.showMessage(errorMsg, 'error');
+            this.showMessage('播放失败，可能为跨域或防盗链限制', 'error');
         });
         
         // 播放器就绪后尝试自动播放
-        this.player.ready(() => {
-            this.player.play().catch(() => {
-                this.showMessage('请点击播放按钮开始播放', 'info');
-            });
+        this.player.on('loadedmetadata', () => {
+            const playPromise = this.player.play();
+            if (playPromise && typeof playPromise.catch === 'function') {
+                playPromise.catch(() => {
+                    this.showMessage('请点击播放按钮开始播放', 'info');
+                });
+            }
         });
     }
     
@@ -1580,18 +1559,16 @@ class VideoPlayer {
     
     // 播放视频
     playVideo(url, type) {
-        const source = {
-            src: url,
-            type: type === 'hls' ? 'application/x-mpegURL' : 'video/mp4'
-        };
-        
-        this.player.src(source);
+        this.player.switchVideo({
+            url: url,
+            type: 'auto' // DPlayer 会自动检测类型
+        });
         this.currentVideoUrl = url;
 
         // 源切换后，确保字幕轨道被重新附加
-        this.player.one('loadedmetadata', () => {
+        this.player.video.addEventListener('loadedmetadata', () => {
             this.addSubtitleTrack();
-        });
+        }, { once: true });
     }
     
     // 检查是否为master playlist
@@ -1682,20 +1659,20 @@ class VideoPlayer {
     
     // 切换清晰度
     switchQuality(url) {
-        const currentTime = this.player.currentTime();
-        const wasPlaying = !this.player.paused();
+        const currentTime = this.player.video.currentTime;
+        const wasPlaying = !this.player.video.paused;
         
         this.playVideo(url, 'hls');
         
         // 恢复播放位置
-        this.player.one('canplay', () => {
-            this.player.currentTime(currentTime);
+        this.player.video.addEventListener('canplay', () => {
+            this.player.video.currentTime = currentTime;
             if (wasPlaying) {
                 this.player.play();
             }
             // 清晰度切换后再次确保字幕附加并显示
             this.addSubtitleTrack();
-        });
+        }, { once: true });
         
         this.showMessage('正在切换清晰度...', 'info');
     }
@@ -1782,14 +1759,14 @@ class VideoPlayer {
 
     async switchSubtitleVariant(videoId) {
         if (!videoId) return;
-        const currentTime = this.player ? this.player.currentTime() : 0;
-        const wasPlaying = this.player && !this.player.paused();
+        const currentTime = this.player ? this.player.video.currentTime : 0;
+        const wasPlaying = this.player && !this.player.video.paused;
         await this.loadSubtitleByVideoId(videoId);
         // 恢复播放位置与状态（确保无缝）
-        this.player.one('canplay', () => {
-            this.player.currentTime(currentTime);
+        this.player.video.addEventListener('canplay', () => {
+            this.player.video.currentTime = currentTime;
             if (wasPlaying) this.player.play();
-        });
+        }, { once: true });
     }
 
     // 按 videoId 加载并附加字幕
@@ -1842,46 +1819,53 @@ class VideoPlayer {
 
         // 先移除所有已有字幕轨道，避免重复和旧源残留
         try {
-            const existing = Array.from(this.player.textTracks());
+            const existing = Array.from(this.player.video.textTracks);
             existing.forEach(t => {
                 if (t.kind === 'subtitles') {
-                    try { this.player.removeRemoteTextTrack(t); } catch {}
+                    t.mode = 'disabled';
                 }
             });
+            // 移除所有 track 元素
+            const trackElements = this.player.video.querySelectorAll('track');
+            trackElements.forEach(el => el.remove());
         } catch {}
 
         // 添加新的字幕轨道
-        this.player.addRemoteTextTrack({
-            src: this.subtitleUrl,
-            kind: 'subtitles',
-            srclang: 'zh-CN',
-            label: '中文字幕',
-            default: true
-        }, false);
+        const trackEl = document.createElement('track');
+        trackEl.kind = 'subtitles';
+        trackEl.src = this.subtitleUrl;
+        trackEl.srclang = 'zh-CN';
+        trackEl.label = '中文字幕';
+        trackEl.default = true;
+        this.player.video.appendChild(trackEl);
 
         // 显示字幕
-        try {
-            const tracks = this.player.textTracks();
-            for (let i = 0; i < tracks.length; i++) {
-                const track = tracks[i];
-                if (track.kind === 'subtitles') {
-                    track.mode = 'showing';
+        trackEl.addEventListener('load', () => {
+            try {
+                const tracks = this.player.video.textTracks;
+                for (let i = 0; i < tracks.length; i++) {
+                    const track = tracks[i];
+                    if (track.kind === 'subtitles') {
+                        track.mode = 'showing';
+                    }
                 }
-            }
-        } catch {}
+            } catch {}
+        });
     }
 
     // 新增：移除所有字幕轨道并重置相关状态与UI
     removeAllSubtitleTracks(tip) {
         try {
-            if (this.player && this.player.textTracks) {
-                const tracks = Array.from(this.player.textTracks());
+            if (this.player && this.player.video && this.player.video.textTracks) {
+                const tracks = Array.from(this.player.video.textTracks);
                 tracks.forEach(t => {
                     if (t.kind === 'subtitles') {
                         try { t.mode = 'disabled'; } catch {}
-                        try { this.player.removeRemoteTextTrack(t); } catch {}
                     }
                 });
+                // 移除所有 track 元素
+                const trackElements = this.player.video.querySelectorAll('track');
+                trackElements.forEach(el => el.remove());
             }
         } catch {}
         try {
@@ -1916,8 +1900,8 @@ class VideoPlayer {
             }
         } catch {}
         try {
-            if (this.player && typeof this.player.dispose === 'function') {
-                this.player.dispose();
+            if (this.player && typeof this.player.destroy === 'function') {
+                this.player.destroy();
                 this.player = null;
             }
         } catch {}
@@ -1960,7 +1944,7 @@ class VideoPlayer {
     
     // 切换字幕显示
     toggleSubtitle() {
-        const textTracks = this.player.textTracks();
+        const textTracks = this.player.video.textTracks;
         
         for (let i = 0; i < textTracks.length; i++) {
             const track = textTracks[i];

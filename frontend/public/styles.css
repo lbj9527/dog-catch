@@ -100,6 +100,27 @@ body {
     margin-bottom: var(--player-reserve-bottom); /* 使用CSS变量设置底部边距 */
 }
 
+/* DPlayer 容器样式优化 */
+#videoPlayer {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* DPlayer 视频元素样式 */
+#videoPlayer .dplayer-video {
+    object-fit: contain;
+    width: 100%;
+    height: 100%;
+}
+
+/* DPlayer 容器内部样式 */
+#videoPlayer .dplayer {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
 /* 点赞按钮样式（统一为外置到播放器下方左侧） */
 .player-box > .like-controls {
     display: flex;
