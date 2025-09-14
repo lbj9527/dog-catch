@@ -3153,9 +3153,10 @@ class VideoPlayer {
             }
             
             // 删除评论按钮点击事件
-            if (e.target.classList.contains('comment-delete-btn')) {
+            const deleteCommentBtn = e.target.closest('.comment-delete-btn');
+            if (deleteCommentBtn) {
                 e.preventDefault();
-                const commentId = e.target.dataset.commentId;
+                const commentId = deleteCommentBtn.dataset.commentId;
                 if (commentId) {
                     this.handleDeleteComment(commentId);
                 }
@@ -3163,10 +3164,11 @@ class VideoPlayer {
             }
             
             // 删除回复按钮点击事件
-            if (e.target.classList.contains('reply-delete-btn')) {
+            const deleteReplyBtn = e.target.closest('.reply-delete-btn');
+            if (deleteReplyBtn) {
                 e.preventDefault();
-                const replyId = e.target.dataset.replyId;
-                const parentCommentId = e.target.dataset.parentCommentId;
+                const replyId = deleteReplyBtn.dataset.replyId;
+                const parentCommentId = deleteReplyBtn.dataset.parentCommentId;
                 if (replyId && parentCommentId) {
                     this.handleDeleteReply(replyId, parentCommentId);
                 }
@@ -3288,6 +3290,18 @@ class VideoPlayer {
             // 动画结束后移除元素
             setTimeout(() => {
                 replyElement.remove();
+                
+                // 同步更新repliesCache缓存，移除已删除的回复
+                const cached = this.repliesCache.get(parentCommentId);
+                if (cached && cached.items) {
+                    // 从缓存中移除对应的回复项
+                    cached.items = cached.items.filter(reply => reply.id != replyId);
+                    // 更新总数
+                    cached.total = Math.max(0, cached.total - 1);
+                    // 更新缓存
+                    this.repliesCache.set(parentCommentId, cached);
+                }
+                
                 // 更新父评论的回复数量
                 this.updateParentCommentRepliesCount(parentCommentId);
             }, 300);
@@ -3307,7 +3321,8 @@ class VideoPlayer {
         if (parentElement) {
             const repliesSection = parentElement.querySelector(`#replies-${parentCommentId}`);
             if (repliesSection) {
-                const remainingReplies = repliesSection.querySelectorAll('[data-reply-id]').length;
+                // 统计回复项：优先使用新结构的选择器，回退到旧结构
+                const remainingReplies = repliesSection.querySelectorAll('.reply-item[data-reply-id]').length;
                 this.updateRepliesToggleUi(parentCommentId, true, remainingReplies);
             }
         }
@@ -3507,73 +3522,7 @@ class VideoPlayer {
     }
 
     // 渲染回复
-    renderReplies(replies) {
-        if (!Array.isArray(replies) || replies.length === 0) return '';
-        
-        const repliesHtml = replies.map(reply => {
-            // 验证reply对象并提供默认值
-            if (!reply || typeof reply !== 'object') {
-                console.warn('renderReplies: reply对象无效', reply);
-                return '';
-            }
-            
-            const username = reply.username || '匿名用户';
-            const content = reply.content || '';
-            const created_at = reply.created_at || new Date().toISOString();
-            const likes_count = Number(reply.likes_count ?? reply.likesCount ?? 0);
-            const user_liked = !!(reply.user_liked || reply.userLiked);
-            const id = reply.id || 'unknown';
-            const imageUrls = Array.isArray(reply.imageUrls) ? reply.imageUrls : [];
-            const userId = reply.userId || reply.user_id || null;
-            
-            // 判断是否为当前用户的回复
-            const currentUserId = this.getCurrentUserId();
-            const isCurrentUser = currentUserId && userId && String(currentUserId) === String(userId);
-            
-            const avatar = this.generateUserAvatar(username);
-            const timeAgo = this.formatTimeAgo(created_at);
-            
-            // 格式化地理位置显示
-            const locationDisplay = reply.locationDisplay;
-            const timestampText = locationDisplay ? `${timeAgo} · ${locationDisplay}` : timeAgo;
-            
-            // 生成回复图片HTML（缩略图形式）
-            let replyImagesHtml = '';
-            if (imageUrls.length > 0) {
-                const imageElements = imageUrls.map((url, index) => 
-                    `<img src="${this.escapeHtml(url)}" alt="回复图片" class="comment-image-thumbnail" data-url="${this.escapeHtml(url)}" data-index="${index}" data-all-urls='${JSON.stringify(imageUrls.map(u => this.escapeHtml(u)))}' />`
-                ).join('');
-                replyImagesHtml = `<div class="comment-images">${imageElements}</div>`;
-            }
-            
-            return `
-                <div class="reply-item" data-comment-id="${id}">
-                    <div class="comment-header">
-                        <div class="user-avatar small" data-username="${username}">${avatar}</div>
-                        <div class="comment-meta">
-                            <span class="username">${username}</span>
-                        </div>
-                    </div>
-                    <div class="comment-content">${this.escapeHtml(content)}</div>
-                    ${replyImagesHtml}
-                    <div class="comment-actions">
-                        <div class="comment-actions-left">
-                            <span class="timestamp">${timestampText}</span>
-                            ${isCurrentUser ? `<button class="reply-delete-btn" data-reply-id="${id}" title="删除回复"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ''}
-                        </div>
-                        <div class="comment-actions-right">
-                            <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
-                                <span class="like-icon">${user_liked ? '❤️' : '🤍'}</span>
-                                <span class="like-count">${likes_count}</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).filter(html => html !== '').join('');
-        
-        return `<div class="replies-section">${repliesHtml}</div>`;
-    }
+
 
     // 提交评论
     async submitComment() {
@@ -4796,7 +4745,7 @@ class VideoPlayer {
         
         // 硬删除模式：已删除的回复不会显示在列表中
         return `
-            <div class="reply-item" data-reply-id="${reply.id}" data-comment-id="${reply.id}">
+            <div class="reply-item" data-reply-id="${reply.id}" data-comment-id="${parentCommentId || ''}">
                 <div class="reply-content">
                     <div class="comment-header">
                         <div class="user-avatar small" data-username="${this.escapeHtml(reply.username || '匿名用户')}">${this.generateUserAvatar(reply.username || '匿名用户')}</div>
@@ -4841,7 +4790,8 @@ class VideoPlayer {
         if (!toggleBtn) return;
         
         if (totalReplies === 0) {
-            toggleBtn.hidden = true;
+            // 完全移除按钮元素，避免CSS样式冲突
+            toggleBtn.remove();
             return;
         }
         
