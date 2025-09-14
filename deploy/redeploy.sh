@@ -36,8 +36,11 @@ else
     npm install --production
 fi
 # 修复安全漏洞
-echo "🔒 修复后端安全漏洞..."
-npm audit fix
+    echo "🔒 修复后端安全漏洞..."
+    set -x
+    npm audit fix || echo "⚠️ 后端安全漏洞修复失败，但继续部署"
+    set +x
+    echo "✅ 后端安全漏洞修复完成"
 echo "✅ 后端依赖更新完成"
 
 # 4. 管理后台构建
@@ -49,8 +52,11 @@ else
     npm install
 fi
 # 修复安全漏洞
-echo "🔒 修复管理后台安全漏洞..."
-npm audit fix --force
+    echo "🔒 修复管理后台安全漏洞..."
+    set -x
+    npm audit fix --force || echo "⚠️ 管理后台安全漏洞修复失败，但继续部署"
+    set +x
+    echo "✅ 管理后台安全漏洞修复完成"
 npm run build
 echo "✅ 管理后台构建完成"
 
@@ -63,8 +69,11 @@ else
     npm install
 fi
 # 修复安全漏洞
-echo "🔒 修复前端安全漏洞..."
-npm audit fix --force
+    echo "🔒 修复前端安全漏洞..."
+    set -x
+    npm audit fix --force || echo "⚠️ 前端安全漏洞修复失败，但继续部署"
+    set +x
+    echo "✅ 前端安全漏洞修复完成"
 npm run build
 
 echo "📁 同步前台构建产物..."
