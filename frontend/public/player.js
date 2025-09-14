@@ -3483,7 +3483,7 @@ class VideoPlayer {
                     <span class="timestamp">${timestampText}</span>
                     <button class="comment-reply-btn" data-comment-id="${id}" data-username="${username}">回复</button>
                     ${repliesCount > 0 ? `<button class="replies-toggle-btn" data-comment-id="${id}" data-count="${repliesCount}">查看 ${repliesCount} 条回复</button>` : ''}
-                    ${isCurrentUser ? `<button class="comment-delete-btn" data-comment-id="${id}" data-has-replies="${repliesCount > 0}" title="删除评论">🗑️</button>` : ''}
+                    ${isCurrentUser ? `<button class="comment-delete-btn" data-comment-id="${id}" data-has-replies="${repliesCount > 0}" title="删除评论"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ''}
                 </div>
                 <div class="comment-actions-right">
                     <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
@@ -3524,6 +3524,11 @@ class VideoPlayer {
             const user_liked = !!(reply.user_liked || reply.userLiked);
             const id = reply.id || 'unknown';
             const imageUrls = Array.isArray(reply.imageUrls) ? reply.imageUrls : [];
+            const userId = reply.userId || reply.user_id || null;
+            
+            // 判断是否为当前用户的回复
+            const currentUserId = this.getCurrentUserId();
+            const isCurrentUser = currentUserId && userId && String(currentUserId) === String(userId);
             
             const avatar = this.generateUserAvatar(username);
             const timeAgo = this.formatTimeAgo(created_at);
@@ -3554,6 +3559,7 @@ class VideoPlayer {
                     <div class="comment-actions">
                         <div class="comment-actions-left">
                             <span class="timestamp">${timestampText}</span>
+                            ${isCurrentUser ? `<button class="reply-delete-btn" data-reply-id="${id}" title="删除回复"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ''}
                         </div>
                         <div class="comment-actions-right">
                             <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
@@ -4777,7 +4783,7 @@ class VideoPlayer {
             <div class="comment-actions">
                 <div class="comment-actions-left">
                     <span class="timestamp">${timestampText}</span>
-                    ${showDeleteButton ? `<button class="reply-delete-btn" data-reply-id="${reply.id}" data-parent-comment-id="${parentCommentId || ''}" title="删除回复">🗑️</button>` : ''}
+                    ${showDeleteButton ? `<button class="reply-delete-btn" data-reply-id="${reply.id}" data-parent-comment-id="${parentCommentId || ''}" title="删除回复"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ''}
                 </div>
                 <div class="comment-actions-right">
                     <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${reply.id}">
@@ -4792,10 +4798,13 @@ class VideoPlayer {
         return `
             <div class="reply-item" data-reply-id="${reply.id}" data-comment-id="${reply.id}">
                 <div class="reply-content">
-                    <div class="reply-header">
-                        <span class="reply-author">${this.escapeHtml(reply.username)}</span>
+                    <div class="comment-header">
+                        <div class="user-avatar small" data-username="${this.escapeHtml(reply.username || '匿名用户')}">${this.generateUserAvatar(reply.username || '匿名用户')}</div>
+                        <div class="comment-meta">
+                            <span class="username">${this.escapeHtml(reply.username || '匿名用户')}</span>
+                        </div>
                     </div>
-                    <div class="reply-text">${this.escapeHtml(reply.content)}</div>
+                    <div class="reply-text">${this.escapeHtml(content)}</div>
                     ${actionsHtml}
                 </div>
             </div>
