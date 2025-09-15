@@ -154,37 +154,11 @@ body {
     }
 }
 
-.player-box .video-js {
-    position: absolute;
-    inset: 0;
-    width: 100% !important;
-    height: 100% !important;
-    border-radius: 8px;
-}
 
-/* Video.js 大播放按钮居中 */
-.video-js .vjs-big-play-button {
-    position: absolute !important;
-    top: 50% !important;
-    left: 50% !important;
-    transform: translate(-50%, -50%) !important;
-    margin: 0 !important;
-    font-size: 3em !important;
-}
 
-/* 控制栏样式优化 */
-.video-js .vjs-control-bar {
-    background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
-    border-radius: 0 0 8px 8px;
-}
 
-.video-js .vjs-progress-control {
-    height: 6px;
-}
 
-.video-js .vjs-progress-control:hover {
-    height: 8px;
-}
+
 
 /* 响应式设计 */
 @media (min-width: 1440px) {
@@ -324,27 +298,7 @@ video::cue {
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
-/* 覆盖 Video.js 的默认字幕背景（兼容不同版本的结构） */
-.video-js .vjs-text-track-cue {
-    background: transparent !important;
-    background-color: transparent !important;
-    color: #e6e6e6 !important;
-}
 
-.video-js .vjs-text-track-cue > div,
-.video-js .vjs-text-track-display div {
-    background: transparent !important;
-    background-color: transparent !important;
-}
-
-/* iOS Safari 字幕背景强制移除 */
-.video-js .vjs-text-track-display .vjs-text-track-cue,
-.video-js .vjs-text-track-display .vjs-text-track-cue div,
-.video-js .vjs-text-track-display .vjs-text-track-cue span {
-    background: none !important;
-    background-color: transparent !important;
-    box-shadow: none !important;
-}
 
 /* WebKit/Safari 特定字幕样式 */
 video::-webkit-media-text-track-display {
@@ -1753,7 +1707,7 @@ body.modal-open {
 }
 
 /* 增高态：隐藏视频交互但保留 player-box 作为宽度锚点 */
-.player-box.is-panel-expanded .video-js { opacity: 0; visibility: hidden; pointer-events: none; }
+
 
 /* 锁定页面滚动（已有 modal-open，可复用） */
 body.modal-open { overflow: hidden; }
