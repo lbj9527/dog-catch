@@ -4015,8 +4015,30 @@ class VideoPlayer {
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
                 const file = new File([blob], `screenshot-${timestamp}.png`, { type: 'image/png' });
                 
-                // 使用现有的图片上传流程
-                await this.handleImageUpload(file);
+                // 为截图上传显示进度（在截图按钮上）
+                this.showUploadProgress('.screenshot-btn', '📸');
+                
+                try {
+                    // 验证文件
+                    const validation = this.validateImageFile(file);
+                    if (!validation.valid) {
+                        this.showCommentError(validation.message);
+                        return;
+                    }
+                    
+                    // 上传图片
+                    const imageUrl = await this.uploadImage(file);
+                    
+                    // 创建图片缩略图
+                    this.createImageThumbnail(imageUrl, file.name);
+                    
+                } catch (error) {
+                    console.error('截图上传失败:', error);
+                    this.showCommentError('截图上传失败，请稍后重试');
+                } finally {
+                    // 隐藏截图按钮的进度
+                    this.hideUploadProgress('.screenshot-btn');
+                }
                 
                 this.showCommentSuccess('截屏成功！');
             }, 'image/png', 0.9);
@@ -4438,20 +4460,26 @@ class VideoPlayer {
     }
     
     // 显示上传进度
-    showUploadProgress() {
-        const imageBtn = document.querySelector('.image-btn');
-        if (imageBtn) {
-            imageBtn.innerHTML = '⏳';
-            imageBtn.disabled = true;
+    showUploadProgress(buttonSelector = '.image-btn', originalIcon = '📁') {
+        const btn = document.querySelector(buttonSelector);
+        if (btn) {
+            btn.innerHTML = '⏳';
+            btn.disabled = true;
+            // 存储原始图标以便恢复
+            btn.dataset.originalIcon = originalIcon;
         }
     }
     
     // 隐藏上传进度
-    hideUploadProgress() {
-        const imageBtn = document.querySelector('.image-btn');
-        if (imageBtn) {
-            imageBtn.innerHTML = '📁';
-            imageBtn.disabled = false;
+    hideUploadProgress(buttonSelector = '.image-btn') {
+        const btn = document.querySelector(buttonSelector);
+        if (btn) {
+            // 恢复原始图标
+            const originalIcon = btn.dataset.originalIcon || '📁';
+            btn.innerHTML = originalIcon;
+            btn.disabled = false;
+            // 清除存储的原始图标
+            delete btn.dataset.originalIcon;
         }
     }
     
