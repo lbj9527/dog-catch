@@ -3106,8 +3106,15 @@ class VideoPlayer {
             if (e.target.classList.contains('comment-image-thumbnail')) {
                 e.preventDefault();
                 const url = e.target.dataset.url;
-                const index = parseInt(e.target.dataset.index);
+                let index = parseInt(e.target.dataset.index);
                 const allUrls = JSON.parse(e.target.dataset.allUrls);
+                
+                // 兜底：如果 index 无效，根据 url 在 allUrls 中查找索引
+                if (isNaN(index)) {
+                    index = allUrls.findIndex(u => u === url);
+                    if (index === -1) index = 0;
+                }
+                
                 this.openLightbox(url, allUrls, index);
                 return;
             }
@@ -4807,9 +4814,12 @@ class VideoPlayer {
             return '';
         }
         
-        const allUrls = reply.imageUrls.join(',');
-        const thumbnailsHtml = reply.imageUrls.map(url => 
-            `<img src="${url}" alt="Reply image" class="comment-image-thumbnail" data-url="${url}" data-all-urls="${allUrls}">`
+        // 转义URL并生成合法的JSON数组格式，与顶级评论保持一致
+        const safeUrls = reply.imageUrls.map(url => this.escapeHtml(url));
+        const allUrlsStr = JSON.stringify(safeUrls);
+        
+        const thumbnailsHtml = reply.imageUrls.map((url, index) => 
+            `<img src="${this.escapeHtml(url)}" alt="Reply image" class="comment-image-thumbnail" data-url="${this.escapeHtml(url)}" data-index="${index}" data-all-urls='${allUrlsStr}' />`
         ).join('');
         
         return `<div class="comment-images">${thumbnailsHtml}</div>`;
