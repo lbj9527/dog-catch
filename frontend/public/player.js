@@ -4801,6 +4801,20 @@ class VideoPlayer {
         }
     }
     
+    // 渲染回复中的图片缩略图
+    renderReplyImages(reply) {
+        if (!reply.imageUrls || !Array.isArray(reply.imageUrls) || reply.imageUrls.length === 0) {
+            return '';
+        }
+        
+        const allUrls = reply.imageUrls.join(',');
+        const thumbnailsHtml = reply.imageUrls.map(url => 
+            `<img src="${url}" alt="Reply image" class="comment-image-thumbnail" data-url="${url}" data-all-urls="${allUrls}">`
+        ).join('');
+        
+        return `<div class="comment-images">${thumbnailsHtml}</div>`;
+    }
+    
     // 渲染单个回复项（两层结构）
     renderReplyItem(reply, parentCommentId = null) {
         // 确保时间字段有默认值，避免 Invalid Date
@@ -4851,6 +4865,7 @@ class VideoPlayer {
                         </div>
                     </div>
                     <div class="reply-text">${this.escapeHtml(content)}</div>
+                    ${this.renderReplyImages(reply)}
                     ${actionsHtml}
                 </div>
             </div>
