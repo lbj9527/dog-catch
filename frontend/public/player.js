@@ -2895,7 +2895,8 @@ class VideoPlayer {
                                 <div class="input-tools">
                                     <button class="tool-btn emoji-btn" title="表情">😊</button>
                                     <button class="tool-btn mention-btn" title="@某人">@</button>
-                                    <button class="tool-btn image-btn" title="图片">📷</button>
+                                    <button class="tool-btn image-btn" title="图片">📁</button>
+                                    <button class="tool-btn screenshot-btn" title="截屏">📸</button>
                                 </div>
                                 <div class="submit-area">
                                     <span class="char-count">0/500</span>
@@ -3082,6 +3083,15 @@ class VideoPlayer {
             imageBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 this.triggerImageUpload();
+            });
+        }
+        
+        // 截屏按钮事件
+        const screenshotBtn = document.querySelector('.screenshot-btn');
+        if (screenshotBtn) {
+            screenshotBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.capturePlayerScreenshot();
             });
         }
         
@@ -3957,6 +3967,77 @@ class VideoPlayer {
         document.body.appendChild(fileInput);
         fileInput.click();
         document.body.removeChild(fileInput);
+    }
+    
+    // 截取播放器当前帧
+    async capturePlayerScreenshot() {
+        try {
+            // 检查当前图片数量
+            const currentImages = document.querySelectorAll('#composeImagePreview .image-thumbnail').length;
+            if (currentImages >= MAX_IMAGES) {
+                this.showCommentError(`最多只能上传${MAX_IMAGES}张图片`);
+                return;
+            }
+            
+            // 检查播放器是否存在
+            if (!this.player || !this.player.video) {
+                this.showCommentError('播放器未初始化，无法截屏');
+                return;
+            }
+            
+            const video = this.player.video;
+            
+            // 检查视频是否已加载
+            if (video.readyState < 2) {
+                this.showCommentError('视频尚未加载完成，请稍后再试');
+                return;
+            }
+            
+            // 创建canvas元素
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // 设置canvas尺寸为视频尺寸
+            canvas.width = video.videoWidth || video.clientWidth;
+            canvas.height = video.videoHeight || video.clientHeight;
+            
+            // 绘制当前视频帧到canvas
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // 转换为blob
+            canvas.toBlob(async (blob) => {
+                if (!blob) {
+                    this.showCommentError('截屏失败，请稍后重试');
+                    return;
+                }
+                
+                // 创建File对象
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const file = new File([blob], `screenshot-${timestamp}.png`, { type: 'image/png' });
+                
+                // 使用现有的图片上传流程
+                await this.handleImageUpload(file);
+                
+                this.showCommentSuccess('截屏成功！');
+            }, 'image/png', 0.9);
+            
+        } catch (error) {
+            console.error('截屏失败:', error);
+            
+            // 如果canvas方法失败，尝试使用DPlayer自带的截屏功能作为备选
+            if (this.player && typeof this.player.screenshot === 'function') {
+                try {
+                    // 注意：DPlayer的screenshot方法通常会直接下载图片
+                    // 这里只是作为备选方案提示用户
+                    this.showCommentError('自动截屏失败，请使用播放器右键菜单中的截屏功能');
+                } catch (fallbackError) {
+                    console.error('备选截屏方案也失败:', fallbackError);
+                    this.showCommentError('截屏功能暂时不可用，请稍后重试');
+                }
+            } else {
+                this.showCommentError('截屏功能暂时不可用，请稍后重试');
+            }
+        }
     }
     
     // 处理图片上传
