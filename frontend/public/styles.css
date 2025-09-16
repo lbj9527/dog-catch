@@ -3165,11 +3165,11 @@ body.modal-open { overflow: hidden; }
 }
 
 .lightbox-prev {
-    left: -70px;
+    left: 24px;
 }
 
 .lightbox-next {
-    right: -70px;
+    right: 24px;
 }
 
 .lightbox-counter {
@@ -3193,6 +3193,11 @@ body.modal-open { overflow: hidden; }
     to {
         opacity: 1;
     }
+}
+
+/* 锁定body滚动样式 */
+body.no-scroll {
+    overflow: hidden;
 }
 
 @keyframes lightboxImageZoomIn {
@@ -3375,11 +3380,11 @@ body.modal-open { overflow: hidden; }
     }
     
     .lightbox-prev {
-        left: -60px;
+        left: 16px;
     }
     
     .lightbox-next {
-        right: -60px;
+        right: 16px;
     }
     
     .lightbox-counter {

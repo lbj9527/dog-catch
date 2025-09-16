@@ -94,16 +94,18 @@ class VideoPlayer {
         const lightbox = document.createElement('div');
         lightbox.className = 'lightbox-overlay';
         lightbox.innerHTML = `
-            <div class="lightbox-container">
-                <button class="lightbox-close">&times;</button>
-                <button class="lightbox-prev" ${allUrls.length <= 1 ? 'style="display:none"' : ''}>&lt;</button>
+            <div class="lightbox-content">
                 <img class="lightbox-image" src="${currentUrl}" alt="预览图片" />
-                <button class="lightbox-next" ${allUrls.length <= 1 ? 'style="display:none"' : ''}>&gt;</button>
-                <div class="lightbox-counter" ${allUrls.length <= 1 ? 'style="display:none"' : ''}>${currentIndex + 1} / ${allUrls.length}</div>
             </div>
+            <button class="lightbox-close">&times;</button>
+            <button class="lightbox-prev lightbox-nav" ${allUrls.length <= 1 ? 'style="display:none"' : ''}>&lt;</button>
+            <button class="lightbox-next lightbox-nav" ${allUrls.length <= 1 ? 'style="display:none"' : ''}>&gt;</button>
+            <div class="lightbox-counter" ${allUrls.length <= 1 ? 'style="display:none"' : ''}>${currentIndex + 1} / ${allUrls.length}</div>
         `;
         
         document.body.appendChild(lightbox);
+        // 锁定body滚动
+        document.body.classList.add('no-scroll');
         
         let currentIdx = currentIndex;
         const img = lightbox.querySelector('.lightbox-image');
@@ -119,6 +121,8 @@ class VideoPlayer {
         // 关闭Lightbox
         const closeLightbox = () => {
             document.body.removeChild(lightbox);
+            // 解锁body滚动
+            document.body.classList.remove('no-scroll');
         };
         
         // 事件监听
