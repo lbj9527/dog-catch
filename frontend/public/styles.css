@@ -1330,7 +1330,7 @@ body.modal-open {
 
 /* 评论数显示样式 - 使用ID选择器确保优先级 */
 #socialPanelCommentsCount {
-    font-size: 8px !important;
+    font-size: 12px !important;
     line-height: 1 !important;
     color: rgba(255, 255, 255, 0.8);
     background: rgba(255, 255, 255, 0.1);
