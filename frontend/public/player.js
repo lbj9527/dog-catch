@@ -3826,7 +3826,9 @@ class VideoPlayer {
                 </div>
                 <div class="user-search-body">
                     <input type="text" class="user-search-input" placeholder="输入用户名搜索..." autocomplete="off">
-                    <div class="user-search-results"></div>
+                    <div class="user-search-results">
+                        <div class="loading-indicator">加载用户列表中...</div>
+                    </div>
                 </div>
             </div>
         `;
@@ -3840,6 +3842,14 @@ class VideoPlayer {
         const resultsContainer = modal.querySelector('.user-search-results');
         const closeBtn = modal.querySelector('.close-btn');
         
+        // 用户列表状态管理
+        let currentPage = 1;
+        let isLoading = false;
+        let hasMore = true;
+        let isSearchMode = false;
+        let searchTimeout;
+        let selectedIndex = -1;
+        
         // 关闭弹窗
         const closeModal = () => {
             modal.remove();
@@ -3850,66 +3860,120 @@ class VideoPlayer {
             if (e.target === modal) closeModal();
         });
         
+        // 加载用户列表
+        const loadUsers = async (page = 1, search = '', append = false) => {
+            if (isLoading) return;
+            isLoading = true;
+            
+            try {
+                const url = search 
+                    ? `${API_BASE_URL}/api/users/search?username=${encodeURIComponent(search)}`
+                    : `${API_BASE_URL}/api/users/list?page=${page}&limit=10`;
+                    
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${this.userToken}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const users = Array.isArray(data.users) ? data.users : [];
+                
+                if (search) {
+                    // 搜索模式
+                    if (users.length === 0) {
+                        resultsContainer.innerHTML = '<div class="no-users">未找到匹配的用户</div>';
+                    } else {
+                        resultsContainer.innerHTML = this.renderUserList(users);
+                    }
+                    hasMore = false;
+                } else {
+                    // 列表模式
+                    if (users.length === 0 && page === 1) {
+                        resultsContainer.innerHTML = '<div class="no-users">暂无用户</div>';
+                        hasMore = false;
+                    } else {
+                        const userListHtml = this.renderUserList(users);
+                        if (append) {
+                            const loadingIndicator = resultsContainer.querySelector('.loading-more');
+                            if (loadingIndicator) {
+                                loadingIndicator.remove();
+                            }
+                            resultsContainer.insertAdjacentHTML('beforeend', userListHtml);
+                        } else {
+                            resultsContainer.innerHTML = userListHtml;
+                        }
+                        
+                        hasMore = data.pagination ? data.pagination.hasMore : false;
+                        if (hasMore) {
+                            resultsContainer.insertAdjacentHTML('beforeend', '<div class="load-more-trigger"></div>');
+                        }
+                    }
+                }
+                
+                // 绑定用户选择事件
+                this.bindUserSelectionEvents(resultsContainer, closeModal);
+                
+            } catch (error) {
+                console.error('加载用户失败:', error);
+                const errorMsg = '<div class="search-error">加载失败，请稍后重试</div>';
+                if (append) {
+                    const loadingIndicator = resultsContainer.querySelector('.loading-more');
+                    if (loadingIndicator) {
+                        loadingIndicator.outerHTML = errorMsg;
+                    }
+                } else {
+                    resultsContainer.innerHTML = errorMsg;
+                }
+            } finally {
+                isLoading = false;
+            }
+        };
+        
         // 搜索用户
-        let searchTimeout;
         searchInput.addEventListener('input', (e) => {
             const query = e.target.value.trim();
+            selectedIndex = -1;
             
             clearTimeout(searchTimeout);
             
-            if (query.length < 2) {
-                resultsContainer.innerHTML = '';
+            if (query.length === 0) {
+                // 返回默认列表模式
+                isSearchMode = false;
+                currentPage = 1;
+                hasMore = true;
+                loadUsers(1);
                 return;
             }
             
-            searchTimeout = setTimeout(async () => {
-                try {
-                    const response = await fetch(`${API_BASE_URL}/api/users/search?username=${encodeURIComponent(query)}`, {
-                        headers: {
-                            'Authorization': `Bearer ${this.userToken}`
-                        }
-                    });
-                    
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
-                    
-                    const data = await response.json();
-                    const users = Array.isArray(data.users) ? data.users : [];
-                    
-                    if (users.length === 0) {
-                        resultsContainer.innerHTML = '<div class="no-users">未找到匹配的用户</div>';
-                        return;
-                    }
-                    
-                    resultsContainer.innerHTML = users.map(user => `
-                        <div class="user-item" data-username="${user.username || user.email}">
-                            <div class="user-avatar">${this.generateUserAvatar(user.username || user.email)}</div>
-                            <div class="user-info">
-                                <div class="username">${user.username || user.email}</div>
-                            </div>
-                        </div>
-                    `).join('');
-                    
-                    // 绑定用户选择事件
-                    resultsContainer.addEventListener('click', (e) => {
-                        const userItem = e.target.closest('.user-item');
-                        if (userItem) {
-                            const username = userItem.dataset.username;
-                            this.insertTextAtCursor(`@${username} `);
-                            closeModal();
-                        }
-                    });
-                    
-                } catch (error) {
-                    console.error('搜索用户失败:', error);
-                    resultsContainer.innerHTML = '<div class="search-error">搜索失败，请稍后重试</div>';
-                }
+            if (query.length < 2) {
+                resultsContainer.innerHTML = '<div class="search-hint">请输入至少2个字符</div>';
+                return;
+            }
+            
+            isSearchMode = true;
+            searchTimeout = setTimeout(() => {
+                loadUsers(1, query);
             }, 300);
         });
         
+        // 滚动加载更多
+        resultsContainer.addEventListener('scroll', () => {
+            if (isSearchMode || !hasMore || isLoading) return;
+            
+            const { scrollTop, scrollHeight, clientHeight } = resultsContainer;
+            if (scrollTop + clientHeight >= scrollHeight - 50) {
+                currentPage++;
+                resultsContainer.insertAdjacentHTML('beforeend', '<div class="loading-more">加载更多...</div>');
+                loadUsers(currentPage, '', true);
+            }
+        });
+        
         // 键盘导航支持
-        let selectedIndex = -1;
         searchInput.addEventListener('keydown', (e) => {
             const userItems = resultsContainer.querySelectorAll('.user-item');
             
@@ -3934,8 +3998,46 @@ class VideoPlayer {
             }
         });
         
+        // 初始加载默认用户列表
+        loadUsers(1);
+        
         // 聚焦搜索框
         searchInput.focus();
+    }
+    
+    // 渲染用户列表HTML
+    renderUserList(users) {
+        return users.map(user => `
+            <div class="user-item" data-username="${user.username || user.email}">
+                <div class="user-avatar">${this.generateUserAvatar(user.username || user.email)}</div>
+                <div class="user-info">
+                    <div class="username">${user.username || user.email}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    // 绑定用户选择事件
+    bindUserSelectionEvents(resultsContainer, closeModal) {
+        // 移除之前的事件监听器（如果存在）
+        const existingHandler = resultsContainer._userClickHandler;
+        if (existingHandler) {
+            resultsContainer.removeEventListener('click', existingHandler);
+        }
+        
+        // 创建新的事件处理器
+        const userClickHandler = (e) => {
+            const userItem = e.target.closest('.user-item');
+            if (userItem) {
+                const username = userItem.dataset.username;
+                this.insertTextAtCursor(`@${username} `);
+                closeModal();
+            }
+        };
+        
+        // 绑定事件并保存引用
+        resultsContainer.addEventListener('click', userClickHandler);
+        resultsContainer._userClickHandler = userClickHandler;
     }
     
     // 更新用户选择状态
@@ -4309,137 +4411,6 @@ class VideoPlayer {
         }
     }
     
-    // 显示用户搜索模态框
-    showUserSearchModal() {
-        // 移除已存在的模态框
-        const existingModal = document.querySelector('.user-search-modal');
-        if (existingModal) {
-            existingModal.remove();
-            return;
-        }
-        
-        const modal = document.createElement('div');
-        modal.className = 'user-search-modal';
-        modal.innerHTML = `
-            <div class="user-search-content">
-                <div class="user-search-header">
-                    <h3>搜索用户</h3>
-                    <button class="close-search">&times;</button>
-                </div>
-                <div class="user-search-body">
-                    <input type="text" class="user-search-input" placeholder="输入用户名搜索..." autocomplete="off">
-                    <div class="user-list"></div>
-                </div>
-            </div>
-        `;
-        
-        // 优先挂载到社交面板内，如果不可用则挂载到document.body
-        const socialPanelElement = this.socialPanel && this.socialPanel.getElement ? this.socialPanel.getElement() : null;
-        const parentElement = socialPanelElement || document.body;
-        parentElement.appendChild(modal);
-        
-        const searchInput = modal.querySelector('.user-search-input');
-        const userList = modal.querySelector('.user-list');
-        const closeBtn = modal.querySelector('.close-search');
-        
-        // 关闭模态框
-        const closeModal = () => {
-            modal.remove();
-        };
-        
-        closeBtn.addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
-        
-        // ESC键关闭
-        const handleEsc = (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-                document.removeEventListener('keydown', handleEsc);
-            }
-        };
-        document.addEventListener('keydown', handleEsc);
-        
-        // 搜索用户
-        let searchTimeout;
-        searchInput.addEventListener('input', (e) => {
-            const query = e.target.value.trim();
-            
-            clearTimeout(searchTimeout);
-            
-            if (query.length < 2) {
-                userList.innerHTML = '<div class="search-hint">请输入至少2个字符</div>';
-                return;
-            }
-            
-            searchTimeout = setTimeout(async () => {
-                try {
-                    userList.innerHTML = '<div class="search-loading">搜索中...</div>';
-                    
-                    const response = await fetch(`${API_BASE_URL}/api/users/search?username=${encodeURIComponent(query)}`, {
-                        headers: {
-                            'Authorization': `Bearer ${this.userToken}`
-                        }
-                    });
-                    
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
-                    
-                    const data = await response.json();
-                    const users = data.users || [];
-                    
-                    if (users.length === 0) {
-                        userList.innerHTML = '<div class="no-users">未找到相关用户</div>';
-                        return;
-                    }
-                    
-                    const resultsContainer = document.createElement('div');
-                    resultsContainer.className = 'search-results';
-                    
-                    users.forEach(user => {
-                        const userItem = document.createElement('div');
-                        userItem.className = 'user-item';
-                        userItem.dataset.username = user.username;
-                        userItem.innerHTML = `
-                            <div class="user-avatar small">${this.generateUserAvatar(user.username)}</div>
-                            <div class="user-info">
-                                <div class="username">${user.username}</div>
-                                <div class="user-stats">评论 ${user.comment_count || 0} 条</div>
-                            </div>
-                        `;
-                        resultsContainer.appendChild(userItem);
-                    });
-                    
-                    userList.innerHTML = '';
-                    userList.appendChild(resultsContainer);
-                    
-                    // 绑定用户选择事件
-                    resultsContainer.addEventListener('click', (e) => {
-                        const userItem = e.target.closest('.user-item');
-                        if (userItem) {
-                            const username = userItem.dataset.username;
-                            this.insertTextAtCursor(`@${username} `);
-                            closeModal();
-                        }
-                    });
-                    
-                } catch (error) {
-                    console.error('搜索用户失败:', error);
-                    userList.innerHTML = '<div class="search-error">搜索失败，请稍后重试</div>';
-                }
-            }, 300);
-        });
-        
-        // 聚焦搜索框
-        searchInput.focus();
-    }
-    
-
-    
-
-
     // 显示图片预览
     showImagePreview(imageUrl) {
         const modal = document.createElement('div');

@@ -1289,6 +1289,55 @@ app.post('/api/upload/image', authenticateToken, imageUpload.single('image'), as
          res.status(500).json({ error: '用户搜索失败' });
      }
  });
+
+ // 新增：获取用户列表（支持分页和搜索）
+ app.get('/api/users/list', authenticateToken, async (req, res) => {
+     try {
+         const page = parseInt(req.query.page) || 1;
+         const limit = parseInt(req.query.limit) || 10;
+         const search = (req.query.search || '').trim();
+         const offset = (page - 1) * limit;
+         
+         // 构建查询条件
+         let whereClause = 'WHERE status = "active"';
+         let params = [];
+         
+         if (search) {
+             whereClause += ' AND username LIKE ?';
+             params.push(`%${search}%`);
+         }
+         
+         // 获取总数
+         const countQuery = `SELECT COUNT(*) as total FROM users ${whereClause}`;
+         const countResult = await getAsync(countQuery, params);
+         const total = countResult ? countResult.total : 0;
+         
+         // 获取用户列表
+         const listQuery = `
+             SELECT id, username, created_at,
+                    (SELECT COUNT(*) FROM subtitle_comments WHERE user_id = users.id) as comment_count
+             FROM users ${whereClause}
+             ORDER BY created_at DESC
+             LIMIT ? OFFSET ?
+         `;
+         const users = await getAllAsync(listQuery, [...params, limit, offset]);
+         
+         res.json({
+             users,
+             pagination: {
+                 page,
+                 limit,
+                 total,
+                 totalPages: Math.ceil(total / limit),
+                 hasMore: page * limit < total
+             }
+         });
+         
+     } catch (error) {
+         console.error('获取用户列表失败:', error);
+         res.status(500).json({ error: '获取用户列表失败' });
+     }
+ });
  
  // 健康检查
 app.get('/health', (req, res) => {
