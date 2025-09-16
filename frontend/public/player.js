@@ -3138,9 +3138,10 @@ class VideoPlayer {
             }
             
             // 回复展开/收起按钮点击事件
-            if (e.target.classList.contains('replies-toggle-btn')) {
+            const toggleBtn = e.target.closest('.replies-toggle-btn');
+            if (toggleBtn) {
                 e.preventDefault();
-                const commentId = e.target.dataset.commentId || e.target.dataset.replyId;
+                const commentId = toggleBtn.dataset.commentId || toggleBtn.dataset.replyId;
                 if (commentId) {
                     this.toggleReplies(commentId);
                 }
@@ -3148,9 +3149,10 @@ class VideoPlayer {
             }
             
             // 加载更多回复按钮点击事件
-            if (e.target.classList.contains('load-more-replies-btn')) {
+            const loadMoreBtn = e.target.closest('.load-more-replies-btn');
+            if (loadMoreBtn) {
                 e.preventDefault();
-                const commentId = e.target.dataset.commentId || e.target.dataset.replyId;
+                const commentId = loadMoreBtn.dataset.commentId || loadMoreBtn.dataset.replyId;
                 if (commentId) {
                     this.loadMoreReplies(commentId);
                 }
