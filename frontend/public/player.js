@@ -4450,7 +4450,7 @@ class VideoPlayer {
     hideUploadProgress() {
         const imageBtn = document.querySelector('.image-btn');
         if (imageBtn) {
-            imageBtn.innerHTML = '📷';
+            imageBtn.innerHTML = '📁';
             imageBtn.disabled = false;
         }
     }
