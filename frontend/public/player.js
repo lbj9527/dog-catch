@@ -2510,6 +2510,8 @@ class VideoPlayer {
                 this.showMessage(this.currentLikeStatus.isLiked ? window.PLAYER_CONFIG.I18N.like.likeSuccess : window.PLAYER_CONFIG.I18N.like.unlikeSuccess, 'success');
             } else if (response.status === 401) {
                 this.showMessage(window.PLAYER_CONFIG.I18N.like.loginExpired, 'error');
+            } else if (response.status === 404) {
+                this.showMessage('当前视频，没有字幕可点赞', 'error');
             } else {
                 this.showMessage(window.PLAYER_CONFIG.I18N.like.operationFailed, 'error');
             }
