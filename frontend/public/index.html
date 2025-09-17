@@ -1,310 +1,356 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Subtitle Dog</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.css">
-    <link rel="stylesheet" href="/styles.css">
-    <link rel="icon" type="image/x-icon" href="/favicon.ico">
-</head>
-<body>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.css" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  </head>
+  <body>
     <div class="header">
-        <h3 id="title">视频播放器</h3>
-        <div class="controls">
-            <select id="qualitySelect" style="display: none;">
-                <option value="">选择清晰度</option>
-            </select>
-            <select id="subtitleSelect" style="display: none;">
-                <option value="">选择字幕</option>
-            </select>
-            <button id="subtitleToggle">显示字幕</button>
-            <button id="loginBtn">登录/注册</button>
-            <!-- 通知铃铛图标 -->
-            <div id="notificationBell" class="notification-bell" style="display:none;" title="消息通知">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span id="notificationBadge" class="notification-badge" style="display: none;">0</span>
-            </div>
-            <!-- 用户图标和菜单 -->
-            <div id="userAvatar" class="user-avatar" style="display:none;">
-                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                    <circle cx="16" cy="16" r="15" fill="none" stroke="#888" stroke-width="1.5"/>
-                    <circle cx="16" cy="12" r="4" fill="none" stroke="white" stroke-width="1.5"/>
-                    <path d="M8 24c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-                </svg>
-            </div>
-            <!-- 用户菜单 -->
-            <div id="userMenu" class="user-menu" style="display:none;">
-                <div class="user-menu-item user-email" id="userEmailDisplay">user@example.com</div>
-
-                <!-- 新增：我的心愿单入口 -->
-                <div class="user-menu-item" id="menuWishlist">我的心愿单</div>
-                <div class="user-menu-item" id="menuSettings">设置</div>
-                <div class="user-menu-item" id="menuLogout">退出登录</div>
-                <div class="user-menu-item" id="menuDeleteAccount">注销账户</div>
-            </div>
+      <h3 id="title">视频播放器</h3>
+      <div class="controls">
+        <select id="qualitySelect" style="display: none">
+          <option value="">选择清晰度</option>
+        </select>
+        <select id="subtitleSelect" style="display: none">
+          <option value="">选择字幕</option>
+        </select>
+        <button id="subtitleToggle">显示字幕</button>
+        <button id="loginBtn">登录/注册</button>
+        <!-- 通知铃铛图标 -->
+        <div id="notificationBell" class="notification-bell" style="display: none" title="消息通知">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span id="notificationBadge" class="notification-badge" style="display: none">0</span>
         </div>
+        <!-- 用户图标和菜单 -->
+        <div id="userAvatar" class="user-avatar" style="display: none">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="15" fill="none" stroke="#888" stroke-width="1.5" />
+            <circle cx="16" cy="12" r="4" fill="none" stroke="white" stroke-width="1.5" />
+            <path d="M8 24c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+        </div>
+        <!-- 用户菜单 -->
+        <div id="userMenu" class="user-menu" style="display: none">
+          <!-- 用户信息展示区 -->
+          <div class="user-info-section">
+            <div class="user-info-header">
+              <div class="user-avatar-large" id="userAvatarLarge">
+                <span class="avatar-text">U</span>
+              </div>
+              <div class="user-basic-info">
+                <div class="user-name" id="userNameDisplay">用户名 <span class="user-email-inline" id="userEmailInline" style="display: none;"></span></div>
+                <div class="user-gender" id="userGenderContainer">
+                  <div id="userGenderDisplay" class="gender-display">
+                    <svg class="gender-icon" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" />
+                      <path d="M12 1v6m0 10v6m11-7h-6m-10 0H1" stroke="currentColor" stroke-width="2" />
+                    </svg>
+                    <span>未知</span>
+                    <button class="edit-btn" id="editGenderBtn" title="编辑性别">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div id="userGenderEdit" class="gender-edit" style="display: none">
+                    <select id="genderSelect">
+                      <option value="unknown">未设置</option>
+                      <option value="male">男</option>
+                      <option value="female">女</option>
+                    </select>
+                    <button id="saveGenderBtn" class="save-btn">保存</button>
+                    <button id="cancelGenderBtn" class="cancel-btn">取消</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="user-bio-section">
+              <div class="bio-label">个人简介</div>
+              <div class="user-bio" id="userBioDisplay">这个人很懒，什么都没有留下...</div>
+              <button class="edit-bio-btn" id="editBioBtn" title="编辑简介">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+            </div>
+            <textarea class="bio-editor" id="bioEditor" placeholder="请输入您的个人简介..." maxlength="200" style="display: none"></textarea>
+            <div class="bio-actions" id="bioActions" style="display: none">
+              <button class="save-bio-btn" id="saveBioBtn">保存</button>
+              <button class="cancel-bio-btn" id="cancelBioBtn">取消</button>
+            </div>
+          </div>
+
+          <!-- 菜单分隔线 -->
+          <div class="menu-divider"></div>
+
+          <!-- 菜单项 -->
+          <div class="user-menu-item" id="menuWishlist">我的心愿单</div>
+          <div class="user-menu-item" id="menuSettings">设置</div>
+          <div class="user-menu-item" id="menuLogout">退出登录</div>
+          <div class="user-menu-item" id="menuDeleteAccount">注销账户</div>
+        </div>
+      </div>
     </div>
 
     <div class="stage">
-        <div class="player-box">
-            <div id="videoPlayer" style="width: 960px; height: 540px;"></div>
-            <!-- 点赞按钮区域 -->
-            <div class="like-controls">
-                <button id="likeButton" class="like-button" title="点赞字幕">
-                    <svg class="like-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
-                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span id="likeCount" class="like-count" style="display:none;">0</span>
-                </button>
-                <!-- 社交入口按钮 -->
-                <button id="btnSubComment" class="social-entry-btn" title="字幕评论" aria-label="字幕评论">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </button>
-                <button id="btnUserPlaza" class="social-entry-btn" title="用户广场" aria-label="用户广场">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M23 21v-2a4 4 0 0 0-3-3.87" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </button>
-                <button id="btnRealtimeChat" class="social-entry-btn" title="实时聊天" aria-label="实时聊天">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                        <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1.5-2s-1.5.62-1.5 2a2.5 2.5 0 0 0 2.5 2.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M12 6H2a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10l4 4V8a2 2 0 0 0-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <circle cx="18" cy="8" r="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </button>
-            </div>
-            <!-- 移动端内联面板容器已移除 -->
+      <div class="player-box">
+        <div id="videoPlayer" style="width: 960px; height: 540px"></div>
+        <!-- 点赞按钮区域 -->
+        <div class="like-controls">
+          <button id="likeButton" class="like-button" title="点赞字幕">
+            <svg class="like-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span id="likeCount" class="like-count" style="display: none">0</span>
+          </button>
+          <!-- 社交入口按钮 -->
+          <button id="btnSubComment" class="social-entry-btn" title="字幕评论" aria-label="字幕评论">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <button id="btnUserPlaza" class="social-entry-btn" title="用户广场" aria-label="用户广场">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <button id="btnRealtimeChat" class="social-entry-btn" title="实时聊天" aria-label="实时聊天">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1.5-2s-1.5.62-1.5 2a2.5 2.5 0 0 0 2.5 2.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M12 6H2a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10l4 4V8a2 2 0 0 0-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              <circle cx="18" cy="8" r="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
         </div>
+        <!-- 移动端内联面板容器已移除 -->
+      </div>
     </div>
 
-    
-
     <!-- 登录弹层：邮箱 + 密码 -->
-    <div id="loginModal" class="modal" style="display:none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <span id="loginClose" class="close">×</span>
-                <h3>登录</h3>
-            </div>
-            <div class="modal-body">
-                <div class="auth-panel">
-                    <div class="auth-header">
-                        <h3 class="auth-title">Welcome to Subtitle Dog! 👋</h3>
-                        <p class="auth-subtitle">请登录您的账号开始体验！</p>
-                    </div>
-                    <div class="form">
-                        <div class="form-row">
-                            <label>邮箱</label>
-                            <input id="loginEmail" type="email" placeholder="输入您的邮箱地址">
-                        </div>
-                        <div class="form-row">
-                            <label>密码</label>
-                            <input id="loginPassword" type="password" placeholder="请输入密码">
-                        </div>
-                        <div class="form-row inline-end">
-                            <span></span>
-                            <a id="gotoReset" href="javascript:void(0)">忘记密码？</a>
-                        </div>
-                        <div class="form-row remember-row">
-                            <input id="loginRemember" type="checkbox">
-                            <label for="loginRemember" style="margin:0;">记住我</label>
-                        </div>
-                        <div class="form-row">
-                            <button id="btnDoLogin" class="btn-primary-full">登录</button>
-                        </div>
-                        <div class="form-row">
-                            <div id="loginError" style="color:#e53935; font-size:12px; min-height:16px;"></div>
-                        </div>
-                        <div class="form-foot">
-                            还没有账号？ <a id="gotoRegister" href="javascript:void(0)">点击注册</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <div id="loginModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <div class="modal-header">
+          <span id="loginClose" class="close">×</span>
+          <h3>登录</h3>
         </div>
+        <div class="modal-body">
+          <div class="auth-panel">
+            <div class="auth-header">
+              <h3 class="auth-title">Welcome to Subtitle Dog! 👋</h3>
+              <p class="auth-subtitle">请登录您的账号开始体验！</p>
+            </div>
+            <div class="form">
+              <div class="form-row">
+                <label>邮箱</label>
+                <input id="loginEmail" type="email" placeholder="输入您的邮箱地址" />
+              </div>
+              <div class="form-row">
+                <label>密码</label>
+                <input id="loginPassword" type="password" placeholder="请输入密码" />
+              </div>
+              <div class="form-row inline-end">
+                <span></span>
+                <a id="gotoReset" href="javascript:void(0)">忘记密码？</a>
+              </div>
+              <div class="form-row remember-row">
+                <input id="loginRemember" type="checkbox" />
+                <label for="loginRemember" style="margin: 0">记住我</label>
+              </div>
+              <div class="form-row">
+                <button id="btnDoLogin" class="btn-primary-full">登录</button>
+              </div>
+              <div class="form-row">
+                <div id="loginError" style="color: #e53935; font-size: 12px; min-height: 16px"></div>
+              </div>
+              <div class="form-foot">还没有账号？ <a id="gotoRegister" href="javascript:void(0)">点击注册</a></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 注册弹层：两步式（Step1: 昵称/邮箱/密码；Step2: 验证码） -->
-    <div id="registerModal" class="modal" style="display:none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <span id="regClose" class="close">×</span>
-                <h3>注册</h3>
-            </div>
-            <div class="modal-body">
-                <div class="auth-panel">
-                    <div class="auth-header">
-                        <h3 class="auth-title">创建 Subtitle Dog 账号 👋</h3>
-                        <p class="auth-subtitle">填写信息并完成邮箱验证码验证。</p>
-                    </div>
-                    <div class="form">
-                        <div class="form-row">
-                            <label>昵称</label>
-                            <input id="regUsername" type="text" placeholder="请输入昵称">
-                        </div>
-                        <div class="form-row">
-                            <label>邮箱</label>
-                            <input id="regEmail" type="email" placeholder="请输入邮箱">
-                        </div>
-                        <div class="form-row">
-                            <label>密码</label>
-                            <input id="regPassword" type="password" placeholder="至少6位密码">
-                        </div>
-                        <!-- Step2：验证码区域（默认隐藏） -->
-                        <div class="form-row" id="regCodeRow" style="display:none;">
-                            <label>验证码</label>
-                            <div class="inline" style="display:flex; gap:8px;">
-                                <input id="regCode" class="code-input" type="text" placeholder="6位验证码">
-                                <button id="btnSendRegCode" class="code-btn" type="button">获取验证码</button>
-                            </div>
-                        </div>
-                        <!-- 操作按钮：Step1 显示“注册”；Step2 显示“提交注册” -->
-                        <div class="form-row" id="regStep1Buttons">
-                            <button id="btnStartRegister" class="btn-primary-full" type="button">注册</button>
-                        </div>
-                        <div class="form-row" id="regStep2Buttons" style="display:none;">
-                            <button id="btnConfirmRegister" class="btn-primary-full" type="button">提交注册</button>
-                        </div>
-                        <div class="form-row">
-                            <div id="regError" style="color:#e53935; font-size:12px; min-height:16px;"></div>
-                        </div>
-                        <div class="form-foot">
-                            已有账号？ <a id="gotoLogin" href="javascript:void(0)">去登录</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <div id="registerModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <div class="modal-header">
+          <span id="regClose" class="close">×</span>
+          <h3>注册</h3>
         </div>
+        <div class="modal-body">
+          <div class="auth-panel">
+            <div class="auth-header">
+              <h3 class="auth-title">创建 Subtitle Dog 账号 👋</h3>
+              <p class="auth-subtitle">填写信息并完成邮箱验证码验证。</p>
+            </div>
+            <div class="form">
+              <div class="form-row">
+                <label>昵称</label>
+                <input id="regUsername" type="text" placeholder="请输入昵称" />
+              </div>
+              <div class="form-row">
+                <label>邮箱</label>
+                <input id="regEmail" type="email" placeholder="请输入邮箱" />
+              </div>
+              <div class="form-row">
+                <label>密码</label>
+                <input id="regPassword" type="password" placeholder="至少6位密码" />
+              </div>
+              <!-- Step2：验证码区域（默认隐藏） -->
+              <div class="form-row" id="regCodeRow" style="display: none">
+                <label>验证码</label>
+                <div class="inline" style="display: flex; gap: 8px">
+                  <input id="regCode" class="code-input" type="text" placeholder="6位验证码" />
+                  <button id="btnSendRegCode" class="code-btn" type="button">获取验证码</button>
+                </div>
+              </div>
+              <!-- 操作按钮：Step1 显示“注册”；Step2 显示“提交注册” -->
+              <div class="form-row" id="regStep1Buttons">
+                <button id="btnStartRegister" class="btn-primary-full" type="button">注册</button>
+              </div>
+              <div class="form-row" id="regStep2Buttons" style="display: none">
+                <button id="btnConfirmRegister" class="btn-primary-full" type="button">提交注册</button>
+              </div>
+              <div class="form-row">
+                <div id="regError" style="color: #e53935; font-size: 12px; min-height: 16px"></div>
+              </div>
+              <div class="form-foot">已有账号？ <a id="gotoLogin" href="javascript:void(0)">去登录</a></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 重置密码弹层 -->
-    <div id="resetModal" class="modal" style="display:none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <span id="resetClose" class="close">×</span>
-                <h3>找回密码</h3>
-            </div>
-            <div class="modal-body">
-                <div class="auth-panel">
-                    <div class="auth-header">
-                        <h3 class="auth-title">重置您的密码 🔐</h3>
-                        <p class="auth-subtitle">请输入邮箱获取验证码，并设置新密码。</p>
-                    </div>
-                    <div class="form">
-                        <div class="form-row">
-                            <label>邮箱</label>
-                            <input id="resetEmail" type="email" placeholder="请输入注册邮箱">
-                        </div>
-                        <div class="form-row" id="resetCodeRow" style="display:none;">
-                            <label>验证码</label>
-                            <div class="inline" style="display:flex; gap:8px;">
-                                <input id="resetCode" class="code-input" type="text" placeholder="6位验证码">
-                                <button id="btnSendResetCode" class="code-btn" type="button">获取验证码</button>
-                            </div>
-                        </div>
-                        <div class="form-row" id="resetPwdRow" style="display:none;">
-                            <label>新密码</label>
-                            <input id="resetPassword" type="password" placeholder="至少6位密码">
-                        </div>
-                        <div class="form-row" id="resetSubmitRow" style="display:none;">
-                            <button id="btnConfirmReset" class="btn-primary-full" type="button">提交重置</button>
-                        </div>
-                        <div class="form-row">
-                            <div id="resetError" style="color:#e53935; font-size:12px; min-height:16px;"></div>
-                        </div>
-                        
-                    </div>
-                </div>
-            </div>
+    <div id="resetModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <div class="modal-header">
+          <span id="resetClose" class="close">×</span>
+          <h3>找回密码</h3>
         </div>
+        <div class="modal-body">
+          <div class="auth-panel">
+            <div class="auth-header">
+              <h3 class="auth-title">重置您的密码 🔐</h3>
+              <p class="auth-subtitle">请输入邮箱获取验证码，并设置新密码。</p>
+            </div>
+            <div class="form">
+              <div class="form-row">
+                <label>邮箱</label>
+                <input id="resetEmail" type="email" placeholder="请输入注册邮箱" />
+              </div>
+              <div class="form-row" id="resetCodeRow" style="display: none">
+                <label>验证码</label>
+                <div class="inline" style="display: flex; gap: 8px">
+                  <input id="resetCode" class="code-input" type="text" placeholder="6位验证码" />
+                  <button id="btnSendResetCode" class="code-btn" type="button">获取验证码</button>
+                </div>
+              </div>
+              <div class="form-row" id="resetPwdRow" style="display: none">
+                <label>新密码</label>
+                <input id="resetPassword" type="password" placeholder="至少6位密码" />
+              </div>
+              <div class="form-row" id="resetSubmitRow" style="display: none">
+                <button id="btnConfirmReset" class="btn-primary-full" type="button">提交重置</button>
+              </div>
+              <div class="form-row">
+                <div id="resetError" style="color: #e53935; font-size: 12px; min-height: 16px"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 设置弹窗 -->
-    <div id="settingsModal" class="modal" style="display:none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <span id="settingsClose" class="close">×</span>
-                <h3>设置</h3>
-            </div>
-            <div class="modal-body">
-                <div class="auth-panel">
-                    <div class="auth-header">
-                        <h3 class="auth-title">应用设置 ⚙️</h3>
-                        <p class="auth-subtitle">功能开发中，敬请期待...</p>
-                    </div>
-                </div>
-            </div>
+    <div id="settingsModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <div class="modal-header">
+          <span id="settingsClose" class="close">×</span>
+          <h3>设置</h3>
         </div>
+        <div class="modal-body">
+          <div class="auth-panel">
+            <div class="auth-header">
+              <h3 class="auth-title">应用设置 ⚙️</h3>
+              <p class="auth-subtitle">功能开发中，敬请期待...</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 新增：心愿单弹窗 -->
-    <div id="wishlistModal" class="modal" style="display:none;">
-        <div class="modal-content" style="max-width:640px;">
-            <div class="modal-header">
-                <span id="wishlistClose" class="close">×</span>
-                <h3>我的心愿单</h3>
-            </div>
-            <div class="modal-body">
-                <div class="wlFormSection">
-                    <div class="row-compact">
-                        <label>视频编号</label>
-                        <input id="wlCurrentVideo" type="text">
-                    </div>
-                    <div class="row-compact">
-                        <label>备注</label>
-                        <input id="wlNoteInput" type="text" placeholder="可选，最多200字符">
-                    </div>
-                    <button id="wlAddBtn" class="btn-primary-full" type="button">添加到心愿单</button>
-                    <div class="wl-info-row">
-                        <div id="wlCountText" style="display:none; color:#999; font-size:12px;">已有0条记录</div>
-                        <div id="wlError" style="color:#e53935; font-size:12px; min-height:16px;"></div>
-                    </div>
-                </div>
-                <div class="wlListSection">
-                    <div id="wlList" class="wl-list"></div>
-                </div>
-            </div>
+    <div id="wishlistModal" class="modal" style="display: none">
+      <div class="modal-content" style="max-width: 640px">
+        <div class="modal-header">
+          <span id="wishlistClose" class="close">×</span>
+          <h3>我的心愿单</h3>
         </div>
+        <div class="modal-body">
+          <div class="wlFormSection">
+            <div class="row-compact">
+              <label>视频编号</label>
+              <input id="wlCurrentVideo" type="text" />
+            </div>
+            <div class="row-compact">
+              <label>备注</label>
+              <input id="wlNoteInput" type="text" placeholder="可选，最多200字符" />
+            </div>
+            <button id="wlAddBtn" class="btn-primary-full" type="button">添加到心愿单</button>
+            <div class="wl-info-row">
+              <div id="wlCountText" style="display: none; color: #999; font-size: 12px">已有0条记录</div>
+              <div id="wlError" style="color: #e53935; font-size: 12px; min-height: 16px"></div>
+            </div>
+          </div>
+          <div class="wlListSection">
+            <div id="wlList" class="wl-list"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- hCaptcha script & container (invisible) -->
     <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
-    <div id="hcap" style="display:none;"></div>
+    <div id="hcap" style="display: none"></div>
 
     <!-- 通知面板 -->
-    <div id="notificationPanel" class="notification-panel" style="display:none;">
-        <div class="notification-header">
-            <h3>消息通知</h3>
-            <div class="notification-actions">
-                <button id="markAllReadBtn" class="btn-text">全部已读</button>
-                <button id="deleteAllBtn" class="btn-text btn-danger-text" aria-label="清空当前面板显示的所有消息">全部删除</button>
-                <button id="closeNotificationPanel" class="btn-close">×</button>
-            </div>
+    <div id="notificationPanel" class="notification-panel" style="display: none">
+      <div class="notification-header">
+        <h3>消息通知</h3>
+        <div class="notification-actions">
+          <button id="markAllReadBtn" class="btn-text">全部已读</button>
+          <button id="deleteAllBtn" class="btn-text btn-danger-text" aria-label="清空当前面板显示的所有消息">全部删除</button>
+          <button id="closeNotificationPanel" class="btn-close">×</button>
         </div>
-        <div class="notification-content">
-            <div id="notificationList" class="notification-list">
-                <!-- 通知列表将在这里动态加载 -->
-            </div>
-            <div id="notificationEmpty" class="notification-empty" style="display:none;">
-                <p>暂无消息通知</p>
-            </div>
-            <div id="notificationLoading" class="notification-loading" style="display:none;">
-                <p>加载中...</p>
-            </div>
+      </div>
+      <div class="notification-content">
+        <div id="notificationList" class="notification-list">
+          <!-- 通知列表将在这里动态加载 -->
         </div>
+        <div id="notificationEmpty" class="notification-empty" style="display: none">
+          <p>暂无消息通知</p>
+        </div>
+        <div id="notificationLoading" class="notification-loading" style="display: none">
+          <p>加载中...</p>
+        </div>
+      </div>
     </div>
 
     <!-- 通知面板遮罩 -->
-    <div id="notificationOverlay" class="notification-overlay" style="display:none;"></div>
+    <div id="notificationOverlay" class="notification-overlay" style="display: none"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.js"></script>

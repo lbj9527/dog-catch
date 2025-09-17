@@ -218,20 +218,197 @@ class VideoPlayer {
         document.addEventListener('keydown', handleKeydown);
     }
 
-    async updateUserEmail() {
-        const userEmailDisplay = document.getElementById('userEmailDisplay');
-        if (userEmailDisplay) {
-            try {
-                const email = await this.getUserEmailFromAPI();
-                userEmailDisplay.textContent = email || 'user@example.com';
-            } catch (error) {
-                console.error('获取用户邮箱失败:', error);
-                userEmailDisplay.textContent = 'user@example.com';
-            }
+    async updateUserInfo() {
+        try {
+            const userInfo = await this.getUserInfoFromAPI();
+            this.displayUserInfo(userInfo);
+        } catch (error) {
+            console.error('获取用户信息失败:', error);
+            this.displayUserInfo(null);
         }
     }
 
-    async getUserEmailFromAPI() {
+    displayUserInfo(userInfo) {
+        const userEmailInline = document.getElementById('userEmailInline');
+        const userNameDisplay = document.getElementById('userNameDisplay');
+        const userGenderDisplay = document.getElementById('userGenderDisplay');
+        const userBioDisplay = document.getElementById('userBioDisplay');
+        const userAvatarLarge = document.getElementById('userAvatarLarge');
+
+        if (userInfo) {
+            // 更新用户名和邮箱
+            if (userNameDisplay) {
+                userNameDisplay.childNodes[0].textContent = userInfo.username || userInfo.email?.split('@')[0] || '用户';
+            }
+            if (userEmailInline) {
+                userEmailInline.textContent = userInfo.email || 'user@example.com';
+                userEmailInline.style.display = 'inline';
+            }
+
+            // 更新性别
+            if (userGenderDisplay) {
+                this.updateGenderDisplay(userInfo.gender);
+            }
+
+            // 更新简介
+            if (userBioDisplay) {
+                userBioDisplay.textContent = userInfo.bio || '这个人很懒，什么都没有留下...';
+            }
+
+            // 更新头像
+            if (userAvatarLarge) {
+                const username = userInfo.username || userInfo.email?.split('@')[0] || '用户';
+                userAvatarLarge.innerHTML = this.generateUserAvatar(username);
+            }
+        } else {
+            // 默认显示
+            if (userNameDisplay) userNameDisplay.childNodes[0].textContent = '用户';
+            if (userEmailInline) {
+                userEmailInline.textContent = 'user@example.com';
+                userEmailInline.style.display = 'inline';
+            }
+            if (userGenderDisplay) this.updateGenderDisplay(null);
+            if (userBioDisplay) userBioDisplay.textContent = '这个人很懒，什么都没有留下...';
+            if (userAvatarLarge) userAvatarLarge.innerHTML = this.generateUserAvatar('用户');
+        }
+    }
+
+    updateGenderDisplay(gender) {
+        const genderDisplay = document.querySelector('.gender-display');
+        if (!genderDisplay) return;
+
+        const genderIcon = genderDisplay.querySelector('.gender-icon');
+        const genderText = genderDisplay.querySelector('span');
+
+        if (gender === 'male') {
+            genderIcon.innerHTML = '<path d="M10 14m-5 0a5 5 0 1 0 10 0a5 5 0 1 0 -10 0" stroke="currentColor" stroke-width="2" fill="none"/><path d="M19 5l-5.4 5.4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M19 5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M19 5v5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>';
+            genderText.textContent = '男';
+            genderDisplay.style.color = '#4A90E2';
+        } else if (gender === 'female') {
+            genderIcon.innerHTML = '<circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 12v8m-4-4h8" stroke="currentColor" stroke-width="2"/>';
+            genderText.textContent = '女';
+            genderDisplay.style.color = '#E24A90';
+        } else {
+            genderIcon.innerHTML = '<circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M12 1v6m0 10v6m11-7h-6m-10 0H1" stroke="currentColor" stroke-width="2"/>';
+            genderText.textContent = '未设置';
+            genderDisplay.style.color = '#999';
+        }
+    }
+
+    setupGenderEditEvents() {
+        const editBtn = document.querySelector('.edit-btn');
+        const genderEdit = document.querySelector('.gender-edit');
+        const genderDisplay = document.querySelector('.gender-display');
+        const saveBtn = document.querySelector('.save-btn');
+        const cancelBtn = document.querySelector('.cancel-btn');
+        const genderSelect = document.querySelector('.gender-edit select');
+
+        if (!editBtn || !genderEdit || !genderDisplay || !saveBtn || !cancelBtn || !genderSelect) {
+            return;
+        }
+
+        // 编辑按钮点击事件
+        editBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.enterGenderEditMode();
+        });
+
+        // 保存按钮点击事件
+        saveBtn.addEventListener('click', () => {
+            this.saveGender();
+        });
+
+        // 取消按钮点击事件
+        cancelBtn.addEventListener('click', () => {
+            this.exitGenderEditMode();
+        });
+
+        // 选择框回车键保存
+        genderSelect.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                this.saveGender();
+            } else if (e.key === 'Escape') {
+                this.exitGenderEditMode();
+            }
+        });
+
+        // 点击外部区域取消编辑
+        document.addEventListener('click', (e) => {
+            if (!genderEdit.contains(e.target) && !genderDisplay.contains(e.target)) {
+                if (!genderEdit.style.display || genderEdit.style.display !== 'none') {
+                    this.exitGenderEditMode();
+                }
+            }
+        });
+    }
+
+    enterGenderEditMode() {
+        const genderDisplay = document.querySelector('.gender-display');
+        const genderEdit = document.querySelector('.gender-edit');
+        const genderSelect = document.querySelector('.gender-edit select');
+        
+        if (!genderDisplay || !genderEdit || !genderSelect) return;
+
+        // 获取当前性别值
+        const currentGenderText = genderDisplay.querySelector('span').textContent;
+        let currentValue = 'unknown';
+        if (currentGenderText === '男') currentValue = 'male';
+        else if (currentGenderText === '女') currentValue = 'female';
+        else if (currentGenderText === '未设置') currentValue = 'unknown';
+
+        // 设置选择框的值
+        genderSelect.value = currentValue;
+
+        // 显示编辑模式
+        genderDisplay.style.display = 'none';
+        genderEdit.style.display = 'flex';
+        genderSelect.focus();
+    }
+
+    exitGenderEditMode() {
+        const genderDisplay = document.querySelector('.gender-display');
+        const genderEdit = document.querySelector('.gender-edit');
+        
+        if (!genderDisplay || !genderEdit) return;
+
+        genderDisplay.style.display = 'flex';
+        genderEdit.style.display = 'none';
+    }
+
+    async saveGender() {
+        const genderSelect = document.querySelector('.gender-edit select');
+        if (!genderSelect) return;
+
+        const newGender = genderSelect.value;
+        
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/user/gender`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ gender: newGender })
+            });
+
+            if (response.ok) {
+                // 更新显示
+                this.updateGenderDisplay(newGender);
+                this.exitGenderEditMode();
+                
+                // 显示成功提示
+                this.showMessage('性别更新成功', 'success');
+            } else {
+                const errorData = await response.json();
+                throw new Error(errorData.message || '更新性别失败');
+            }
+        } catch (error) {
+            console.error('更新性别失败:', error);
+            this.showMessage('更新性别失败: ' + error.message, 'error');
+        }
+    }
+
+    async getUserInfoFromAPI() {
         try {
             if (!this.userToken) return null;
             
@@ -245,7 +422,7 @@ class VideoPlayer {
             
             if (response.ok) {
                 const data = await response.json();
-                return data.user?.email;
+                return data.user;
             } else {
                 console.error('获取用户信息失败:', response.status);
                 return null;
@@ -254,6 +431,106 @@ class VideoPlayer {
             console.error('API请求失败:', error);
             return null;
         }
+    }
+
+    async updateUserBio(bio) {
+        try {
+            if (!this.userToken) return false;
+            
+            const response = await fetch(`${API_BASE_URL}/api/user/bio`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${this.userToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ bio })
+            });
+            
+            if (response.ok) {
+                return true;
+            } else {
+                console.error('更新用户简介失败:', response.status);
+                return false;
+            }
+        } catch (error) {
+            console.error('更新简介API请求失败:', error);
+            return false;
+        }
+    }
+
+    setupBioEditor() {
+        const editBioBtn = document.getElementById('editBioBtn');
+        const bioEditor = document.getElementById('bioEditor');
+        const bioActions = document.getElementById('bioActions');
+        const userBioDisplay = document.getElementById('userBioDisplay');
+        const saveBioBtn = document.getElementById('saveBioBtn');
+        const cancelBioBtn = document.getElementById('cancelBioBtn');
+
+        if (!editBioBtn || !bioEditor || !bioActions || !userBioDisplay) return;
+
+        let originalBio = '';
+
+        // 编辑按钮点击事件
+        editBioBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            originalBio = userBioDisplay.textContent;
+            bioEditor.value = originalBio === '这个人很懒，什么都没有留下...' ? '' : originalBio;
+            
+            userBioDisplay.style.display = 'none';
+            editBioBtn.style.display = 'none';
+            bioEditor.style.display = 'block';
+            bioActions.style.display = 'flex';
+            
+            bioEditor.focus();
+        });
+
+        // 保存按钮点击事件
+        saveBioBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const newBio = bioEditor.value.trim();
+            
+            // 显示加载状态
+            saveBioBtn.disabled = true;
+            saveBioBtn.textContent = '保存中...';
+            
+            const success = await this.updateUserBio(newBio);
+            
+            if (success) {
+                userBioDisplay.textContent = newBio || '这个人很懒，什么都没有留下...';
+                this.exitBioEditMode();
+            } else {
+                alert('保存失败，请重试');
+            }
+            
+            // 恢复按钮状态
+            saveBioBtn.disabled = false;
+            saveBioBtn.textContent = '保存';
+        });
+
+        // 取消按钮点击事件
+        cancelBioBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.exitBioEditMode();
+        });
+
+        // ESC键取消编辑
+        bioEditor.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.exitBioEditMode();
+            }
+        });
+    }
+
+    exitBioEditMode() {
+        const editBioBtn = document.getElementById('editBioBtn');
+        const bioEditor = document.getElementById('bioEditor');
+        const bioActions = document.getElementById('bioActions');
+        const userBioDisplay = document.getElementById('userBioDisplay');
+
+        if (userBioDisplay) userBioDisplay.style.display = 'block';
+        if (editBioBtn) editBioBtn.style.display = 'block';
+        if (bioEditor) bioEditor.style.display = 'none';
+        if (bioActions) bioActions.style.display = 'none';
     }
     
     // 初始化 hCaptcha（invisible）
@@ -345,6 +622,8 @@ class VideoPlayer {
         // 设置按钮事件
         this.setupControls();
         this.setupAuthUi();
+        // 初始化性别编辑事件
+        this.setupGenderEditEvents();
         // 初始化社交模式
         this.initSocialMode();
         // 初始化 hCaptcha（懒加载执行）
@@ -1073,6 +1352,9 @@ class VideoPlayer {
         // 通知面板相关事件
         this.setupNotificationEvents();
         
+        // 简介编辑器相关事件
+        this.setupBioEditor();
+        
         // 点击页面其他地方关闭用户菜单
         document.addEventListener('click', (e) => {
             if (userMenu && !userAvatar.contains(e.target) && !userMenu.contains(e.target)) {
@@ -1462,9 +1744,9 @@ class VideoPlayer {
         if (!logged && REQUIRE_SUBTITLE_LOGIN) {
             this.disableSubtitleUi('登录后可用');
         }
-        // 如果已登录，更新用户邮箱显示
+        // 如果已登录，更新用户信息显示
         if (logged) {
-            await this.updateUserEmail();
+            await this.updateUserInfo();
         }
         // 刷新社交按钮禁用/激活状态，确保登录/退出后无需刷新即可生效
         if (typeof this.updateSocialButtonsState === 'function') {

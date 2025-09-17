@@ -791,6 +791,10 @@ db.serialize(() => {
     // 新增：为 users 表补充 token_version 列
     db.run('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0', () => {});
     
+    // 新增：为 users 表补充性别和简介字段
+    db.run('ALTER TABLE users ADD COLUMN gender TEXT DEFAULT "未设置"', () => {});
+    db.run('ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ""', () => {});
+    
     // 新增：为 subtitles 表补充 likes_count 列
     db.run('ALTER TABLE subtitles ADD COLUMN likes_count INTEGER DEFAULT 0', () => {});
     
@@ -1154,11 +1158,20 @@ app.post('/api/user/password/reset-confirm', requireCaptchaIfFlagged, async (req
 // 用户 token 校验
 app.get('/api/user/verify', authenticateUserToken, async (req, res) => {
     try {
-        const user = await getAsync('SELECT id, username, email FROM users WHERE id = ?', [req.user.id]);
+        const user = await getAsync('SELECT id, username, email, gender, bio FROM users WHERE id = ?', [req.user.id]);
         if (!user) {
             return res.status(404).json({ error: '用户不存在' });
         }
-        res.json({ valid: true, user: { id: user.id, username: user.username, email: user.email } });
+        res.json({ 
+            valid: true, 
+            user: { 
+                id: user.id, 
+                username: user.username, 
+                email: user.email,
+                gender: user.gender || '未设置',
+                bio: user.bio || ''
+            } 
+        });
     } catch (error) {
         console.error('获取用户信息失败:', error);
         res.status(500).json({ error: '获取用户信息失败' });
@@ -1198,6 +1211,59 @@ app.delete('/api/user/me', authenticateUserToken, async (req, res) => {
     } catch (e) {
         console.error(e);
         return res.status(500).json({ error: '注销失败' });
+    }
+});
+
+// 新增：更新用户简介
+app.patch('/api/user/bio', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { bio } = req.body;
+        
+        // 参数验证
+        if (typeof bio !== 'string') {
+            return res.status(400).json({ error: '简介必须是字符串' });
+        }
+        
+        // 长度限制
+        if (bio.length > 200) {
+            return res.status(400).json({ error: '简介长度不能超过200字符' });
+        }
+        
+        // 更新数据库
+        await runAsync('UPDATE users SET bio = ? WHERE id = ?', [bio, userId]);
+        
+        return res.json({ message: '简介更新成功', bio });
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: '更新失败' });
+    }
+});
+
+// 新增：更新用户性别
+app.patch('/api/user/gender', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { gender } = req.body;
+        
+        // 参数验证
+        if (typeof gender !== 'string') {
+            return res.status(400).json({ error: '性别必须是字符串' });
+        }
+        
+        // 性别值验证
+        const validGenders = ['male', 'female', 'unknown'];
+        if (!validGenders.includes(gender)) {
+            return res.status(400).json({ error: '性别值无效，只能是 male、female 或 unknown' });
+        }
+        
+        // 更新数据库
+        await runAsync('UPDATE users SET gender = ? WHERE id = ?', [gender, userId]);
+        
+        return res.json({ message: '性别更新成功', gender });
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: '更新失败' });
     }
 });
 
