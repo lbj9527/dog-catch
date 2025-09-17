@@ -3602,7 +3602,7 @@ app.get('/api/admin/users', authenticateAdminToken, async (req, res) => {
         const where = search ? 'WHERE username LIKE ? OR email LIKE ?' : '';
         const params = search ? [`%${search}%`, `%${search}%`] : [];
         const count = await getAsync(`SELECT COUNT(*) AS total FROM users ${where}`, params);
-        const list = await getAllAsync(`SELECT id, username, email, created_at, last_login_at, status FROM users ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
+        const list = await getAllAsync(`SELECT id, username, email, gender, bio, created_at, last_login_at, status FROM users ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
         res.json({ data: list, pagination: { page, limit, total: count?.total || 0, totalPages: Math.ceil((count?.total||0)/limit) } });
     } catch (e) {
         console.error(e);

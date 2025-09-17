@@ -32,13 +32,23 @@
 		<el-card class="table-card">
 			<el-table :data="tableData" v-loading="loading" height="420" stripe>
 				<el-table-column prop="username" label="用户名" width="200" />
-				<el-table-column prop="email" label="邮箱" width="260" />
-				<el-table-column prop="created_at" label="注册时间" width="180">
-					<template #default="scope">{{ formatDate(scope.row.created_at) }}</template>
-				</el-table-column>
-				<el-table-column prop="last_login_at" label="最近登录" width="180">
-					<template #default="scope">{{ formatDate(scope.row.last_login_at) }}</template>
-				</el-table-column>
+				<el-table-column prop="email" label="邮箱" width="200" />
+			<el-table-column prop="gender" label="性别" width="80">
+				<template #default="scope">
+					{{ scope.row.gender || '未设置' }}
+				</template>
+			</el-table-column>
+			<el-table-column prop="bio" label="个人简介" width="200" show-overflow-tooltip>
+				<template #default="scope">
+					{{ scope.row.bio || '暂无简介' }}
+				</template>
+			</el-table-column>
+			<el-table-column prop="created_at" label="注册时间" width="180">
+				<template #default="scope">{{ formatDate(scope.row.created_at) }}</template>
+			</el-table-column>
+			<el-table-column prop="last_login_at" label="最近登录" width="180">
+				<template #default="scope">{{ scope.row.last_login_at ? formatDate(scope.row.last_login_at) : '从未登录' }}</template>
+			</el-table-column>
 				<el-table-column label="操作" width="120" align="center" fixed="right">
 					<template #default="scope">
 						<el-button type="danger" size="small" @click="deleteUser(scope.row)">
@@ -146,4 +156,4 @@ onMounted(async () => {
 .stat-icon { font-size: 40px; color: #409EFF; opacity: 0.3; }
 .table-card { box-shadow: 0 2px 4px rgba(0,0,0,.1); }
 .pagination-wrapper { display: flex; justify-content: center; margin-top: 20px; }
-</style> 
+</style>
