@@ -3648,6 +3648,195 @@ body.modal-open { overflow: hidden; }
     visibility: hidden;
 }
 
+/* 用户信息对话框内部布局样式 - 复刻用户菜单风格 */
+.user-info-modal .user-info-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-info-modal .user-basic-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.user-info-modal .user-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+    margin: 0 0 4px 0;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.user-info-modal .user-basic-info .field-value {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.6);
+    line-height: 1.4;
+}
+
+.user-info-modal .user-basic-info .field-display {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.user-info-modal .user-info-bio {
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-info-modal .user-info-bio .user-info-field label {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.8);
+    margin-bottom: 6px;
+}
+
+.user-info-modal .user-info-bio .field-value {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.6);
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.user-info-modal .user-info-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.user-info-modal .meta-item {
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.user-info-modal .meta-label {
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 500;
+    min-width: 80px;
+}
+
+.user-info-modal .meta-value {
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 400;
+}
+
+/* 编辑按钮样式 */
+.user-info-modal .field-edit-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+
+.user-info-modal .field-edit-btn:hover {
+    color: #4a9eff;
+    background-color: rgba(255, 255, 255, 0.1);
+    opacity: 1;
+}
+
+/* 用户信息对话框编辑输入框样式 */
+.user-info-modal .field-edit-input {
+    width: 100%;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    color: #fff;
+    font-size: 14px;
+    outline: none;
+    transition: all 0.2s ease;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.user-info-modal .field-edit-input:focus {
+    border-color: #4a9eff;
+    background: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.2);
+}
+
+/* 性别下拉选择框样式 - 复刻工具栏菜单样式 */
+.user-info-modal .gender-edit-select {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 14px;
+    min-width: 100px;
+    cursor: pointer;
+}
+
+.user-info-modal .gender-edit-select:focus {
+    outline: none;
+    border-color: #4a9eff;
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.2);
+}
+
+.user-info-modal .gender-edit-select option {
+    background: #2a2a2a;
+    color: #fff;
+    padding: 4px 8px;
+}
+
+/* 编辑操作按钮样式 */
+.user-info-modal .field-edit-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    justify-content: flex-end;
+}
+
+.user-info-modal .field-save-btn,
+.user-info-modal .field-cancel-btn {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 60px;
+}
+
+.user-info-modal .field-save-btn {
+    background: #4a9eff;
+    color: #fff;
+}
+
+.user-info-modal .field-save-btn:hover {
+    background: #357abd;
+}
+
+.user-info-modal .field-cancel-btn {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ccc;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.user-info-modal .field-cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+}
+
 @keyframes pulse {
     0% { opacity: 1; }
     50% { opacity: 0.6; }

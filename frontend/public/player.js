@@ -3365,6 +3365,21 @@ class VideoPlayer {
         return commentId;
     }
 
+    // 性别代码到中文标签的映射
+    mapGenderCodeToLabel(code) {
+        if (code === 'male') return '男';
+        if (code === 'female') return '女';
+        return '未设置';
+    }
+
+    // 将各种性别值归一化为后端代码
+    normalizeGenderToCode(value) {
+        if (!value) return 'unknown';
+        if (value === 'male' || value === '男') return 'male';
+        if (value === 'female' || value === '女') return 'female';
+        return 'unknown';
+    }
+
     // 生成用户头像（用户名首字母+随机背景色）
     generateUserAvatar(username) {
         if (!username) return 'U';
@@ -6140,58 +6155,49 @@ class VideoPlayer {
         
         const bodyEl = modal.querySelector('.user-info-body');
         bodyEl.innerHTML = `
-            <div class="user-info-avatar-section">
+            <div class="user-info-top">
                 <div class="user-avatar-large">
                     ${this.generateUserAvatar(userInfo.username)}
                 </div>
-            </div>
-            <div class="user-info-fields">
-                <div class="user-info-field">
-                    <label>用户名</label>
-                    <div class="field-value">${this.escapeHtml(userInfo.username)}</div>
-                </div>
-                ${isCurrentUser ? `
-                    <div class="user-info-field">
-                        <label>性别</label>
-                        <div class="field-value editable" data-field="gender">
-                            <span class="field-display">${this.escapeHtml(userInfo.gender || '未设置')}</span>
+                <div class="user-basic-info">
+                    <div class="user-name">${this.escapeHtml(userInfo.username)}</div>
+                    <div class="field-value editable" data-field="gender">
+                        <span class="field-display">${this.escapeHtml(this.mapGenderCodeToLabel(userInfo.gender))}</span>
+                        ${isCurrentUser ? `
                             <button class="field-edit-btn" title="编辑性别">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                 </svg>
                             </button>
-                        </div>
+                        ` : ''}
                     </div>
-                    <div class="user-info-field">
-                        <label>个人简介</label>
-                        <div class="field-value editable" data-field="bio">
-                            <span class="field-display">${this.escapeHtml(userInfo.bio || '暂无简介')}</span>
+                </div>
+            </div>
+            <div class="user-info-bio">
+                <div class="user-info-field" data-field="bio">
+                    <label>个人简介</label>
+                    <div class="field-value editable" data-field="bio">
+                        <span class="field-display">${this.escapeHtml(userInfo.bio || '暂无简介')}</span>
+                        ${isCurrentUser ? `
                             <button class="field-edit-btn" title="编辑简介">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                 </svg>
                             </button>
-                        </div>
+                        ` : ''}
                     </div>
-                ` : `
-                    <div class="user-info-field">
-                        <label>性别</label>
-                        <div class="field-value">${this.escapeHtml(userInfo.gender || '未设置')}</div>
-                    </div>
-                    <div class="user-info-field">
-                        <label>个人简介</label>
-                        <div class="field-value">${this.escapeHtml(userInfo.bio || '暂无简介')}</div>
-                    </div>
-                `}
-                <div class="user-info-field">
-                    <label>评论数</label>
-                    <div class="field-value">${userInfo.comment_count || 0} 条</div>
                 </div>
-                <div class="user-info-field">
-                    <label>注册时间</label>
-                    <div class="field-value">${this.formatTimeAgo(userInfo.created_at)}</div>
+            </div>
+            <div class="user-info-meta">
+                <div class="meta-item">
+                    <span class="meta-label">评论数：</span>
+                    <span class="meta-value">${userInfo.comment_count || 0} 条</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">注册时间：</span>
+                    <span class="meta-value">${this.formatTimeAgo(userInfo.created_at)}</span>
                 </div>
             </div>
         `;
@@ -6236,13 +6242,24 @@ class VideoPlayer {
             inputEl = document.createElement('textarea');
             inputEl.className = 'field-edit-input';
             inputEl.rows = 3;
+            inputEl.value = currentValue === '暂无简介' ? '' : currentValue;
+        } else if (fieldName === 'gender') {
+            // 性别字段使用下拉选择
+            inputEl = document.createElement('select');
+            inputEl.className = 'field-edit-input gender-edit-select';
+            inputEl.innerHTML = `
+                <option value="unknown">未设置</option>
+                <option value="male">男</option>
+                <option value="female">女</option>
+            `;
+            // 设置当前选中值（归一化为后端代码）
+            inputEl.value = this.normalizeGenderToCode(currentValue);
         } else {
             inputEl = document.createElement('input');
             inputEl.className = 'field-edit-input';
             inputEl.type = 'text';
+            inputEl.value = currentValue === '未设置' ? '' : currentValue;
         }
-        
-        inputEl.value = currentValue === '未设置' || currentValue === '暂无简介' ? '' : currentValue;
         
         const actionsEl = document.createElement('div');
         actionsEl.className = 'field-edit-actions';
@@ -6261,7 +6278,7 @@ class VideoPlayer {
         
         // 聚焦输入框
         inputEl.focus();
-        if (fieldName !== 'bio') {
+        if (fieldName !== 'bio' && typeof inputEl.select === 'function') {
             inputEl.select();
         }
         
@@ -6277,10 +6294,24 @@ class VideoPlayer {
         };
         
         saveBtn.addEventListener('click', async () => {
-            const newValue = inputEl.value.trim();
+            let newValue = inputEl.value.trim();
+            // 将下拉框值映射为后端代码，同时准备展示文案
+            let payloadValue = newValue;
+            let displayText = newValue;
+            if (fieldName === 'gender') {
+                // 归一化为后端代码
+                payloadValue = this.normalizeGenderToCode(newValue);
+                displayText = this.mapGenderCodeToLabel(payloadValue);
+            }
             try {
-                await this.updateUserField(fieldName, newValue);
-                displayEl.textContent = newValue || (fieldName === 'bio' ? '暂无简介' : '未设置');
+                await this.updateUserField(fieldName, payloadValue);
+                // 根据字段类型设置显示文本
+                if (fieldName === 'bio') {
+                    displayText = newValue || '暂无简介';
+                } else if (fieldName !== 'gender') {
+                    displayText = newValue || '未设置';
+                }
+                displayEl.textContent = displayText;
                 exitEditMode();
             } catch (error) {
                 console.error('更新用户信息失败:', error);
@@ -6294,7 +6325,7 @@ class VideoPlayer {
         inputEl.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 exitEditMode();
-            } else if (e.key === 'Enter' && !e.shiftKey && fieldName !== 'bio') {
+            } else if (e.key === 'Enter' && !e.shiftKey && fieldName !== 'bio' && inputEl.tagName !== 'SELECT') {
                 e.preventDefault();
                 saveBtn.click();
             }
