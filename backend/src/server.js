@@ -1339,10 +1339,12 @@ app.post('/api/upload/image', authenticateToken, imageUpload.single('image'), as
              return res.json({ users: [] });
          }
          
-         // 搜索用户名包含关键词的用户，限制返回数量
+         // 搜索用户名包含关键词的用户，限制返回数量，返回公开信息
         const users = await getAllAsync(
-            `SELECT id, username FROM users 
-             WHERE username LIKE ? 
+            `SELECT id, username, gender, bio, created_at,
+                    (SELECT COUNT(*) FROM subtitle_comments WHERE user_id = users.id) as comment_count
+             FROM users 
+             WHERE username LIKE ? AND status = 'active'
              ORDER BY username 
              LIMIT 20`,
             [`%${searchTerm}%`]
@@ -1353,6 +1355,36 @@ app.post('/api/upload/image', authenticateToken, imageUpload.single('image'), as
      } catch (error) {
          console.error('用户搜索失败:', error);
          res.status(500).json({ error: '用户搜索失败' });
+     }
+ });
+
+ // 新增：获取用户公开信息（无需认证）
+ app.get('/api/users/public/:username', async (req, res) => {
+     try {
+         const { username } = req.params;
+         
+         if (!username || typeof username !== 'string') {
+             return res.status(400).json({ error: '用户名不能为空' });
+         }
+         
+         // 获取用户公开信息（不包含邮箱等敏感信息）
+         const user = await getAsync(
+             `SELECT id, username, gender, bio, created_at,
+                     (SELECT COUNT(*) FROM subtitle_comments WHERE user_id = users.id) as comment_count
+              FROM users 
+              WHERE username = ? AND status = 'active'`,
+             [username.trim()]
+         );
+         
+         if (!user) {
+             return res.status(404).json({ error: '用户不存在' });
+         }
+         
+         res.json({ user });
+         
+     } catch (error) {
+         console.error('获取用户公开信息失败:', error);
+         res.status(500).json({ error: '获取用户公开信息失败' });
      }
  });
 

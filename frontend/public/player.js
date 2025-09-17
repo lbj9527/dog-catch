@@ -3288,28 +3288,56 @@ class VideoPlayer {
         `;
     }
     
+    // 安全解析JWT payload的工具函数
+    _parseJWTPayload(token) {
+        if (!token || typeof token !== 'string') {
+            return null;
+        }
+        
+        const trimmedToken = token.trim();
+        if (!trimmedToken || trimmedToken === 'null' || trimmedToken === 'undefined') {
+            return null;
+        }
+        
+        const parts = trimmedToken.split('.');
+        if (parts.length !== 3) {
+            return null;
+        }
+        
+        try {
+            // Base64URL to Base64 conversion
+            let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+            // Add padding if needed
+            while (base64.length % 4) {
+                base64 += '=';
+            }
+            
+            // Decode and handle UTF-8
+            const decoded = atob(base64);
+            // Convert bytes to UTF-8 string
+            const utf8String = decodeURIComponent(escape(decoded));
+            
+            return JSON.parse(utf8String);
+        } catch (error) {
+            console.warn('JWT parsing failed:', error.message);
+            return null;
+        }
+    }
+
     // 获取当前用户名
     getCurrentUsername() {
-        try {
-            if (this.userToken) {
-                const payload = JSON.parse(atob(this.userToken.split('.')[1]));
-                return payload.email || payload.username || '用户';
-            }
-        } catch (e) {
-            console.warn('解析用户token失败:', e);
+        const payload = this._parseJWTPayload(this.userToken);
+        if (payload) {
+            return payload.email || payload.username || '用户';
         }
         return '用户';
     }
 
     // 获取当前用户ID
     getCurrentUserId() {
-        try {
-            if (this.userToken) {
-                const payload = JSON.parse(atob(this.userToken.split('.')[1]));
-                return payload.id || payload.userId || payload.email || null;
-            }
-        } catch (e) {
-            console.warn('解析用户token失败:', e);
+        const payload = this._parseJWTPayload(this.userToken);
+        if (payload) {
+            return payload.id || payload.userId || payload.email || null;
         }
         return null;
     }
@@ -3522,8 +3550,17 @@ class VideoPlayer {
                 return;
             }
             
+            // 头像点击事件（使用事件委托）
+            const avatarElement = e.target.closest('.user-avatar');
+            if (avatarElement && avatarElement.dataset.username) {
+                e.preventDefault();
+                const username = avatarElement.dataset.username;
+                this.showUserInfoModal(username);
+                return;
+            }
+            
             // 点击外部关闭浮层
-    this.handleOutsideClick(e);
+            this.handleOutsideClick(e);
         });
     }
 
@@ -5408,14 +5445,10 @@ class VideoPlayer {
     
     // 获取用户作用域的存储键
     getUserScopedStorageKey() {
-        try {
-            if (this.userToken) {
-                const payload = JSON.parse(atob(this.userToken.split('.')[1]));
-                const userId = payload.id || payload.userId || payload.email || 'anonymous';
-                return `dc_hidden_notifications_v1:${userId}`;
-            }
-        } catch (e) {
-            console.warn('解析用户token失败，使用匿名存储:', e);
+        const payload = this._parseJWTPayload(this.userToken);
+        if (payload) {
+            const userId = payload.id || payload.userId || payload.email || 'anonymous';
+            return `dc_hidden_notifications_v1:${userId}`;
         }
         return 'dc_hidden_notifications_v1:anonymous';
     }
@@ -6026,6 +6059,267 @@ class VideoPlayer {
         if (listEl) {
             listEl.innerHTML = `<div class="notification-empty"><p>${message}</p></div>`;
         }
+    }
+    
+    // 显示用户信息对话框
+    async showUserInfoModal(username) {
+        if (!username) return;
+        
+        // 防止重复打开
+        const existingModal = document.querySelector('.user-info-modal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
+        // 创建模态框
+        const modal = document.createElement('div');
+        modal.className = 'user-info-modal';
+        modal.innerHTML = `
+            <div class="user-info-content">
+                <div class="user-info-header">
+                    <h3>用户信息</h3>
+                    <button class="user-info-close" aria-label="关闭">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="user-info-body">
+                    <div class="user-info-loading">
+                        <div class="loading-spinner"></div>
+                        <p>加载用户信息中...</p>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // 优先挂载到社交面板内，如果不可用则挂载到document.body
+        const socialPanelElement = this.socialPanel && this.socialPanel.getElement ? this.socialPanel.getElement() : null;
+        const parentElement = socialPanelElement || document.body;
+        parentElement.appendChild(modal);
+        
+        // 绑定关闭事件
+        const closeBtn = modal.querySelector('.user-info-close');
+        const closeModal = () => {
+            modal.remove();
+        };
+        
+        closeBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeModal();
+            }
+        });
+        
+        // 加载用户信息
+        try {
+            const userInfo = await this.fetchUserInfo(username);
+            this.renderUserInfoContent(modal, userInfo);
+        } catch (error) {
+            console.error('获取用户信息失败:', error);
+            this.renderUserInfoError(modal, error.message || '获取用户信息失败');
+        }
+    }
+    
+    // 获取用户信息
+    async fetchUserInfo(username) {
+        const response = await fetch(`${API_BASE_URL}/api/users/public/${encodeURIComponent(username)}`);
+        if (!response.ok) {
+            if (response.status === 404) {
+                throw new Error('用户不存在');
+            }
+            throw new Error('获取用户信息失败');
+        }
+        
+        const data = await response.json();
+        return data.user;
+    }
+    
+    // 渲染用户信息内容
+    renderUserInfoContent(modal, userInfo) {
+        const currentUserId = this.getCurrentUserId();
+        const isCurrentUser = currentUserId && userInfo.id && String(currentUserId) === String(userInfo.id);
+        
+        const bodyEl = modal.querySelector('.user-info-body');
+        bodyEl.innerHTML = `
+            <div class="user-info-avatar-section">
+                <div class="user-avatar-large">
+                    ${this.generateUserAvatar(userInfo.username)}
+                </div>
+            </div>
+            <div class="user-info-fields">
+                <div class="user-info-field">
+                    <label>用户名</label>
+                    <div class="field-value">${this.escapeHtml(userInfo.username)}</div>
+                </div>
+                ${isCurrentUser ? `
+                    <div class="user-info-field">
+                        <label>性别</label>
+                        <div class="field-value editable" data-field="gender">
+                            <span class="field-display">${this.escapeHtml(userInfo.gender || '未设置')}</span>
+                            <button class="field-edit-btn" title="编辑性别">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="user-info-field">
+                        <label>个人简介</label>
+                        <div class="field-value editable" data-field="bio">
+                            <span class="field-display">${this.escapeHtml(userInfo.bio || '暂无简介')}</span>
+                            <button class="field-edit-btn" title="编辑简介">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                ` : `
+                    <div class="user-info-field">
+                        <label>性别</label>
+                        <div class="field-value">${this.escapeHtml(userInfo.gender || '未设置')}</div>
+                    </div>
+                    <div class="user-info-field">
+                        <label>个人简介</label>
+                        <div class="field-value">${this.escapeHtml(userInfo.bio || '暂无简介')}</div>
+                    </div>
+                `}
+                <div class="user-info-field">
+                    <label>评论数</label>
+                    <div class="field-value">${userInfo.comment_count || 0} 条</div>
+                </div>
+                <div class="user-info-field">
+                    <label>注册时间</label>
+                    <div class="field-value">${this.formatTimeAgo(userInfo.created_at)}</div>
+                </div>
+            </div>
+        `;
+        
+        // 如果是当前用户，绑定编辑事件
+        if (isCurrentUser) {
+            this.bindUserInfoEditEvents(modal, userInfo);
+        }
+    }
+    
+    // 渲染用户信息错误
+    renderUserInfoError(modal, message) {
+        const bodyEl = modal.querySelector('.user-info-body');
+        bodyEl.innerHTML = `
+            <div class="user-info-error">
+                <p>${this.escapeHtml(message)}</p>
+            </div>
+        `;
+    }
+    
+    // 绑定用户信息编辑事件
+    bindUserInfoEditEvents(modal, userInfo) {
+        const editBtns = modal.querySelectorAll('.field-edit-btn');
+        editBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const fieldEl = btn.closest('.field-value');
+                const fieldName = fieldEl.dataset.field;
+                this.enterUserInfoEditMode(fieldEl, fieldName, userInfo[fieldName] || '');
+            });
+        });
+    }
+    
+    // 进入用户信息编辑模式
+    enterUserInfoEditMode(fieldEl, fieldName, currentValue) {
+        const displayEl = fieldEl.querySelector('.field-display');
+        const editBtn = fieldEl.querySelector('.field-edit-btn');
+        
+        // 创建编辑界面
+        let inputEl;
+        if (fieldName === 'bio') {
+            inputEl = document.createElement('textarea');
+            inputEl.className = 'field-edit-input';
+            inputEl.rows = 3;
+        } else {
+            inputEl = document.createElement('input');
+            inputEl.className = 'field-edit-input';
+            inputEl.type = 'text';
+        }
+        
+        inputEl.value = currentValue === '未设置' || currentValue === '暂无简介' ? '' : currentValue;
+        
+        const actionsEl = document.createElement('div');
+        actionsEl.className = 'field-edit-actions';
+        actionsEl.innerHTML = `
+            <button class="field-save-btn">保存</button>
+            <button class="field-cancel-btn">取消</button>
+        `;
+        
+        // 隐藏显示元素和编辑按钮
+        displayEl.style.display = 'none';
+        editBtn.style.display = 'none';
+        
+        // 插入编辑元素
+        fieldEl.appendChild(inputEl);
+        fieldEl.appendChild(actionsEl);
+        
+        // 聚焦输入框
+        inputEl.focus();
+        if (fieldName !== 'bio') {
+            inputEl.select();
+        }
+        
+        // 绑定保存和取消事件
+        const saveBtn = actionsEl.querySelector('.field-save-btn');
+        const cancelBtn = actionsEl.querySelector('.field-cancel-btn');
+        
+        const exitEditMode = () => {
+            displayEl.style.display = '';
+            editBtn.style.display = '';
+            inputEl.remove();
+            actionsEl.remove();
+        };
+        
+        saveBtn.addEventListener('click', async () => {
+            const newValue = inputEl.value.trim();
+            try {
+                await this.updateUserField(fieldName, newValue);
+                displayEl.textContent = newValue || (fieldName === 'bio' ? '暂无简介' : '未设置');
+                exitEditMode();
+            } catch (error) {
+                console.error('更新用户信息失败:', error);
+                alert(error.message || '更新失败，请稍后重试');
+            }
+        });
+        
+        cancelBtn.addEventListener('click', exitEditMode);
+        
+        // 按键事件
+        inputEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                exitEditMode();
+            } else if (e.key === 'Enter' && !e.shiftKey && fieldName !== 'bio') {
+                e.preventDefault();
+                saveBtn.click();
+            }
+        });
+    }
+    
+    // 更新用户字段
+    async updateUserField(fieldName, value) {
+        const response = await fetch(`${API_BASE_URL}/api/user/${fieldName}`, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${this.userToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ [fieldName]: value })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || '更新失败');
+        }
+        
+        return response.json();
     }
 }
 
