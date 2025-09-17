@@ -2153,6 +2153,34 @@ body.modal-open { overflow: hidden; }
     padding-left: 36px;
 }
 
+/* 评论中的超链接样式 */
+.comment-content .comment-link,
+.reply-text .comment-link {
+    color: #4fc3f7;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.comment-content .comment-link:hover,
+.reply-text .comment-link:hover {
+    color: #81d4fa;
+    border-bottom-color: #81d4fa;
+    text-decoration: none;
+}
+
+.comment-content .comment-link:visited,
+.reply-text .comment-link:visited {
+    color: #ba68c8;
+}
+
+.comment-content .comment-link:visited:hover,
+.reply-text .comment-link:visited:hover {
+    color: #ce93d8;
+    border-bottom-color: #ce93d8;
+}
+
 .comment-actions {
     display: flex;
     justify-content: space-between;

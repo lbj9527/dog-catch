@@ -88,6 +88,62 @@ class VideoPlayer {
         return div.innerHTML;
     }
 
+    // URL 验证和规范化
+    validateAndNormalizeUrl(url) {
+        if (!url || typeof url !== 'string') return null;
+        
+        // 移除首尾空格
+        url = url.trim();
+        if (!url) return null;
+        
+        // 如果没有协议，默认添加 https://
+        if (!/^https?:\/\//i.test(url)) {
+            url = 'https://' + url;
+        }
+        
+        try {
+            const urlObj = new URL(url);
+            // 只允许 http 和 https 协议
+            if (!['http:', 'https:'].includes(urlObj.protocol)) {
+                return null;
+            }
+            // 返回规范化的URL
+            return urlObj.href;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // 解析评论中的超链接格式 %描述文本%URL%
+    parseCommentLinks(text) {
+        if (typeof text !== 'string') return this.escapeHtml(text);
+        
+        // 先转义HTML特殊字符
+        const escapedText = this.escapeHtml(text);
+        
+        // 匹配 %描述文本%URL% 格式
+        const linkPattern = /%([^%]+)%([^%]+)%/g;
+        
+        return escapedText.replace(linkPattern, (match, description, url) => {
+            // 验证和规范化URL
+            const validUrl = this.validateAndNormalizeUrl(url);
+            if (!validUrl) {
+                // 如果URL无效，返回原始文本（已转义）
+                return match;
+            }
+            
+            // 转义描述文本中的HTML（防止XSS）
+            const safeDescription = this.escapeHtml(description.trim());
+            if (!safeDescription) {
+                // 如果描述为空，返回原始文本
+                return match;
+            }
+            
+            // 生成安全的链接HTML
+            return `<a href="${this.escapeHtml(validUrl)}" target="_blank" rel="noopener noreferrer" class="comment-link" title="${this.escapeHtml(validUrl)}">${safeDescription}</a>`;
+        });
+    }
+
     // 打开Lightbox预览
     openLightbox(currentUrl, allUrls, currentIndex) {
         // 创建Lightbox容器
@@ -3498,7 +3554,7 @@ class VideoPlayer {
                     <span class="username">${username}</span>
                 </div>
             </div>
-            <div class="comment-content">${this.escapeHtml(content)}</div>
+            <div class="comment-content">${this.parseCommentLinks(content)}</div>
             ${imagesHtml}
             <div class="comment-actions">
                 <div class="comment-actions-left">
@@ -4847,7 +4903,7 @@ class VideoPlayer {
                             <span class="username">${this.escapeHtml(reply.username || '匿名用户')}</span>
                         </div>
                     </div>
-                    <div class="reply-text">${this.escapeHtml(content)}</div>
+                    <div class="reply-text">${this.parseCommentLinks(content)}</div>
                     ${this.renderReplyImages(reply)}
                     ${actionsHtml}
                 </div>
