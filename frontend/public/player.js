@@ -229,7 +229,7 @@ class VideoPlayer {
     }
 
     displayUserInfo(userInfo) {
-        const userEmailInline = document.getElementById('userEmailInline');
+        const userEmailDisplay = document.getElementById('userEmailDisplay');
         const userNameDisplay = document.getElementById('userNameDisplay');
         const userGenderDisplay = document.getElementById('userGenderDisplay');
         const userBioDisplay = document.getElementById('userBioDisplay');
@@ -238,11 +238,10 @@ class VideoPlayer {
         if (userInfo) {
             // 更新用户名和邮箱
             if (userNameDisplay) {
-                userNameDisplay.childNodes[0].textContent = userInfo.username || userInfo.email?.split('@')[0] || '用户';
+                userNameDisplay.textContent = userInfo.username || userInfo.email?.split('@')[0] || '用户';
             }
-            if (userEmailInline) {
-                userEmailInline.textContent = userInfo.email || 'user@example.com';
-                userEmailInline.style.display = 'inline';
+            if (userEmailDisplay) {
+                userEmailDisplay.textContent = userInfo.email || 'user@example.com';
             }
 
             // 更新性别
@@ -262,10 +261,9 @@ class VideoPlayer {
             }
         } else {
             // 默认显示
-            if (userNameDisplay) userNameDisplay.childNodes[0].textContent = '用户';
-            if (userEmailInline) {
-                userEmailInline.textContent = 'user@example.com';
-                userEmailInline.style.display = 'inline';
+            if (userNameDisplay) userNameDisplay.textContent = '用户';
+            if (userEmailDisplay) {
+                userEmailDisplay.textContent = 'user@example.com';
             }
             if (userGenderDisplay) this.updateGenderDisplay(null);
             if (userBioDisplay) userBioDisplay.textContent = '这个人很懒，什么都没有留下...';
