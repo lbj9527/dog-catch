@@ -245,3 +245,6 @@ config.local.json
 # 但是保留示例字幕文件
 !example.srt
 !sample.vtt 
+
+# ===== Python virtualenv (userscript) =====
+subtitlescript/venv/
