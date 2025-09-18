@@ -4184,6 +4184,46 @@ class VideoPlayer {
         return time.toLocaleDateString('zh-CN');
     }
 
+    // 格式化日期为年月日格式
+    formatDateYMD(timestamp) {
+        if (!timestamp) {
+            return '未知';
+        }
+        
+        let time;
+        
+        if (typeof timestamp === 'string') {
+            // 处理 SQLite 格式: '2025-09-03 13:14:12' (UTC时间)
+            if (!timestamp.includes('T') && !timestamp.includes('Z')) {
+                // 将空格替换为T，并添加Z表示UTC时间
+                const isoString = timestamp.replace(' ', 'T') + 'Z';
+                time = new Date(isoString);
+            } else {
+                time = new Date(timestamp);
+            }
+        } else if (typeof timestamp === 'number') {
+            // 处理时间戳：10位为秒，13位为毫秒
+            if (timestamp.toString().length === 10) {
+                time = new Date(timestamp * 1000);
+            } else {
+                time = new Date(timestamp);
+            }
+        } else {
+            time = new Date(timestamp);
+        }
+        
+        // 检查解析结果是否有效
+        if (isNaN(time.getTime())) {
+            return '未知';
+        }
+        
+        const year = time.getFullYear();
+        const month = time.getMonth() + 1;
+        const day = time.getDate();
+        
+        return `${year}年${month}月${day}日`;
+    }
+
     // HTML转义
     escapeHtml(text) {
         const div = document.createElement('div');
@@ -6197,7 +6237,7 @@ class VideoPlayer {
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">注册时间：</span>
-                    <span class="meta-value">${this.formatTimeAgo(userInfo.created_at)}</span>
+                    <span class="meta-value">${this.formatDateYMD(userInfo.created_at)}</span>
                 </div>
             </div>
         `;
@@ -6313,6 +6353,16 @@ class VideoPlayer {
                 }
                 displayEl.textContent = displayText;
                 exitEditMode();
+                
+                // 同步更新工具栏用户菜单的显示
+                if (fieldName === 'gender') {
+                    this.updateGenderDisplay(payloadValue);
+                } else if (fieldName === 'bio') {
+                    const toolbarBioEl = document.getElementById('userBioDisplay');
+                    if (toolbarBioEl) {
+                        toolbarBioEl.textContent = displayText;
+                    }
+                }
             } catch (error) {
                 console.error('更新用户信息失败:', error);
                 alert(error.message || '更新失败，请稍后重试');
