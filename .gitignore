@@ -248,3 +248,4 @@ config.local.json
 
 # ===== Python virtualenv (userscript) =====
 subtitlescript/venv/
+subtitlescript/output/_html_debug

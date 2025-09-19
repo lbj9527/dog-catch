@@ -4,10 +4,10 @@
 MissAV 单演员抓取脚本（里程碑1：功能通）
 - 输入：--actress-url 指向某位演员的详情页
 - 处理：遍历该演员的所有分页，提取每个视频标题，并从标题中解析番号
-- 输出：CSV（固定写入 E:\pythonProject\chrome-extension\dog-catch\subtitlescript\output\actor_[URL最后一段中文名].csv）
+- 输出：CSV（固定写入 脚本同级目录 output/actor_[URL最后一段中文名].csv）
 
 用法示例：
-  python userscript/videoID-spider.py --actress-url "https://missav.live/cn/actress/xxxxx" \
+  python ./videoID-spider.py --actress-url "https://missav.live/cn/actress/xxxxx" \
       --concurrency 2 --delay 1 --retries 2
 
 注意：
@@ -21,6 +21,7 @@ import sys
 import time
 import re
 import os
+import random
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse, urlunparse, parse_qs, urlencode, unquote
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -120,15 +121,23 @@ def sleep_delay(delay: float):
         time.sleep(1.0)
 
 
-def http_get(session: requests.Session, url: str, timeout: int, delay: float, retries: int):
+def http_get(session: requests.Session, url: str, timeout: int, delay: float, retries: int, referer=None):
+    """GET with base delay + jitter and simple backoff; support per-request Referer.
+    - delay: base delay seconds before each attempt
+    - retries: number of retries on 403/5xx/network errors
+    - referer: optional Referer header for this request only
+    """
     last_err = None
     for attempt in range(retries + 1):
-        # 基础限速：每次尝试前都等待 delay 秒（含首次尝试）
-        sleep_delay(delay)
+        # 基础限速 + 抖动 + 轻度退避（随尝试次数增加）
+        jitter = random.uniform(0.15, 0.45)
+        backoff = min(2.0, 0.4 * attempt)
+        sleep_delay(max(0.0, float(delay) + jitter + backoff))
         try:
-            resp = session.get(url, timeout=timeout, allow_redirects=True)
-            # 对 5xx 做重试
-            if 500 <= resp.status_code < 600:
+            headers = {"Referer": referer} if referer else None
+            resp = session.get(url, timeout=timeout, allow_redirects=True, headers=headers)
+            # 对 403/5xx 做重试
+            if resp.status_code == 403 or 500 <= resp.status_code < 600:
                 last_err = RuntimeError(f"HTTP {resp.status_code}")
             else:
                 return resp
@@ -168,6 +177,23 @@ def extract_video_items(soup: BeautifulSoup, base_url: str):
             continue
         href = a.get("href") or ""
         abs_url = urljoin(base_url, href) if href else ""
+        if not abs_url:
+            continue
+        path = (urlparse(abs_url).path or "").lower()
+        # 显式忽略非作品链接
+        if "/actresses/ranking" in path:
+            continue
+        # 仅接受与番号对应的作品详情URL：要求路径包含 slug 化后的番号
+        slug = vid.lower()
+        candidates = {slug}
+        # FC2 两种常见形式互相兼容
+        if slug.startswith("fc2-ppv-"):
+            candidates.add(slug.replace("fc2-ppv-", "fc2-"))
+        if slug.startswith("fc2-") and not slug.startswith("fc2-ppv-"):
+            candidates.add(slug.replace("fc2-", "fc2-ppv-"))
+        # 匹配基本形式或后缀扩展形式（如 -uncensored-leak / -chinese-subtitle）
+        if not any(c in path for c in candidates) and not any((c + "-") in path for c in candidates):
+            continue
         key = abs_url or (txt + "|" + base_url)
         if key in seen:
             continue
@@ -186,6 +212,21 @@ def extract_video_items(soup: BeautifulSoup, base_url: str):
         a = tag.find("a") or tag.find_parent("a")
         href = a.get("href") if a else ""
         abs_url = urljoin(base_url, href) if href else ""
+        if not abs_url:
+            continue
+        path = (urlparse(abs_url).path or "").lower()
+        # 显式忽略非作品链接
+        if "/actresses/ranking" in path:
+            continue
+        # 仅接受与番号对应的作品详情URL
+        slug = vid.lower()
+        candidates = {slug}
+        if slug.startswith("fc2-ppv-"):
+            candidates.add(slug.replace("fc2-ppv-", "fc2-"))
+        if slug.startswith("fc2-") and not slug.startswith("fc2-ppv-"):
+            candidates.add(slug.replace("fc2-", "fc2-ppv-"))
+        if not any(c in path for c in candidates) and not any((c + "-") in path for c in candidates):
+            continue
         key = abs_url or (txt + "|" + base_url)
         if key in seen:
             continue
@@ -202,9 +243,21 @@ def find_pagination_urls(soup: BeautifulSoup, actress_url: str, max_pages: int):
     # 统一只在同一演员路径下取分页链接
     def same_actor_path(u: str) -> bool:
         try:
-            p1 = urlparse(u).path.split("/")[:4]
-            p2 = urlparse(actress_url).path.split("/")[:4]
-            return p1 == p2
+            path1 = urlparse(u).path or ""
+            # 排除“女优排行”等非演员详情路径
+            if "/actresses/ranking" in path1:
+                return False
+            seg1 = [s for s in path1.split("/") if s]
+            seg2 = [s for s in (urlparse(actress_url).path or "").split("/") if s]
+            # 需要匹配 dmXX/<lang>/actresses/<slug>
+            if len(seg1) < 4 or len(seg2) < 4:
+                return False
+            return (
+                seg1[0] == seg2[0] and
+                seg1[1] == seg2[1] and
+                seg1[2] == "actresses" and
+                seg1[3] == seg2[3]
+            )
         except Exception:
             return False
 
@@ -234,9 +287,9 @@ def find_pagination_urls(soup: BeautifulSoup, actress_url: str, max_pages: int):
                 if style is None:
                     style = "path"
 
-        # 2) 纯数字的页码文本
+        # 2) 纯数字的页码文本（仅当该链接本身就是分页链接时）
         text = (a.get_text(strip=True) or "").strip()
-        if text.isdigit():
+        if text.isdigit() and (re.search(r"(?:[?&]page=)\d+", abs_url) or re.search(r"/page/\d+", abs_url)):
             try:
                 numbers.add(int(text))
             except Exception:
@@ -396,15 +449,90 @@ def crawl_actress(actress_url: str, concurrency: int, delay: float, retries: int
 
     print(f"[INFO] Actress: {actress_name or 'N/A'} | Pages discovered: {len(page_urls)}")
 
+    # 为零项页准备 HTML 快照目录：output/_html_debug/<actor_safe_name>/
+    out_base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+    actor_safe_name = sanitize_filename(derive_actor_name_from_url(actress_url))
+    html_debug_dir = os.path.join(out_base, "_html_debug", actor_safe_name)
+    try:
+        os.makedirs(html_debug_dir, exist_ok=True)
+    except Exception:
+        pass
+
     fetched = {}
     results = []
     fetched_at = datetime.now(timezone.utc).isoformat()
 
     def fetch_one(page_url):
-        r = http_get(session, page_url, timeout, delay, retries)
+        # 辅助：从 URL 提取页码（无则按1）
+        def _page_no_from_url(u: str) -> int:
+            try:
+                p = urlparse(u)
+                qs = parse_qs(p.query)
+                if "page" in qs and qs["page"]:
+                    return int(qs["page"][0])
+                m = re.search(r"/page/(\d+)", p.path or "")
+                if m:
+                    return int(m.group(1))
+            except Exception:
+                pass
+            return 1
+
+        # 第一次抓取：带上演员页 Referer，降低站外直链嫌疑
+        r = http_get(session, page_url, timeout, delay, retries, referer=actress_url)
         s = BeautifulSoup(r.text, "html.parser")
         items = extract_video_items(s, page_url)
-        return page_url, items
+        if items:
+            return page_url, items
+
+        # 首次为零项：保存一次 HTML 快照
+        try:
+            pg = _page_no_from_url(page_url)
+            snap1 = os.path.join(html_debug_dir, f"{pg:03d}-first.html")
+            ensure_output_dir(snap1)
+            with open(snap1, "w", encoding="utf-8") as f:
+                f.write(r.text or "")
+            print(f"[SNAPSHOT] Saved zero-items HTML (first): {snap1}")
+        except Exception as e:
+            print(f"[WARN] Save snapshot(first) failed: {e}")
+
+        # 若首次为零项，执行一次“回暖 + 加强抓取”的重试
+        try:
+            print(f"[RETRY] Zero items, warming up and retry once: {page_url}")
+            # 访问站点首页与演员首页，模拟站内导航
+            sleep_delay(max(1.5, delay + random.uniform(0.8, 1.6)))
+            try:
+                session.get("https://missav.live/", timeout=timeout, allow_redirects=True)
+            except Exception:
+                pass
+            # 以首页为 Referer 访问演员页，随后固定 Referer 为演员页
+            try:
+                session.headers["Referer"] = "https://missav.live/"
+                session.get(actress_url, timeout=timeout, allow_redirects=True)
+            except Exception:
+                pass
+            session.headers["Referer"] = actress_url
+
+            # 使用更长的延时做二次抓取
+            r2 = http_get(session, page_url, timeout, max(delay * 2, 2.0), max(1, retries), referer=actress_url)
+            s2 = BeautifulSoup(r2.text, "html.parser")
+            items2 = extract_video_items(s2, page_url)
+            if not items2:
+                # 二次仍为零项：保存重试后的 HTML 快照
+                try:
+                    pg = _page_no_from_url(page_url)
+                    snap2 = os.path.join(html_debug_dir, f"{pg:03d}-retry.html")
+                    ensure_output_dir(snap2)
+                    with open(snap2, "w", encoding="utf-8") as f:
+                        f.write(r2.text or "")
+                    print(f"[SNAPSHOT] Saved zero-items HTML (retry): {snap2}")
+                except Exception as e:
+                    print(f"[WARN] Save snapshot(retry) failed: {e}")
+                print(f"[WARN] Still zero items after retry: {page_url}")
+                return page_url, items2
+            return page_url, items2
+        except Exception as e:
+            print(f"[WARN] Retry flow error for {page_url}: {e}")
+            return page_url, items
 
     # 并发抓取分页
     with ThreadPoolExecutor(max_workers=max(1, int(concurrency))) as ex:
@@ -442,8 +570,8 @@ def crawl_actress(actress_url: str, concurrency: int, delay: float, retries: int
                 "page_no": idx,
             })
 
-    # 计算固定输出路径：E:\...\output\actor_[URL最后一段中文名].csv
-    out_dir = r"E:\pythonProject\chrome-extension\dog-catch\subtitlescript\output"
+    # 计算固定输出路径：脚本同级 output/actor_[URL最后一段中文名].csv
+    out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
     raw_name = derive_actor_name_from_url(actress_url)
     safe_name = sanitize_filename(raw_name)
     out_path = os.path.join(out_dir, f"actor_{safe_name}.csv")
