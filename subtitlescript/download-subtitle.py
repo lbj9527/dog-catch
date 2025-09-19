@@ -1,8 +1,13 @@
 import re
 import json
 import os
+import time
 from playwright.sync_api import Playwright, sync_playwright, expect
-from playwright_stealth.stealth import Stealth
+from playwright_stealth.stealth import stealth_sync
+from urllib.parse import urljoin, urlparse, quote_plus
+
+# 全局搜索关键字配置：直接修改此处值即可
+SEARCH_KEYWORD = "nima-027"
 
 
 def load_session_if_exists():
@@ -47,29 +52,238 @@ def check_login_status(page):
                     return False
 
 
-def perform_login(page):
-    """执行密码登录流程"""
-    print("开始密码登录...")
-    page.locator("#ls_username").click()
-    page.locator("#ls_username").fill("萨芬不否")
-    page.get_by_role("textbox", name="密码").click()
-    page.get_by_role("textbox", name="密码").fill("Lbj95278.xyz")
-    page.get_by_role("button", name="登录").click()
-    
-    # 等待登录后的页面加载，并检查是否需要安全验证
+# 已移除密码登录流程，脚本仅支持通过 ./session.json 的 Cookie 登录
+
+# 解析搜索结果列表，提取 标题、链接、发布时间、用户名、所属专区，并打印
+def scrape_search_results(root, max_items=20):
+    # root 可以是 Page 或 Frame
+    results = []
+    # 优先尝试当前 root；若未命中，则在所有 frame 中寻找结果容器
     try:
-        # 等待安全问题选择框出现
-        page.wait_for_selector("#loginquestionid_LsN0t", timeout=10000)
-        page.locator("#loginquestionid_LsN0t").select_option("1")
-        
-        # 等待答案输入框出现
-        page.wait_for_selector("#loginanswer_LsN0t", timeout=5000)
-        page.locator("#loginanswer_LsN0t").click()
-        page.locator("#loginanswer_LsN0t").fill("HRY")
-        page.locator("button[name=\"loginsubmit\"]").click()
+        root.wait_for_selector("a.xst, a[href*='viewthread'], th > a[href*='thread'], h3 a, .pbw a[href*='thread']", timeout=8000)
+    except Exception:
+        # 在 frame 中寻找
+        try:
+            for fr in root.frames if hasattr(root, 'frames') else []:
+                try:
+                    fr.wait_for_selector("a.xst, a[href*='viewthread'], th > a[href*='thread'], h3 a, .pbw a[href*='thread']", timeout=3000)
+                    root = fr
+                    break
+                except Exception:
+                    continue
+        except Exception:
+            pass
+    # 再次检测一次
+    try:
+        root.wait_for_selector("a.xst, a[href*='viewthread'], th > a[href*='thread'], h3 a, .pbw a[href*='thread']", timeout=4000)
+    except Exception:
+        print(f"未检测到搜索结果标题元素，可能无结果或页面结构变更。当前URL: {getattr(root, 'url', '')}")
+        return results
+
+    try:
+        titles = root.locator("a.xst, a[href*='viewthread'], th > a[href*='thread'], h3 a, .pbw a[href*='thread']")
+        total = titles.count()
+        count = min(total, max_items)
+        parsed = urlparse(getattr(root, 'url', '') or (root.page.url if hasattr(root, 'page') else ''))
+        base = f"{parsed.scheme}://{parsed.netloc}" if parsed.netloc else "https://37ub.w7zvq.net"
+
+        def first_text(loc):
+            try:
+                if loc.count() > 0:
+                    return loc.first.inner_text().strip()
+            except Exception:
+                pass
+            return ""
+
+        for i in range(count):
+            t = titles.nth(i)
+            try:
+                title = t.inner_text().strip()
+            except Exception:
+                title = ""
+            try:
+                href = t.get_attribute("href") or ""
+            except Exception:
+                href = ""
+            link = urljoin(base, href) if href else ""
+
+            cont = t.locator("xpath=ancestor::tbody[starts-with(@id,'normalthread_')][1]")
+            if cont.count() == 0:
+                cont = t.locator("xpath=ancestor::tr[1]")
+            if cont.count() == 0:
+                cont = t.locator("xpath=ancestor::li[1]")
+            if cont.count() == 0:
+                cont = t.locator("xpath=ancestor::div[1]")
+
+            author = ""
+            for sel in [
+                "xpath=.//p//a[contains(@href,'mod=space') and contains(@href,'uid=')]",
+                "xpath=.//a[contains(@href,'mod=space') and contains(@href,'uid=')]",
+                "xpath=.//a[contains(@href,'space-uid')]",
+                "xpath=.//td[contains(@class,'by')]//cite//a",
+                "xpath=.//cite/a",
+            ]:
+                author = first_text(cont.locator(sel))
+                if author:
+                    break
+            if not author:
+                for sel in [
+                    "xpath=ancestor::tr[1]//p//a[contains(@href,'mod=space') and contains(@href,'uid=')]",
+                    "xpath=ancestor::li[1]//p//a[contains(@href,'mod=space') and contains(@href,'uid=')]",
+                    "xpath=ancestor::div[1]//p//a[contains(@href,'mod=space') and contains(@href,'uid=')]",
+                ]:
+                    author = first_text(t.locator(sel))
+                    if author:
+                        break
+
+            pub_time = ""
+            for sel in [
+                "xpath=.//td[contains(@class,'by')]//em//span",
+                "xpath=.//em[contains(@class,'xg1')]//span",
+                "xpath=.//p[contains(@class,'xg1')]//span",
+                "xpath=.//em//span",
+            ]:
+                pub_time = first_text(cont.locator(sel))
+                if pub_time:
+                    break
+            if not pub_time:
+                try:
+                    block_text = cont.first.inner_text()
+                    m = re.search(r"(20\d{2}-\d{1,2}-\d{1,2}(?:\s+\d{1,2}:\d{2})?)", block_text)
+                    if m:
+                        pub_time = m.group(1)
+                except Exception:
+                    pass
+
+            section = ""
+            for sel in [
+                "xpath=.//a[contains(@class,'xi1') and contains(@href,'mod=forumdisplay') and contains(@href,'fid=')]",
+                "xpath=.//p//a[contains(@href,'mod=forumdisplay') and contains(@href,'fid=')]",
+                "xpath=.//a[contains(@href,'mod=forumdisplay') and contains(@href,'fid=')]",
+                "xpath=.//td[contains(@class,'forum')]//a",
+                "xpath=.//a[contains(@href,'forum-') and contains(@href,'.html')]",
+                "xpath=.//a[contains(@href,'/forum-')]",
+            ]:
+                section = first_text(cont.locator(sel))
+                if section:
+                    break
+            if not section:
+                for sel in [
+                    "xpath=ancestor::tr[1]//p//a[contains(@href,'mod=forumdisplay') and contains(@href,'fid=')]",
+                    "xpath=ancestor::li[1]//p//a[contains(@href,'mod=forumdisplay') and contains(@href,'fid=')]",
+                    "xpath=ancestor::div[1]//p//a[contains(@href,'mod=forumdisplay') and contains(@href,'fid=')]",
+                ]:
+                    section = first_text(t.locator(sel))
+                    if section:
+                        break
+
+            results.append({
+                "title": title,
+                "link": link,
+                "time": pub_time,
+                "user": author,
+                "section": section,
+            })
+
+        print(f"当前URL: {getattr(root, 'url', '')}")
+        print(f"匹配到结果条目数量: {total}, 实际提取: {len(results)}")
+        if results:
+            for idx, item in enumerate(results, 1):
+                print(f"[{idx}] 标题: {item['title']}")
+                print(f"    链接: {item['link']}")
+                print(f"    发布时间: {item['time']}")
+                print(f"    用户名: {item['user']}")
+                print(f"    所属专区: {item['section']}")
+        else:
+            print("未抓取到任何结果")
     except Exception as e:
-        print(f"安全验证步骤可能不需要或页面结构已变化: {e}")
-        # 如果没有安全验证，继续执行后续步骤
+        print(f"解析搜索结果时出错: {e}")
+    return results
+
+
+def perform_search(page, keyword=SEARCH_KEYWORD):
+     """登录成功后执行站内搜索"""
+     try:
+        # 等待并聚焦搜索输入框
+        page.wait_for_selector("#scbar_txt", state="visible", timeout=10000)
+        input_el = page.locator("#scbar_txt")
+        input_el.click()
+        try:
+            input_el.fill("")
+        except Exception:
+            pass
+        input_el.fill(keyword)
+
+        # 点击搜索按钮
+        page.wait_for_selector("#scbar_btn", state="attached", timeout=5000)
+        pages_before = len(page.context.pages)
+        page.click("#scbar_btn")
+
+        # 如果点击后新开了标签页，则切换到新页作为目标页
+        target_page = page
+        try:
+            new_page = page.context.wait_for_event("page", timeout=5000)
+            if new_page and len(page.context.pages) > pages_before:
+                target_page = new_page
+        except Exception:
+            pass
+
+        # 等待跳转到搜索结果页
+        try:
+            target_page.wait_for_url("**/search.php**", timeout=15000)
+        except Exception:
+            pass
+
+        # 处理可能出现的年龄警告页
+        try:
+            if target_page.locator("text=警告").first.is_visible():
+                for txt in ["我已年满", "进入", "继续", "同意", "I Agree", "Enter", "继续访问"]:
+                    try:
+                        btn = target_page.locator(f"button:has-text('{txt}'), a:has-text('{txt}')").first
+                        if btn.count() > 0:
+                            btn.click(timeout=3000)
+                            break
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+        # 等待搜索结果加载或网络空闲
+        try:
+            target_page.wait_for_load_state("domcontentloaded", timeout=10000)
+        except Exception:
+            pass
+        try:
+            target_page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass
+        # 等待结果标题元素出现
+        found = True
+        try:
+            target_page.wait_for_selector("a.xst, a[href*='viewthread'], th > a[href*='thread'], h3 a, .pbw a[href*='thread']", timeout=8000)
+        except Exception:
+            found = False
+
+        # 若仍未找到，直接构造搜索结果URL进行跳转作为兜底
+        if not found:
+            parsed = urlparse(target_page.url)
+            base = f"{parsed.scheme}://{parsed.netloc}"
+            fallback = f"{base}/search.php?mod=forum&searchsubmit=yes&kw={quote_plus(keyword)}"
+            try:
+                target_page.goto(fallback, wait_until="domcontentloaded", timeout=15000)
+                try:
+                    target_page.wait_for_selector("a.xst, a[href*='viewthread']", timeout=8000)
+                    found = True
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"跳转 fallback 搜索URL失败: {e}")
+
+        # 解析并打印搜索结果
+        scrape_search_results(target_page)
+        print(f"搜索操作已完成：{keyword}")
+     except Exception as e:
+         print(f"搜索操作失败: {e}")
 
 
 def run(playwright: Playwright) -> None:
@@ -78,7 +292,7 @@ def run(playwright: Playwright) -> None:
         # 尝试使用系统安装的Chrome浏览器
         browser = playwright.chromium.launch(
             headless=False,
-            channel="chrome",  # 使用真实Chrome浏览器
+            channel="msedge",  # 使用真实edge浏览器
             args=[
                 "--no-sandbox",
                 "--disable-blink-features=AutomationControlled",
@@ -143,36 +357,30 @@ def run(playwright: Playwright) -> None:
     
     # 尝试加载已保存的session
     session_state = load_session_if_exists()
-    
-    if session_state:
-        print("发现已保存的session，尝试使用cookie登录...")
-        context = browser.new_context(
-            storage_state=session_state,
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            viewport={'width': 1920, 'height': 1080},
-            extra_http_headers={
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
-            }
-        )
-    else:
-        print("未发现session文件，将使用密码登录...")
-        context = browser.new_context(
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            viewport={'width': 1920, 'height': 1080},
-            extra_http_headers={
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
-            }
-        )
+
+    # 仅允许使用当前目录下的 session.json 进行 Cookie 登录；不存在则提示并退出
+    if not session_state:
+        print("未发现 ./session.json，请先使用 Playwright codegen 登录并保存会话到 ./session.json 后重试。")
+        print("示例：python -m playwright codegen --channel=msedge --save-storage=./session.json https://37ub.w7zvq.net/forum.php")
+        browser.close()
+        return
+
+    print("发现已保存的session，使用 Cookie 登录...")
+    context = browser.new_context(
+        storage_state=session_state,
+        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        viewport={'width': 1920, 'height': 1080},
+        extra_http_headers={
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
+        }
+    )
     
     page = context.new_page()
     
     # 应用stealth模式隐藏自动化特征
-    stealth = Stealth()
-    stealth.apply_stealth_sync(page)
+    stealth_sync(page)
     
     # 拦截网络请求，阻止404资源影响页面加载状态
     def handle_route(route):
@@ -511,6 +719,33 @@ def run(playwright: Playwright) -> None:
                  timeout=30000)
         print("网站访问成功")
         
+        # 快速检测是否已登录（例如 Edge 记住密码后自动登录）
+        try:
+            if check_login_status(page):
+                print("检测到已登录（浏览器自动登录），跳过登录流程")
+                try:
+                    context.storage_state(path="./session.json")
+                    print("已保存session状态")
+                except Exception as e:
+                    print(f"保存session失败: {e}")
+                # 结束流程前执行搜索
+                try:
+                    perform_search(page, SEARCH_KEYWORD)
+                except Exception:
+                    pass
+                # 结束流程
+                try:
+                    page.wait_for_load_state("networkidle", timeout=5000)
+                except Exception:
+                    pass
+                time.sleep(5)
+                page.close()
+                context.close()
+                browser.close()
+                return
+        except Exception:
+            pass
+        
         # 等待页面稳定，但不强制等待所有资源
         try:
             page.wait_for_load_state("networkidle", timeout=10000)
@@ -523,36 +758,32 @@ def run(playwright: Playwright) -> None:
         browser.close()
         return
     
-    # 检查是否已经登录
-    if not check_login_status(page):
-        print("Cookie登录失败或未登录，开始密码登录...")
-        perform_login(page)
-        
-        # 等待登录完成
-        page.wait_for_load_state("networkidle")
-        
-        # 再次检查登录状态
-        if not check_login_status(page):
-            print("登录失败，请检查用户名密码")
-            browser.close()
-            return
-        else:
-            print("密码登录成功")
-            # 保存新的session状态
-            try:
-                context.storage_state(path="./session.json")
-                print("已保存新的session状态")
-            except Exception as e:
-                print(f"保存session失败: {e}")
+    # 仅使用 Cookie 登录，不做密码登录回退
+    if check_login_status(page):
+        print("Cookie 登录成功")
+        # 执行搜索
+        try:
+            perform_search(page, SEARCH_KEYWORD)
+        except Exception:
+            pass
     else:
-        print("Cookie登录成功")
+        print("Cookie 登录失败或未登录。请更新 ./session.json 后重试。")
+        browser.close()
+        return
     
-    # 等待页面加载完成后再进行后续操作
-    page.wait_for_load_state("networkidle")
+    # 等待页面加载完成后再进行后续操作（如有）
+    try:
+        page.wait_for_load_state("networkidle")
+    except Exception:
+        pass
+    time.sleep(5)
     page.close()
 
-    # ---------------------
-    context.storage_state(path="./session.json")
+    # 保持会话文件为最新（若站点刷新了 cookie）
+    try:
+        context.storage_state(path="./session.json")
+    except Exception:
+        pass
     context.close()
     browser.close()
 

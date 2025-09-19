@@ -1,0 +1,8 @@
+如何生成/更新 session.json
+
+- 使用 Microsoft Edge 录制并保存 Cookie 到当前目录：
+  - playwright codegen --channel=msedge -o script.py --save-storage=./session.json https://37ub.w7zvq.net/forum.php
+- 或使用内置 Chromium：
+  - playwright codegen -o script.py --save-storage=./session.json https://37ub.w7zvq.net/forum.php
+- 首次用内置浏览器可能需要安装内核：
+  - playwright install chromium

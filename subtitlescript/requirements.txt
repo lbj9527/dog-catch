@@ -3,4 +3,6 @@ requests>=2.31.0,<3
 beautifulsoup4>=4.12.2,<5
 requests[socks]>=2.31.0,<3
 cloudscraper>=1.2.71,<2
+playwright-stealth>=1.0.5,<2
 playwright>=1.40.0,<2
+setuptools>=65.0.0,<75
