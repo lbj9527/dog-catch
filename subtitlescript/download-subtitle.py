@@ -86,6 +86,104 @@ def still_exists_check(hit_frame, sel, kind, exts2):
     return False
 
 
+def handle_route(route):
+    """
+    处理网络路由请求，对静态资源进行优化处理
+    
+    Args:
+        route: Playwright的路由对象
+    """
+    request = route.request
+    # 如果是图片、字体、CSS等静态资源，直接放行但不影响页面加载状态
+    if any(resource_type in request.url.lower() for resource_type in ['.jpg', '.jpeg', '.png', '.gif', '.css', '.js', '.woff', '.woff2', '.ttf']):
+        # 对于可能404的静态资源，使用continue但不等待响应
+        route.continue_()
+    else:
+        # 对于其他请求正常处理
+        route.continue_()
+
+
+def handle_response(response):
+    """
+    处理HTTP响应，分析和记录错误状态
+    
+    Args:
+        response: Playwright的响应对象
+    """
+    # 只处理4xx和5xx错误状态码
+    if response.status >= 400:
+        # 分析资源类型
+        url = response.url
+        resource_type = "未知资源"
+        impact_level = "⚠️  影响"
+        
+        # 根据URL判断资源类型
+        if any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico']):
+            resource_type = "图片资源"
+            impact_level = "⚠️  影响: 通常不影响核心功能"
+        elif any(ext in url.lower() for ext in ['.css']):
+            resource_type = "样式表"
+            impact_level = "⚠️  影响: 可能影响页面样式"
+        elif any(ext in url.lower() for ext in ['.js']):
+            resource_type = "JavaScript脚本"
+            impact_level = "⚠️  影响: 可能影响页面功能"
+        elif any(ext in url.lower() for ext in ['.woff', '.woff2', '.ttf', '.otf']):
+            resource_type = "字体文件"
+            impact_level = "⚠️  影响: 可能影响文字显示"
+        elif 'api' in url.lower() or 'ajax' in url.lower():
+            resource_type = "API接口"
+            impact_level = "⚠️  影响: 可能影响数据加载"
+        
+        # 根据状态码提供说明
+        status_description = {
+            400: "请求格式错误",
+            401: "未授权访问",
+            403: "访问被禁止", 
+            404: "请求的资源未找到",
+            500: "服务器内部错误",
+            502: "网关错误",
+            503: "服务不可用"
+        }.get(response.status, f"HTTP错误 {response.status}")
+        
+        # 只打印非图片资源的错误，减少干扰
+        if resource_type != "图片资源":
+            print(f"🚨 HTTP错误 [{response.status}] - {status_description}")
+            print(f"   📄 资源类型: {resource_type}")
+            print(f"   🔗 URL: {url}")
+            print(f"   💡 说明: {status_description}")
+            print(f"   {impact_level}")
+            print("-" * 80)
+
+
+def handle_request_failed(request):
+    """
+    处理请求失败的情况
+    
+    Args:
+        request: Playwright的请求对象
+    """
+    # 只处理非图片资源的失败
+    if not any(ext in request.url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico']):
+        failure_reason = request.failure or "未知原因"
+        
+        # 分析失败原因
+        reason_description = {
+            "net::ERR_NETWORK_CHANGED": "网络环境发生变化",
+            "net::ERR_CONNECTION_REFUSED": "连接被拒绝",
+            "net::ERR_TIMED_OUT": "请求超时",
+            "net::ERR_NAME_NOT_RESOLVED": "域名解析失败",
+            "net::ERR_INTERNET_DISCONNECTED": "网络连接断开",
+            "net::ERR_CONNECTION_RESET": "连接被重置",
+            "net::ERR_SSL_PROTOCOL_ERROR": "SSL协议错误"
+        }.get(failure_reason, failure_reason)
+        
+        print(f"❌ 请求失败")
+        print(f"   🔗 URL: {request.url}")
+        print(f"   💥 失败原因: {reason_description}")
+        print(f"   📝 详细信息: {failure_reason}")
+        print("-" * 80)
+
+
 def scan_in_root(r):
         # 短暂等待潜在的异步渲染
         try:
@@ -986,88 +1084,8 @@ def run(playwright: Playwright) -> None:
     # 应用stealth模式隐藏自动化特征
     stealth_sync(page)
     
-    # 拦截网络请求，阻止404资源影响页面加载状态
-    def handle_route(route):
-        request = route.request
-        # 如果是图片、字体、CSS等静态资源，直接放行但不影响页面加载状态
-        if any(resource_type in request.url.lower() for resource_type in ['.jpg', '.jpeg', '.png', '.gif', '.css', '.js', '.woff', '.woff2', '.ttf']):
-            # 对于可能404的静态资源，使用continue但不等待响应
-            route.continue_()
-        else:
-            # 对于其他请求正常处理
-            route.continue_()
-    
     # 注册路由拦截器
     page.route("**/*", handle_route)
-    
-    # 拦截并处理所有HTTP错误响应，进行详细分析
-    def handle_response(response):
-        # 只处理4xx和5xx错误状态码
-        if response.status >= 400:
-            # 分析资源类型
-            url = response.url
-            resource_type = "未知资源"
-            impact_level = "⚠️  影响"
-            
-            # 根据URL判断资源类型
-            if any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico']):
-                resource_type = "图片资源"
-                impact_level = "⚠️  影响: 通常不影响核心功能"
-            elif any(ext in url.lower() for ext in ['.css']):
-                resource_type = "样式表"
-                impact_level = "⚠️  影响: 可能影响页面样式"
-            elif any(ext in url.lower() for ext in ['.js']):
-                resource_type = "JavaScript脚本"
-                impact_level = "⚠️  影响: 可能影响页面功能"
-            elif any(ext in url.lower() for ext in ['.woff', '.woff2', '.ttf', '.otf']):
-                resource_type = "字体文件"
-                impact_level = "⚠️  影响: 可能影响文字显示"
-            elif 'api' in url.lower() or 'ajax' in url.lower():
-                resource_type = "API接口"
-                impact_level = "⚠️  影响: 可能影响数据加载"
-            
-            # 根据状态码提供说明
-            status_description = {
-                400: "请求格式错误",
-                401: "未授权访问",
-                403: "访问被禁止", 
-                404: "请求的资源未找到",
-                500: "服务器内部错误",
-                502: "网关错误",
-                503: "服务不可用"
-            }.get(response.status, f"HTTP错误 {response.status}")
-            
-            # 只打印非图片资源的错误，减少干扰
-            if resource_type != "图片资源":
-                print(f"🚨 HTTP错误 [{response.status}] - {status_description}")
-                print(f"   📄 资源类型: {resource_type}")
-                print(f"   🔗 URL: {url}")
-                print(f"   💡 说明: {status_description}")
-                print(f"   {impact_level}")
-                print("-" * 80)
-    
-    # 处理请求失败的情况
-    def handle_request_failed(request):
-        # 只处理非图片资源的失败
-        if not any(ext in request.url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico']):
-            failure_reason = request.failure or "未知原因"
-            
-            # 分析失败原因
-            reason_description = {
-                "net::ERR_NETWORK_CHANGED": "网络环境发生变化",
-                "net::ERR_CONNECTION_REFUSED": "连接被拒绝",
-                "net::ERR_TIMED_OUT": "请求超时",
-                "net::ERR_NAME_NOT_RESOLVED": "域名解析失败",
-                "net::ERR_INTERNET_DISCONNECTED": "网络连接断开",
-                "net::ERR_CONNECTION_RESET": "连接被重置",
-                "net::ERR_SSL_PROTOCOL_ERROR": "SSL协议错误"
-            }.get(failure_reason, failure_reason)
-            
-            print(f"❌ 请求失败")
-            print(f"   🔗 URL: {request.url}")
-            print(f"   💥 失败原因: {reason_description}")
-            print(f"   📝 详细信息: {failure_reason}")
-            print("-" * 80)
     
     # 注册事件监听器
     page.on("response", handle_response)
