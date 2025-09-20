@@ -8,7 +8,7 @@ from playwright_stealth.stealth import stealth_sync
 from urllib.parse import urljoin, urlparse, quote_plus
 
 # 全局搜索关键字配置：直接修改此处值即可
-SEARCH_KEYWORD = "MIDA-322"
+SEARCH_KEYWORD = "MIDA-321"
 
 
 def load_session_if_exists():
