@@ -7,8 +7,7 @@ MissAV 单演员抓取脚本（里程碑1：功能通）
 - 输出：CSV（固定写入 脚本同级目录 output/actor_[URL最后一段中文名].csv）
 
 用法示例：
-  python ./videoID-spider.py --actress-url "https://missav.live/cn/actress/xxxxx" \
-      --concurrency 2 --delay 1 --retries 2
+  python ./videoID-spider.py --actress-url "https://missav.live/dm18/cn/actresses/%E4%B8%83%E6%B5%B7%E8%92%82%E5%A8%9C" --concurrency 2 --delay 1 --retries 2
 
 注意：
 - 需要在 userscript 目录下的虚拟环境中安装依赖（见 userscript/requirements.txt）

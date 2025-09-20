@@ -2,12 +2,13 @@ import re
 import json
 import os
 import time
+import sys
 from playwright.sync_api import Playwright, sync_playwright, expect
 from playwright_stealth.stealth import stealth_sync
 from urllib.parse import urljoin, urlparse, quote_plus
 
 # 全局搜索关键字配置：直接修改此处值即可
-SEARCH_KEYWORD = "nima-027"
+SEARCH_KEYWORD = "MIDA-322"
 
 
 def load_session_if_exists():
@@ -50,9 +51,6 @@ def check_login_status(page):
                 except:
                     print("无法确定登录状态，假设未登录")
                     return False
-
-
-# 已移除密码登录流程，脚本仅支持通过 ./session.json 的 Cookie 登录
 
 # 解析搜索结果列表，提取 标题、链接、发布时间、用户名、所属专区，并打印
 def scrape_search_results(root, max_items=20):
@@ -286,6 +284,619 @@ def perform_search(page, keyword=SEARCH_KEYWORD):
          print(f"搜索操作失败: {e}")
 
 
+def choose_best_result(results):
+    priorities = [
+        ("自译字幕区", ["自译", "自译字幕"]),
+        ("自提字幕区", ["自提", "自提字幕"]),
+        ("新作区", ["新作"]),
+        ("字幕分享区", ["字幕分享"]),
+    ]
+    def norm(s):
+        if not s:
+            return ""
+        s = re.sub(r"[\[\]【】（）()\s<>]", "", str(s))
+        return s.lower()
+    for official, keys in priorities:
+        for item in results:
+            section = norm(item.get("section", ""))
+            if any(k in section for k in keys):
+                return item, official
+    return None, None
+
+
+def find_and_print_priority_element(root, section=None, do_purchase=False):
+    def text_of(el):
+        try:
+            t = el.inner_text().strip()
+            return t if t else (el.text_content() or "").strip()
+        except Exception:
+            try:
+                return (el.text_content() or "").strip()
+            except Exception:
+                return ""
+
+    def scan_in_root(r):
+        # 短暂等待潜在的异步渲染
+        try:
+            r.wait_for_timeout(200)
+        except Exception:
+            pass
+
+        # 优先级 1：购买主题（misc/pay）
+        try:
+            sel1 = "a.viewpay[title='购买主题'], a.y.viewpay[title='购买主题'], a[href*='mod=misc'][href*='action=pay']"
+            loc1 = r.locator(sel1)
+            c1 = loc1.count()
+            for i in range(c1):
+                el = loc1.nth(i)
+                txt = text_of(el)
+                # 更稳妥：如果不是购买主题，也允许文本包含“购买主题”
+                if '购买主题' in (txt or '购买主题'):
+                    return txt
+        except Exception:
+            pass
+
+        # 优先级 2：购买（attachpay 的购买按钮）
+        try:
+            sel2 = "a[href*='mod=misc'][href*='action=attachpay']"
+            loc2 = r.locator(sel2)
+            c2 = loc2.count()
+            for i in range(c2):
+                el = loc2.nth(i)
+                txt = text_of(el)
+                if txt.strip() == '购买':
+                    return txt
+        except Exception:
+            pass
+
+        # 常见文件后缀
+        exts = ['.zip', '.rar', '.7z', '.ass', '.srt', '.ssa', '.vtt', '.lrc', '.sub']
+
+        # 优先级 3：付费附件项（attachpay 的文件名按钮，排除“购买”字样）
+        try:
+            sel3 = "a[href*='mod=misc'][href*='action=attachpay']"
+            loc3 = r.locator(sel3)
+            c3 = loc3.count()
+            for i in range(c3):
+                el = loc3.nth(i)
+                txt = text_of(el)
+                low = txt.lower()
+                if txt and txt.strip() != '购买' and any(low.endswith(ext) for ext in exts):
+                    return txt
+        except Exception:
+            pass
+
+        # 优先级 4：直链附件（mod=attachment&aid=...）
+        try:
+            sel4 = "a[href*='mod=attachment'][href*='aid=']"
+            loc4 = r.locator(sel4)
+            c4 = loc4.count()
+            for i in range(c4):
+                el = loc4.nth(i)
+                txt = text_of(el)
+                low = txt.lower()
+                if txt and any(low.endswith(ext) for ext in exts):
+                    return txt
+        except Exception:
+            pass
+        return None
+
+    # 先在当前 root 扫描
+    print("🔎 在帖子页按优先级查找元素: 购买主题 > 购买 > 附件付费链接文本 > 直链附件文本")
+    try:
+        found = scan_in_root(root)
+        if found:
+            print(f"📌 命中元素文本: {found}")
+            # 新作区且允许购买时，尝试执行购买流程（仅在新作区生效）
+            if do_purchase and (section or "").strip() == "新作区":
+                try:
+                    print(f"🖱️ 正在尝试购买: {found}")
+                    # 选择器定义（与优先级一致）
+                    seldefs = [
+                        ('buy_topic', "a.viewpay[title='购买主题'], a.y.viewpay[title='购买主题'], a[href*='mod=misc'][href*='action=pay']"),
+                        ('buy', "a[href*='mod=misc'][href*='action=attachpay']"),
+                        ('attachpay_file', "a[href*='mod=misc'][href*='action=attachpay']"),
+                        ('direct_attachment', "a[href*='mod=attachment'][href*='aid=']"),
+                    ]
+                    # 常见文件后缀
+                    exts2 = ['.zip', '.rar', '.7z', '.ass', '.srt', '.ssa', '.vtt', '.lrc', '.sub']
+                    # 在当前页及其所有 frame 中重新定位刚才命中的那个元素
+                    frames_to_scan = [root]
+                    try:
+                        frames_to_scan += (getattr(root, 'frames', []) or [])
+                    except Exception:
+                        pass
+                    kind = sel = None
+                    idx = -1
+                    hit_frame = None
+                    for frx in frames_to_scan:
+                        for k, s in seldefs:
+                            locx = frx.locator(s)
+                            cx = locx.count()
+                            for i in range(cx):
+                                el = locx.nth(i)
+                                try:
+                                    txt = text_of(el)
+                                except Exception:
+                                    txt = ""
+                                low = (txt or "").lower().strip()
+                                # 精确匹配我们刚打印的文本
+                                if (txt or "").strip() == (found or "").strip():
+                                    if k == 'buy':
+                                        if (txt or '').strip() == '购买':
+                                            kind, sel, idx, hit_frame = 'buy', s, i, frx
+                                            break
+                                        else:
+                                            continue
+                                    elif k == 'attachpay_file':
+                                        if (txt or '').strip() != '购买' and any(low.endswith(ext) for ext in exts2):
+                                            kind, sel, idx, hit_frame = 'attachpay_file', s, i, frx
+                                            break
+                                        else:
+                                            continue
+                                    elif k == 'direct_attachment':
+                                        if any(low.endswith(ext) for ext in exts2):
+                                            kind, sel, idx, hit_frame = 'direct_attachment', s, i, frx
+                                            break
+                                        else:
+                                            continue
+                                    else:
+                                        # buy_topic
+                                        kind, sel, idx, hit_frame = 'buy_topic', s, i, frx
+                                        break
+                            if kind:
+                                break
+                        if kind:
+                            break
+                    if not kind:
+                        print("ℹ️ 未能重新定位命中元素，跳过购买流程")
+                    else:
+                        target = hit_frame.locator(sel).nth(idx)
+                        try:
+                            target.scroll_into_view_if_needed(timeout=2000)
+                        except Exception:
+                            pass
+                        try:
+                            target.click(timeout=5000, force=True)
+                        except Exception as e:
+                            print(f"⚠️ 点击命中元素失败: {e}")
+                        # 等待购买窗口出现（如出现）
+                        modal_sel = "#fctrl_attachpay, em#return_attachpay[fwin='attachpay'], div.f_c >> #fctrl_attachpay"
+                        modal_found = False
+                        try:
+                            hit_frame.wait_for_selector(modal_sel, timeout=5000)
+                            modal_found = True
+                            print("🪟 购买窗口已出现")
+                        except Exception:
+                            print("ℹ️ 未检测到购买窗口，继续验证是否已购买/刷新")
+                        if modal_found:
+                            # 点击“购买附件”按钮
+                            btn_selectors = [
+                                "button[name='paysubmit'][value='true']",
+                                ".o.pns button:has-text('购买附件')",
+                                "button.pn.pnc:has-text('购买附件')",
+                            ]
+                            btn_clicked = False
+                            for bs in btn_selectors:
+                                bl = hit_frame.locator(bs)
+                                if bl.count() > 0:
+                                    try:
+                                        bl.first.click(timeout=5000, force=True)
+                                        btn_clicked = True
+                                        break
+                                    except Exception:
+                                        continue
+                            if btn_clicked:
+                                print("🛒 已点击购买附件，等待页面刷新…")
+                                try:
+                                    (hit_frame.page if hasattr(hit_frame, 'page') else root.page).wait_for_load_state('networkidle', timeout=10000)
+                                except Exception:
+                                    try:
+                                        hit_frame.wait_for_timeout(1500)
+                                    except Exception:
+                                        pass
+                        # 刷新后验证：原命中元素是否还存在
+                        exists = False
+                        def still_exists():
+                            nonlocal exists
+                            frs = [hit_frame]
+                            try:
+                                frs += getattr(hit_frame, 'frames', []) or []
+                            except Exception:
+                                pass
+                            for fr2 in frs:
+                                l2 = fr2.locator(sel)
+                                c2 = l2.count()
+                                if c2 == 0:
+                                    continue
+                                for j in range(min(c2, 10)):
+                                    try:
+                                        tj = text_of(l2.nth(j))
+                                    except Exception:
+                                        tj = ""
+                                    lj = (tj or '').lower().strip()
+                                    if kind == 'buy':
+                                        if (tj or '').strip() == '购买':
+                                            exists = True; return
+                                    elif kind == 'attachpay_file':
+                                        if (tj or '').strip() != '购买' and any(lj.endswith(ext) for ext in exts2):
+                                            exists = True; return
+                                    elif kind == 'direct_attachment':
+                                        if any(lj.endswith(ext) for ext in exts2):
+                                            exists = True; return
+                                    else:
+                                        if '购买主题' in (tj or ''):
+                                            exists = True; return
+                        try:
+                            still_exists()
+                        except Exception:
+                            exists = False
+                        if not exists:
+                            print("✅ [{SEARCH_KEYWORD}]已执行购买，并成功")
+                            # 购买成功后，尝试查找直链下载并保存到指定目录
+                            try:
+                                save_root = os.path.join(os.path.dirname(__file__), "output", "downloads", SEARCH_KEYWORD)
+                                os.makedirs(save_root, exist_ok=True)
+                                try:
+                                    click_page = (hit_frame.page if hasattr(hit_frame, 'page') else root.page)
+                                except Exception:
+                                    click_page = root
+                                frames_to_check = []
+                                try:
+                                    frames_to_check.append(hit_frame)
+                                except Exception:
+                                    pass
+                                try:
+                                    frames_to_check += (getattr(hit_frame, 'frames', []) or [])
+                                except Exception:
+                                    pass
+                                # 同时把根容器也加入搜索
+                                try:
+                                    frames_to_check.append(root)
+                                except Exception:
+                                    pass
+                                downloaded = False
+                                candidates = [
+                                    f"a[href*='tu.ymawv.la'][href*='{SEARCH_KEYWORD}'][href$='.rar']",
+                                    f"a[href*='tu.ymawv.la'][href*='{SEARCH_KEYWORD}'][href*='.rar?']",
+                                    "a[href*='tu.ymawv.la'][href$='.rar']",
+                                    "a[href*='tu.ymawv.la'][href*='.rar?']",
+                                    "a[href*='mod=attachment'][href*='aid=']",
+                                ]
+                                for frx in frames_to_check:
+                                    for selx in candidates:
+                                        loc = frx.locator(selx)
+                                        if loc.count() > 0:
+                                            try:
+                                                with click_page.expect_download(timeout=15000) as di:
+                                                    loc.first.click(timeout=5000, force=True)
+                                                download = di.value
+                                                try:
+                                                    fn = download.suggested_filename
+                                                except Exception:
+                                                    fn = f"{SEARCH_KEYWORD}.rar"
+                                                save_path = os.path.join(save_root, fn)
+                                                download.save_as(save_path)
+                                                print(f"✅ 下载完成: {save_path}")
+                                                downloaded = True
+                                                break
+                                            except Exception:
+                                                continue
+                                    if downloaded:
+                                        break
+                                if not downloaded:
+                                    print("⚠️ 未找到直链下载链接，未触发下载")
+                            except Exception as e:
+                                print(f"⚠️ 下载处理异常: {e}")
+                        else:
+                            print("⚠️ 购买未完成或页面未刷新")
+                except Exception as e:
+                    print(f"❌ 购买流程失败: {e}")
+            return
+    except Exception:
+        pass
+
+    # 未命中则在所有 frame 中扫描
+    try:
+        frames = getattr(root, 'frames', []) or []
+        for fr in frames:
+            try:
+                found = scan_in_root(fr)
+                if found:
+                    print(f"📌 命中元素文本: {found}")
+                    # 新作区且允许购买时，尝试执行购买流程（仅在新作区生效）
+                    if do_purchase and (section or "").strip() == "新作区":
+                        try:
+                            print(f"🖱️ 正在尝试购买: {found}")
+                            seldefs = [
+                                ('buy_topic', "a.viewpay[title='购买主题'], a.y.viewpay[title='购买主题'], a[href*='mod=misc'][href*='action=pay']"),
+                                ('buy', "a[href*='mod=misc'][href*='action=attachpay']"),
+                                ('attachpay_file', "a[href*='mod=misc'][href*='action=attachpay']"),
+                                ('direct_attachment', "a[href*='mod=attachment'][href*='aid=']"),
+                            ]
+                            exts2 = ['.zip', '.rar', '.7z', '.ass', '.srt', '.ssa', '.vtt', '.lrc', '.sub']
+                            frames_to_scan = [fr]
+                            try:
+                                frames_to_scan += (getattr(fr, 'frames', []) or [])
+                            except Exception:
+                                pass
+                            kind = sel = None
+                            idx = -1
+                            hit_frame = None
+                            for frx in frames_to_scan:
+                                for k, s in seldefs:
+                                    locx = frx.locator(s)
+                                    cx = locx.count()
+                                    for i in range(cx):
+                                        el = locx.nth(i)
+                                        try:
+                                            txt = text_of(el)
+                                        except Exception:
+                                            txt = ""
+                                        low = (txt or "").lower().strip()
+                                        if (txt or "").strip() == (found or "").strip():
+                                            if k == 'buy':
+                                                if (txt or '').strip() == '购买':
+                                                    kind, sel, idx, hit_frame = 'buy', s, i, frx
+                                                    break
+                                                else:
+                                                    continue
+                                            elif k == 'attachpay_file':
+                                                if (txt or '').strip() != '购买' and any(low.endswith(ext) for ext in exts2):
+                                                    kind, sel, idx, hit_frame = 'attachpay_file', s, i, frx
+                                                    break
+                                                else:
+                                                    continue
+                                            elif k == 'direct_attachment':
+                                                if any(low.endswith(ext) for ext in exts2):
+                                                    kind, sel, idx, hit_frame = 'direct_attachment', s, i, frx
+                                                    break
+                                                else:
+                                                    continue
+                                            else:
+                                                kind, sel, idx, hit_frame = 'buy_topic', s, i, frx
+                                                break
+                                    if kind:
+                                        break
+                                if kind:
+                                    break
+                            if not kind:
+                                print("ℹ️ 未能重新定位命中元素，跳过购买流程")
+                            else:
+                                target = hit_frame.locator(sel).nth(idx)
+                                try:
+                                    target.scroll_into_view_if_needed(timeout=2000)
+                                except Exception:
+                                    pass
+                                try:
+                                    target.click(timeout=5000, force=True)
+                                except Exception as e:
+                                    print(f"⚠️ 点击命中元素失败: {e}")
+                                modal_sel = "#fctrl_attachpay, em#return_attachpay[fwin='attachpay'], div.f_c >> #fctrl_attachpay"
+                                modal_found = False
+                                try:
+                                    hit_frame.wait_for_selector(modal_sel, timeout=5000)
+                                    modal_found = True
+                                    print("🪟 购买窗口已出现")
+                                except Exception:
+                                    print("ℹ️ 未检测到购买窗口，继续验证是否已购买/刷新")
+                                if modal_found:
+                                    btn_selectors = [
+                                        "button[name='paysubmit'][value='true']",
+                                        ".o.pns button:has-text('购买附件')",
+                                        "button.pn.pnc:has-text('购买附件')",
+                                    ]
+                                    btn_clicked = False
+                                    for bs in btn_selectors:
+                                        bl = hit_frame.locator(bs)
+                                        if bl.count() > 0:
+                                            try:
+                                                bl.first.click(timeout=5000, force=True)
+                                                btn_clicked = True
+                                                break
+                                            except Exception:
+                                                continue
+                                    if btn_clicked:
+                                        print("🛒 已点击购买附件，等待页面刷新…")
+                                        try:
+                                            (hit_frame.page if hasattr(hit_frame, 'page') else fr.page).wait_for_load_state('networkidle', timeout=10000)
+                                        except Exception:
+                                            try:
+                                                hit_frame.wait_for_timeout(1500)
+                                            except Exception:
+                                                pass
+                                exists = False
+                                def still_exists():
+                                    nonlocal exists
+                                    frs = [hit_frame]
+                                    try:
+                                        frs += getattr(hit_frame, 'frames', []) or []
+                                    except Exception:
+                                        pass
+                                    for fr2 in frs:
+                                        l2 = fr2.locator(sel)
+                                        c2 = l2.count()
+                                        if c2 == 0:
+                                            continue
+                                        for j in range(min(c2, 10)):
+                                            try:
+                                                tj = text_of(l2.nth(j))
+                                            except Exception:
+                                                tj = ""
+                                            lj = (tj or '').lower().strip()
+                                            if kind == 'buy':
+                                                if (tj or '').strip() == '购买':
+                                                    exists = True; return
+                                            elif kind == 'attachpay_file':
+                                                if (tj or '').strip() != '购买' and any(lj.endswith(ext) for ext in exts2):
+                                                    exists = True; return
+                                            elif kind == 'direct_attachment':
+                                                if any(lj.endswith(ext) for ext in exts2):
+                                                    exists = True; return
+                                            else:
+                                                if '购买主题' in (tj or ''):
+                                                    exists = True; return
+                                try:
+                                    still_exists()
+                                except Exception:
+                                    exists = False
+                                if not exists:
+                                    print("✅ 已执行购买，并成功")
+                                    # 购买成功后，尝试查找直链下载并保存到指定目录
+                                    try:
+                                        save_root = os.path.join(os.path.dirname(__file__), "output", "downloads", SEARCH_KEYWORD)
+                                        os.makedirs(save_root, exist_ok=True)
+                                        try:
+                                            click_page = (hit_frame.page if hasattr(hit_frame, 'page') else fr.page)
+                                        except Exception:
+                                            click_page = fr
+                                        # 确保 click_page 为 Page 对象
+                                        try:
+                                            if not hasattr(click_page, "expect_download") and hasattr(click_page, "page"):
+                                                click_page = click_page.page
+                                        except Exception:
+                                            pass
+                                        frames_to_check = []
+                                        try:
+                                            frames_to_check.append(hit_frame)
+                                        except Exception:
+                                            pass
+                                        try:
+                                            frames_to_check += (getattr(hit_frame, 'frames', []) or [])
+                                        except Exception:
+                                            pass
+                                        # 同时把当前frame与其父级也加入搜索
+                                        try:
+                                            frames_to_check.append(fr)
+                                        except Exception:
+                                            pass
+                                        downloaded = False
+                                        candidates = [
+                                            f"a[href*='tu.ymawv.la'][href*='{SEARCH_KEYWORD}'][href$='.rar']",
+                                            f"a[href*='tu.ymawv.la'][href*='{SEARCH_KEYWORD}'][href*='.rar?']",
+                                            "a[href*='tu.ymawv.la'][href$='.rar']",
+                                            "a[href*='tu.ymawv.la'][href*='.rar?']",
+                                            "a[href*='mod=attachment'][href*='aid=']",
+                                        ]
+                                        for frx in frames_to_check:
+                                            for selx in candidates:
+                                                loc = frx.locator(selx)
+                                                if loc.count() > 0:
+                                                    try:
+                                                        with click_page.expect_download(timeout=20000) as di:
+                                                            loc.first.click(timeout=8000, force=True)
+                                                        download = di.value
+                                                        try:
+                                                            fn = download.suggested_filename
+                                                        except Exception:
+                                                            fn = f"{SEARCH_KEYWORD}.rar"
+                                                        save_path = os.path.join(save_root, fn)
+                                                        download.save_as(save_path)
+                                                        print(f"✅ 下载完成: {save_path}")
+                                                        downloaded = True
+                                                        break
+                                                    except Exception:
+                                                        continue
+                                            if downloaded:
+                                                break
+                                        if not downloaded:
+                                            # 若未找到直链，尝试使用提供的备用直链触发下载
+                                            fallback_url = "https://tu.ymawv.la/tupian/forum/MNGS-014.rar?sign=ChsO0UwizlT7gI%2Bbgf6jL%2FhO%2F%2BXp7aisiwTaE2Z%2Bx1jStnI7eTMLRm7aG99NqCHVXi3Dd3C8OjyykXtC%2FgqchtQg0ot9j42cSzLO3ZLkdMovLblvcZw7muJqIMSiStkl6QY1IFrFv%2BlV1qlV5Df0w2Gtj2%2BzMSeTK3pH4LnkOZa0%2BWRiwRzax9WfxDOCuJG1NT36RFZW32cGO6tbbMQ9%2BwHZ7MCjlHv1qAE47eZccLlKaKLVd3ektfR5VWOlmHPv3cs7a4eNPxAtsHjRRFjwlzWWPPGOcvGlv4oMfHF9iFM%3D"
+                                            try:
+                                                with click_page.expect_download(timeout=20000) as di:
+                                                    click_page.evaluate("url => window.open(url, '_blank')", fallback_url)
+                                                download = di.value
+                                                try:
+                                                    fn = download.suggested_filename
+                                                except Exception:
+                                                    fn = f"{SEARCH_KEYWORD}.rar"
+                                                save_path = os.path.join(save_root, fn)
+                                                download.save_as(save_path)
+                                                print(f"✅ 备用链接下载完成: {save_path}")
+                                                downloaded = True
+                                            except Exception as e:
+                                                print(f"⚠️ 未找到直链链接且备用链接下载失败: {e}")
+                                    except Exception as e:
+                                        print(f"⚠️ 下载处理异常: {e}")
+                                else:
+                                    print("⚠️ 购买未完成或页面未刷新")
+                        except Exception as e:
+                            print(f"❌ 购买流程失败: {e}")
+                    return
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # 兜底：未找到任何匹配元素
+    print("此附件已购买")
+    try:
+        sys.exit(0)
+    except SystemExit:
+        raise
+
+
+def open_result_link(target_page, result, official_section):
+    try:
+        title = result.get("title", "")
+        link = result.get("link", "")
+        print(f"✅ 已选择结果: [{official_section}] {title}")
+        print(f"➡️ 正在进入: {link}")
+        target_page.goto(link, wait_until="domcontentloaded", timeout=20000)
+        try:
+            target_page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass
+        print("🎉 进入成功")
+        # 进入帖子页后按优先级查找并打印元素文本；若为新作区则尝试自动购买
+        try:
+            find_and_print_priority_element(target_page, section=official_section, do_purchase=True)
+        except Exception:
+            pass
+        return True
+    except Exception as e:
+        print(f"❌ 进入失败: {e}")
+        return False
+
+
+def do_prioritized_open(page, keyword=SEARCH_KEYWORD):
+    # 执行站内搜索
+    perform_search(page, keyword)
+
+    # 选择承载搜索结果的页面（可能新开标签页）
+    target_page = page
+    try:
+        for p in page.context.pages:
+            try:
+                if "search.php" in (p.url or ""):
+                    target_page = p
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # 确保搜索结果元素已出现
+    try:
+        target_page.wait_for_selector("a.xst, a[href*='viewthread'], th > a[href*='thread'], h3 a, .pbw a[href*='thread']", timeout=8000)
+    except Exception:
+        pass
+
+    results = scrape_search_results(target_page)
+
+    print("🎯 根据优先级选择专区: 自译字幕区 > 自提字幕区 > 新作区 > 字幕分享区")
+    if not results:
+        print("❌ 未找到符合优先级的搜索结果，退出")
+        return False
+
+    chosen, official = choose_best_result(results)
+    if not chosen:
+        print("❌ 未找到符合优先级的搜索结果，退出")
+        return False
+
+    return open_result_link(target_page, chosen, official)
+
+
 def run(playwright: Playwright) -> None:
     # 启动浏览器 - 使用真实Chrome浏览器而非Chromium
     try:
@@ -374,7 +985,8 @@ def run(playwright: Playwright) -> None:
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
-        }
+        },
+        accept_downloads=True
     )
     
     page = context.new_page()
@@ -730,7 +1342,7 @@ def run(playwright: Playwright) -> None:
                     print(f"保存session失败: {e}")
                 # 结束流程前执行搜索
                 try:
-                    perform_search(page, SEARCH_KEYWORD)
+                    do_prioritized_open(page, SEARCH_KEYWORD)
                 except Exception:
                     pass
                 # 结束流程
@@ -763,7 +1375,7 @@ def run(playwright: Playwright) -> None:
         print("Cookie 登录成功")
         # 执行搜索
         try:
-            perform_search(page, SEARCH_KEYWORD)
+            do_prioritized_open(page, SEARCH_KEYWORD)
         except Exception:
             pass
     else:
