@@ -8,7 +8,7 @@ from playwright_stealth.stealth import stealth_sync
 from urllib.parse import urljoin, urlparse, quote_plus
 
 # 全局搜索关键字配置：直接修改此处值即可
-SEARCH_KEYWORD = "MFYD-054"
+SEARCH_KEYWORD = "DLDSS-425"
 
 
 # 工具函数
@@ -533,12 +533,12 @@ def choose_best_result(results):
 def find_and_print_priority_element(root, section=None, do_purchase=False):
     # 先在当前 root 扫描
     print("🔎 在帖子页按优先级查找元素: 购买主题 > 购买 > 附件付费链接文本 > 直链附件文本")
-    try:
-        found = scan_in_root(root)
-        if found:
-            print(f"📌 命中元素文本: {found}")
-            # 新作区且允许购买时，尝试执行购买流程（仅在新作区生效）
-            if do_purchase and (section or "").strip() == "新作区":
+    
+    found = scan_in_root(root)
+    if found:
+        print(f"📌 命中元素文本: {found}")
+        # 新作区且允许购买时，尝试执行购买流程（仅在新作区生效）
+        if do_purchase and (section or "").strip() == "新作区":
                 try:
                     print(f"🖱️ 正在尝试购买: {found}")
                     # 选择器定义（与优先级一致）
@@ -552,10 +552,7 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                     exts2 = ['.zip', '.rar', '.7z', '.ass', '.srt', '.ssa', '.vtt', '.lrc', '.sub']
                     # 在当前页及其所有 frame 中重新定位刚才命中的那个元素
                     frames_to_scan = [root]
-                    try:
-                        frames_to_scan += (getattr(root, 'frames', []) or [])
-                    except Exception:
-                        pass
+                    frames_to_scan += (getattr(root, 'frames', []) or [])
                     kind = sel = None
                     idx = -1
                     hit_frame = None
@@ -572,26 +569,16 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                                 low = (txt or "").lower().strip()
                                 # 精确匹配我们刚打印的文本
                                 if (txt or "").strip() == (found or "").strip():
-                                    if k == 'buy':
-                                        if (txt or '').strip() == '购买':
-                                            kind, sel, idx, hit_frame = 'buy', s, i, frx
-                                            break
-                                        else:
-                                            continue
-                                    elif k == 'attachpay_file':
-                                        if (txt or '').strip() != '购买' and any(low.endswith(ext) for ext in exts2):
-                                            kind, sel, idx, hit_frame = 'attachpay_file', s, i, frx
-                                            break
-                                        else:
-                                            continue
-                                    elif k == 'direct_attachment':
-                                        if any(low.endswith(ext) for ext in exts2):
-                                            kind, sel, idx, hit_frame = 'direct_attachment', s, i, frx
-                                            break
-                                        else:
-                                            continue
-                                    else:
-                                        # buy_topic
+                                    if k == 'buy' and (txt or '').strip() == '购买':
+                                        kind, sel, idx, hit_frame = 'buy', s, i, frx
+                                        break
+                                    elif k == 'attachpay_file' and (txt or '').strip() != '购买' and any(low.endswith(ext) for ext in exts2):
+                                        kind, sel, idx, hit_frame = 'attachpay_file', s, i, frx
+                                        break
+                                    elif k == 'direct_attachment' and any(low.endswith(ext) for ext in exts2):
+                                        kind, sel, idx, hit_frame = 'direct_attachment', s, i, frx
+                                        break
+                                    elif k == 'buy_topic':
                                         kind, sel, idx, hit_frame = 'buy_topic', s, i, frx
                                         break
                             if kind:
@@ -602,10 +589,7 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                         print("ℹ️ 未能重新定位命中元素，跳过购买流程")
                     else:
                         target = hit_frame.locator(sel).nth(idx)
-                        try:
-                            target.scroll_into_view_if_needed(timeout=2000)
-                        except Exception:
-                            pass
+                        target.scroll_into_view_if_needed(timeout=2000)
                         try:
                             target.click(timeout=5000, force=True)
                         except Exception as e:
@@ -641,16 +625,9 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                                 try:
                                     (hit_frame.page if hasattr(hit_frame, 'page') else root.page).wait_for_load_state('networkidle', timeout=10000)
                                 except Exception:
-                                    try:
-                                        hit_frame.wait_for_timeout(1500)
-                                    except Exception:
-                                        pass
+                                    hit_frame.wait_for_timeout(1500)
                         # 刷新后验证：原命中元素是否还存在
                         exists = still_exists_check(hit_frame, sel, kind, exts2)
-                        try:
-                            pass
-                        except Exception:
-                            exists = False
                         if not exists:
                             print("✅ [{SEARCH_KEYWORD}]已执行购买，并成功")
                             # 购买成功后，尝试查找直链下载并保存到指定目录
@@ -662,19 +639,10 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                                 except Exception:
                                     click_page = root
                                 frames_to_check = []
-                                try:
-                                    frames_to_check.append(hit_frame)
-                                except Exception:
-                                    pass
-                                try:
-                                    frames_to_check += (getattr(hit_frame, 'frames', []) or [])
-                                except Exception:
-                                    pass
+                                frames_to_check.append(hit_frame)
+                                frames_to_check += (getattr(hit_frame, 'frames', []) or [])
                                 # 同时把根容器也加入搜索
-                                try:
-                                    frames_to_check.append(root)
-                                except Exception:
-                                    pass
+                                frames_to_check.append(root)
                                 downloaded = False
                                 candidates = [
                                     f"a[href*='tu.ymawv.la'][href*='{SEARCH_KEYWORD}'][href$='.rar']",
@@ -712,15 +680,12 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                             print("⚠️ 购买未完成或页面未刷新")
                 except Exception as e:
                     print(f"❌ 购买流程失败: {e}")
-            return
-    except Exception:
-        pass
+        return
 
     # 未命中则在所有 frame 中扫描
-    try:
-        frames = getattr(root, 'frames', []) or []
-        for fr in frames:
-            try:
+    frames = getattr(root, 'frames', []) or []
+    for fr in frames:
+        try:
                 found = scan_in_root(fr)
                 if found:
                     print(f"📌 命中元素文本: {found}")
@@ -736,10 +701,7 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                             ]
                             exts2 = ['.zip', '.rar', '.7z', '.ass', '.srt', '.ssa', '.vtt', '.lrc', '.sub']
                             frames_to_scan = [fr]
-                            try:
-                                frames_to_scan += (getattr(fr, 'frames', []) or [])
-                            except Exception:
-                                pass
+                            frames_to_scan += (getattr(fr, 'frames', []) or [])
                             kind = sel = None
                             idx = -1
                             hit_frame = None
@@ -784,10 +746,7 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                                 print("ℹ️ 未能重新定位命中元素，跳过购买流程")
                             else:
                                 target = hit_frame.locator(sel).nth(idx)
-                                try:
-                                    target.scroll_into_view_if_needed(timeout=2000)
-                                except Exception:
-                                    pass
+                                target.scroll_into_view_if_needed(timeout=2000)
                                 try:
                                     target.click(timeout=5000, force=True)
                                 except Exception as e:
@@ -821,15 +780,8 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                                         try:
                                             (hit_frame.page if hasattr(hit_frame, 'page') else fr.page).wait_for_load_state('networkidle', timeout=10000)
                                         except Exception:
-                                            try:
-                                                hit_frame.wait_for_timeout(1500)
-                                            except Exception:
-                                                pass
+                                            hit_frame.wait_for_timeout(1500)
                                 exists = still_exists_check(hit_frame, sel, kind, exts2)
-                                try:
-                                    pass
-                                except Exception:
-                                    exists = False
                                 if not exists:
                                     print("✅ 已执行购买，并成功")
                                     # 购买成功后，尝试查找直链下载并保存到指定目录
@@ -913,10 +865,8 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                         except Exception as e:
                             print(f"❌ 购买流程失败: {e}")
                     return
-            except Exception:
-                continue
-    except Exception:
-        pass
+        except Exception:
+            continue
 
     # 兜底：未找到任何匹配元素
     print("此附件已购买")
