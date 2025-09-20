@@ -8,9 +8,150 @@ from playwright_stealth.stealth import stealth_sync
 from urllib.parse import urljoin, urlparse, quote_plus
 
 # 全局搜索关键字配置：直接修改此处值即可
-SEARCH_KEYWORD = "MIDA-321"
+SEARCH_KEYWORD = "MFYD-054"
 
 
+# 工具函数
+def first_text(loc):
+    """获取定位器的第一个元素的文本内容"""
+    try:
+        if loc.count() > 0:
+            return loc.first.inner_text().strip()
+    except Exception:
+        pass
+    return ""
+
+
+def norm(s):
+    """标准化字符串，去除特殊字符并转为小写"""
+    if not s:
+        return ""
+    s = re.sub(r"[\[\]【】（）()\s<>]", "", str(s))
+    return s.lower()
+
+
+def text_of(el):
+    """获取元素的文本内容"""
+    try:
+        t = el.inner_text().strip()
+        return t if t else (el.text_content() or "").strip()
+    except Exception:
+        try:
+            return (el.text_content() or "").strip()
+        except Exception:
+            return ""
+
+
+def still_exists_check(hit_frame, sel, kind, exts2):
+    """
+    检查购买后原命中元素是否还存在
+    
+    Args:
+        hit_frame: 命中的frame对象
+        sel: 选择器字符串
+        kind: 元素类型 ('buy', 'attachpay_file', 'direct_attachment', 'buy_topic')
+        exts2: 文件扩展名列表
+        
+    Returns:
+        bool: 元素是否仍然存在
+    """
+    frs = [hit_frame]
+    try:
+        frs += getattr(hit_frame, 'frames', []) or []
+    except Exception:
+        pass
+    for fr2 in frs:
+        l2 = fr2.locator(sel)
+        c2 = l2.count()
+        if c2 == 0:
+            continue
+        for j in range(min(c2, 10)):
+            try:
+                tj = text_of(l2.nth(j))
+            except Exception:
+                tj = ""
+            lj = (tj or '').lower().strip()
+            if kind == 'buy':
+                if (tj or '').strip() == '购买':
+                    return True
+            elif kind == 'attachpay_file':
+                if (tj or '').strip() != '购买' and any(lj.endswith(ext) for ext in exts2):
+                    return True
+            elif kind == 'direct_attachment':
+                if any(lj.endswith(ext) for ext in exts2):
+                    return True
+            else:
+                if '购买主题' in (tj or ''):
+                    return True
+    return False
+
+
+def scan_in_root(r):
+        # 短暂等待潜在的异步渲染
+        try:
+            r.wait_for_timeout(200)
+        except Exception:
+            pass
+
+        # 优先级 1：购买主题（misc/pay）
+        try:
+            sel1 = "a.viewpay[title='购买主题'], a.y.viewpay[title='购买主题'], a[href*='mod=misc'][href*='action=pay']"
+            loc1 = r.locator(sel1)
+            c1 = loc1.count()
+            for i in range(c1):
+                el = loc1.nth(i)
+                txt = text_of(el)
+                # 更稳妥：如果不是购买主题，也允许文本包含“购买主题”
+                if '购买主题' in (txt or '购买主题'):
+                    return txt
+        except Exception:
+            pass
+
+        # 优先级 2：购买（attachpay 的购买按钮）
+        try:
+            sel2 = "a[href*='mod=misc'][href*='action=attachpay']"
+            loc2 = r.locator(sel2)
+            c2 = loc2.count()
+            for i in range(c2):
+                el = loc2.nth(i)
+                txt = text_of(el)
+                if txt.strip() == '购买':
+                    return txt
+        except Exception:
+            pass
+
+        # 常见文件后缀
+        exts = ['.zip', '.rar', '.7z', '.ass', '.srt', '.ssa', '.vtt', '.lrc', '.sub']
+
+        # 优先级 3：付费附件项（attachpay 的文件名按钮，排除“购买”字样）
+        try:
+            sel3 = "a[href*='mod=misc'][href*='action=attachpay']"
+            loc3 = r.locator(sel3)
+            c3 = loc3.count()
+            for i in range(c3):
+                el = loc3.nth(i)
+                txt = text_of(el)
+                low = txt.lower()
+                if txt and txt.strip() != '购买' and any(low.endswith(ext) for ext in exts):
+                    return txt
+        except Exception:
+            pass
+
+        # 优先级 4：直链附件（mod=attachment&aid=...）
+        try:
+            sel4 = "a[href*='mod=attachment'][href*='aid=']"
+            loc4 = r.locator(sel4)
+            c4 = loc4.count()
+            for i in range(c4):
+                el = loc4.nth(i)
+                txt = text_of(el)
+                low = txt.lower()
+                if txt and any(low.endswith(ext) for ext in exts):
+                    return txt
+        except Exception:
+            pass
+        return None
+        
 def load_session_if_exists():
     """加载已保存的session状态"""
     session_file = "./session.json"
@@ -84,14 +225,6 @@ def scrape_search_results(root, max_items=20):
         count = min(total, max_items)
         parsed = urlparse(getattr(root, 'url', '') or (root.page.url if hasattr(root, 'page') else ''))
         base = f"{parsed.scheme}://{parsed.netloc}" if parsed.netloc else "https://37ub.w7zvq.net"
-
-        def first_text(loc):
-            try:
-                if loc.count() > 0:
-                    return loc.first.inner_text().strip()
-            except Exception:
-                pass
-            return ""
 
         for i in range(count):
             t = titles.nth(i)
@@ -291,11 +424,6 @@ def choose_best_result(results):
         ("新作区", ["新作"]),
         ("字幕分享区", ["字幕分享"]),
     ]
-    def norm(s):
-        if not s:
-            return ""
-        s = re.sub(r"[\[\]【】（）()\s<>]", "", str(s))
-        return s.lower()
     for official, keys in priorities:
         for item in results:
             section = norm(item.get("section", ""))
@@ -305,82 +433,6 @@ def choose_best_result(results):
 
 
 def find_and_print_priority_element(root, section=None, do_purchase=False):
-    def text_of(el):
-        try:
-            t = el.inner_text().strip()
-            return t if t else (el.text_content() or "").strip()
-        except Exception:
-            try:
-                return (el.text_content() or "").strip()
-            except Exception:
-                return ""
-
-    def scan_in_root(r):
-        # 短暂等待潜在的异步渲染
-        try:
-            r.wait_for_timeout(200)
-        except Exception:
-            pass
-
-        # 优先级 1：购买主题（misc/pay）
-        try:
-            sel1 = "a.viewpay[title='购买主题'], a.y.viewpay[title='购买主题'], a[href*='mod=misc'][href*='action=pay']"
-            loc1 = r.locator(sel1)
-            c1 = loc1.count()
-            for i in range(c1):
-                el = loc1.nth(i)
-                txt = text_of(el)
-                # 更稳妥：如果不是购买主题，也允许文本包含“购买主题”
-                if '购买主题' in (txt or '购买主题'):
-                    return txt
-        except Exception:
-            pass
-
-        # 优先级 2：购买（attachpay 的购买按钮）
-        try:
-            sel2 = "a[href*='mod=misc'][href*='action=attachpay']"
-            loc2 = r.locator(sel2)
-            c2 = loc2.count()
-            for i in range(c2):
-                el = loc2.nth(i)
-                txt = text_of(el)
-                if txt.strip() == '购买':
-                    return txt
-        except Exception:
-            pass
-
-        # 常见文件后缀
-        exts = ['.zip', '.rar', '.7z', '.ass', '.srt', '.ssa', '.vtt', '.lrc', '.sub']
-
-        # 优先级 3：付费附件项（attachpay 的文件名按钮，排除“购买”字样）
-        try:
-            sel3 = "a[href*='mod=misc'][href*='action=attachpay']"
-            loc3 = r.locator(sel3)
-            c3 = loc3.count()
-            for i in range(c3):
-                el = loc3.nth(i)
-                txt = text_of(el)
-                low = txt.lower()
-                if txt and txt.strip() != '购买' and any(low.endswith(ext) for ext in exts):
-                    return txt
-        except Exception:
-            pass
-
-        # 优先级 4：直链附件（mod=attachment&aid=...）
-        try:
-            sel4 = "a[href*='mod=attachment'][href*='aid=']"
-            loc4 = r.locator(sel4)
-            c4 = loc4.count()
-            for i in range(c4):
-                el = loc4.nth(i)
-                txt = text_of(el)
-                low = txt.lower()
-                if txt and any(low.endswith(ext) for ext in exts):
-                    return txt
-        except Exception:
-            pass
-        return None
-
     # 先在当前 root 扫描
     print("🔎 在帖子页按优先级查找元素: 购买主题 > 购买 > 附件付费链接文本 > 直链附件文本")
     try:
@@ -496,39 +548,9 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                                     except Exception:
                                         pass
                         # 刷新后验证：原命中元素是否还存在
-                        exists = False
-                        def still_exists():
-                            nonlocal exists
-                            frs = [hit_frame]
-                            try:
-                                frs += getattr(hit_frame, 'frames', []) or []
-                            except Exception:
-                                pass
-                            for fr2 in frs:
-                                l2 = fr2.locator(sel)
-                                c2 = l2.count()
-                                if c2 == 0:
-                                    continue
-                                for j in range(min(c2, 10)):
-                                    try:
-                                        tj = text_of(l2.nth(j))
-                                    except Exception:
-                                        tj = ""
-                                    lj = (tj or '').lower().strip()
-                                    if kind == 'buy':
-                                        if (tj or '').strip() == '购买':
-                                            exists = True; return
-                                    elif kind == 'attachpay_file':
-                                        if (tj or '').strip() != '购买' and any(lj.endswith(ext) for ext in exts2):
-                                            exists = True; return
-                                    elif kind == 'direct_attachment':
-                                        if any(lj.endswith(ext) for ext in exts2):
-                                            exists = True; return
-                                    else:
-                                        if '购买主题' in (tj or ''):
-                                            exists = True; return
+                        exists = still_exists_check(hit_frame, sel, kind, exts2)
                         try:
-                            still_exists()
+                            pass
                         except Exception:
                             exists = False
                         if not exists:
@@ -705,39 +727,9 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                                                 hit_frame.wait_for_timeout(1500)
                                             except Exception:
                                                 pass
-                                exists = False
-                                def still_exists():
-                                    nonlocal exists
-                                    frs = [hit_frame]
-                                    try:
-                                        frs += getattr(hit_frame, 'frames', []) or []
-                                    except Exception:
-                                        pass
-                                    for fr2 in frs:
-                                        l2 = fr2.locator(sel)
-                                        c2 = l2.count()
-                                        if c2 == 0:
-                                            continue
-                                        for j in range(min(c2, 10)):
-                                            try:
-                                                tj = text_of(l2.nth(j))
-                                            except Exception:
-                                                tj = ""
-                                            lj = (tj or '').lower().strip()
-                                            if kind == 'buy':
-                                                if (tj or '').strip() == '购买':
-                                                    exists = True; return
-                                            elif kind == 'attachpay_file':
-                                                if (tj or '').strip() != '购买' and any(lj.endswith(ext) for ext in exts2):
-                                                    exists = True; return
-                                            elif kind == 'direct_attachment':
-                                                if any(lj.endswith(ext) for ext in exts2):
-                                                    exists = True; return
-                                            else:
-                                                if '购买主题' in (tj or ''):
-                                                    exists = True; return
+                                exists = still_exists_check(hit_frame, sel, kind, exts2)
                                 try:
-                                    still_exists()
+                                    pass
                                 except Exception:
                                     exists = False
                                 if not exists:
