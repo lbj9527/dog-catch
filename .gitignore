@@ -233,6 +233,10 @@ config.local.json
 *.zip
 *.tar.gz
 *.rar
+# 允许 subtitlescript/output/downloads 下的压缩包
+!subtitlescript/output/downloads/**/*.zip
+!subtitlescript/output/downloads/**/*.tar.gz
+!subtitlescript/output/downloads/**/*.rar
 
 # ===== 字幕文件管理相关 =====
 # 大量字幕文件可能不需要提交到git
