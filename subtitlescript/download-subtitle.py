@@ -8,7 +8,7 @@ from playwright_stealth.stealth import stealth_sync
 from urllib.parse import urljoin, urlparse, quote_plus
 
 # 全局搜索关键字配置：直接修改此处值即可
-SEARCH_KEYWORD = "EBWH-257"
+SEARCH_KEYWORD = "WAAA-561"
 
 
 # 工具函数
@@ -637,57 +637,7 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                                 print("✅ 已执行购买，并成功")
                                 # 购买成功后，尝试查找直链下载并保存到指定目录
                                 try:
-                                    save_root = os.path.join(os.path.dirname(__file__), "output", "downloads", SEARCH_KEYWORD)
-                                    os.makedirs(save_root, exist_ok=True)
-                                    try:
-                                        click_page = (hit_frame.page if hasattr(hit_frame, 'page') else fr.page)
-                                    except Exception:
-                                        click_page = fr
-                                    # 确保 click_page 为 Page 对象
-                                    try:
-                                        if not hasattr(click_page, "expect_download") and hasattr(click_page, "page"):
-                                            click_page = click_page.page
-                                    except Exception:
-                                        pass
-                                    frames_to_check = []
-                                    frames_to_check.append(hit_frame)
-                                    frames_to_check += (getattr(hit_frame, 'frames', []) or [])
-                                    # 同时把当前frame与其父级也加入搜索
-                                    try:
-                                        frames_to_check.append(fr)
-                                    except Exception:
-                                        pass
-                                    downloaded = False
-                                    candidates = [
-                                        f"a[href*='tu.ymawv.la'][href*='{SEARCH_KEYWORD}'][href$='.rar']",
-                                        f"a[href*='tu.ymawv.la'][href*='{SEARCH_KEYWORD}'][href*='.rar?']",
-                                        "a[href*='tu.ymawv.la'][href$='.rar']",
-                                        "a[href*='tu.ymawv.la'][href*='.rar?']",
-                                        "a[href*='mod=attachment'][href*='aid=']",
-                                    ]
-                                    for frx in frames_to_check:
-                                        for selx in candidates:
-                                            loc = frx.locator(selx)
-                                            if loc.count() > 0:
-                                                try:
-                                                    with click_page.expect_download(timeout=20000) as di:
-                                                        loc.first.click(timeout=8000, force=True)
-                                                    download = di.value
-                                                    try:
-                                                        fn = download.suggested_filename
-                                                    except Exception:
-                                                        fn = f"{SEARCH_KEYWORD}.rar"
-                                                    save_path = os.path.join(save_root, fn)
-                                                    download.save_as(save_path)
-                                                    print(f"✅ 下载完成: {save_path}")
-                                                    downloaded = True
-                                                    break
-                                                except Exception:
-                                                    continue
-                                        if downloaded:
-                                            break
-                                    if not downloaded:
-                                        print(f"⚠️ 未找到直链链接且备用链接下载失败: {e}")
+                                    try_download_after_purchase(hit_frame, fr, SEARCH_KEYWORD)
                                 except Exception as e:
                                     print(f"⚠️ 下载处理异常: {e}")
                             else:
@@ -698,12 +648,39 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
             else:
               # 兜底：未找到任何匹配元素
               print("此附件已购买")
+              # 新增：提取解压密码并写入/更新对应txt
+              try:
+                  pwd = extract_and_write_password(
+                      [root, getattr(root, "page", None), getattr(root, "main_frame", None)],
+                      downloaded_path=None,
+                      timeout_ms=5000,
+                      verbose=True
+                  )
+                  if pwd:
+                      import os
+                      save_root = os.path.join(os.path.dirname(__file__), "output", "downloads", SEARCH_KEYWORD)
+                      os.makedirs(save_root, exist_ok=True)
+                      items = os.listdir(save_root)
+                      archives = [x for x in items if x.lower().endswith((".rar", ".zip"))]
+                      txts = [x for x in items if x.lower().endswith(".txt")]
+                      if archives:
+                          base = os.path.splitext(archives[0])[0]
+                          target_txt_path = os.path.join(save_root, base + ".txt")
+                      elif txts:
+                          target_txt_path = os.path.join(save_root, txts[0])
+                      else:
+                          target_txt_path = os.path.join(save_root, f"{SEARCH_KEYWORD}.txt")
+                      with open(target_txt_path, "w", encoding="utf-8") as f:
+                          f.write(pwd)
+                      print(f"📝 已写入/更新解压密码: {target_txt_path}")
+                  else:
+                      print("ℹ️ 未找到解压密码元素，跳过写入。")
+              except Exception as e:
+                  print(f"⚠️ 提取或写入解压密码失败: {e}")
               try:
                   sys.exit(0)
               except SystemExit:
                   raise
-            # except Exception:
-            #     continue
 
         return
 
@@ -1192,5 +1169,233 @@ def run(playwright: Playwright) -> None:
     browser.close()
 
 
-with sync_playwright() as playwright:
-    run(playwright)
+# 新增：从页面/Frame提取压缩包解压密码并写入与下载文件同名的txt
+def extract_and_write_password(contexts, downloaded_path, timeout_ms=5000, verbose=True):
+    import os
+    try:
+        # 允许在未提供 downloaded_path 的情况下也进行提取，不做早退
+        # if not downloaded_path:
+        #     return None
+        # 构建候选上下文列表并去重、过滤空值
+        uniq = []
+        seen = set()
+        for c in contexts or []:
+            if c is None:
+                continue
+            try:
+                cid = id(c)
+            except Exception:
+                continue
+            if cid in seen:
+                continue
+            seen.add(cid)
+            uniq.append(c)
+
+        password = None
+        for ctx in uniq:
+            try:
+                # # 优先：根据“解压密码”锚点，获取其后第一个 .blockcode 内首个 li
+                # try:
+                #     # 非致命等待，提升稳定性
+                #     ctx.wait_for_selector("td.t_f[id^='postmessage_']", timeout=timeout_ms)
+                # except Exception:
+                #     pass
+
+                # li_el = None
+                # anchor_xpath = (
+                #     "xpath=//td[contains(@class,'t_f') and starts-with(@id,'postmessage_')]//"
+                #     "*[contains(normalize-space(.),'解压密码')]/following::div[contains(@class,'blockcode')][1]//ol/li[1]"
+                # )
+                # try:
+                #     li_el = ctx.query_selector(anchor_xpath)
+                #     if li_el is None:
+                #         li_el = ctx.wait_for_selector(anchor_xpath, timeout=1000)
+                # except Exception:
+                #     li_el = None
+
+                # if li_el:
+                #     try:
+                #         t = li_el.inner_text().strip()
+                #     except Exception:
+                #         t = ""
+                #     if t:
+                #         password = t
+                #         if verbose:
+                #             print("🔎 已根据【解压密码】锚点定位")
+
+                #回退：在帖子主体内，遍历所有 .blockcode 的首个 li，过滤 magnet/http
+                if not password:
+                    candidates_sel = "td.t_f[id^='postmessage_'] div.blockcode ol > li:first-child"
+                    loc = None
+                    try:
+                        loc = ctx.locator(candidates_sel)
+                    except Exception:
+                        loc = None
+                    cnt = 0
+                    try:
+                        cnt = loc.count() if loc else 0
+                    except Exception:
+                        cnt = 0
+
+                    kept = []
+                    for i in range(cnt):
+                        txt = ""
+                        try:
+                            txt = loc.nth(i).inner_text().strip()
+                        except Exception:
+                            txt = ""
+                        low = (txt or "").lower()
+                        if not txt:
+                            continue
+                        if low.startswith("magnet:") or "magnet:?" in low:
+                            continue
+                        if low.startswith("http://") or low.startswith("https://"):
+                            continue
+                        kept.append(txt)
+                    if kept:
+                        password = kept[0]
+                        if verbose:
+                            print("🧮 回退候选已过滤，已选择第一个")
+            except Exception:
+                continue
+            if password:
+                break
+
+        if password:
+            if downloaded_path:
+                base, _ = os.path.splitext(downloaded_path)
+                txt_path = base + ".txt"
+                try:
+                    with open(txt_path, "w", encoding="utf-8") as f:
+                        f.write(password)
+                    if verbose:
+                        print(f"📝 已写入解压密码: {txt_path}")
+                except Exception as e:
+                    if verbose:
+                        print(f"⚠️ 写入解压密码文件失败: {e}")
+            else:
+                if verbose:
+                    print(f"✅ 已提取解压密码（未提供保存路径，跳过自动写入）: {password}")
+            return password
+        else:
+            if verbose:
+                print("ℹ️ 未找到解压密码元素（.blockcode/...），跳过写入。")
+            return None
+    except Exception as e:
+        if verbose:
+            print(f"⚠️ 提取解压密码时发生异常: {e}")
+        return None
+
+
+def try_download_after_purchase(hit_frame, parent_context, search_keyword, save_root=None, candidate_domains=None, candidate_selectors=None, timeout_download_ms=20000, click_timeout_ms=8000, verbose=True):
+    import os
+    # 1) 计算保存目录
+    if save_root is None:
+        save_root = os.path.join(os.path.dirname(__file__), "output", "downloads", search_keyword)
+    os.makedirs(save_root, exist_ok=True)
+
+    # 2) 解析 click_page（确保具备 expect_download）
+    click_page = None
+    try:
+        click_page = getattr(hit_frame, 'page', None) or getattr(parent_context, 'page', None)
+    except Exception:
+        click_page = None
+    if click_page is None:
+        click_page = parent_context
+    try:
+        if not hasattr(click_page, "expect_download") and hasattr(click_page, "page"):
+            click_page = click_page.page
+    except Exception:
+        pass
+
+    # 3) 汇总需要扫描的 frames
+    frames_to_check = []
+    frames_to_check.append(hit_frame)
+    frames_to_check += (getattr(hit_frame, 'frames', []) or [])
+    try:
+        frames_to_check.append(parent_context)
+    except Exception:
+        pass
+    # 去重
+    unique_frames = []
+    seen_ids = set()
+    for f in frames_to_check:
+        try:
+            fid = id(f)
+            if fid not in seen_ids:
+                unique_frames.append(f)
+                seen_ids.add(fid)
+        except Exception:
+            pass
+    frames_to_check = unique_frames
+
+    # 4) 构建候选选择器
+    if candidate_domains is None:
+        candidate_domains = ["tu.ymawv.la"]
+    if candidate_selectors is None:
+        candidates = []
+        for domain in candidate_domains:
+            candidates.append(f"a[href*='{domain}'][href*='{search_keyword}'][href$='.rar']")
+            candidates.append(f"a[href*='{domain}'][href*='{search_keyword}'][href*='.rar?']")
+            candidates.append(f"a[href*='{domain}'][href$='.rar']")
+            candidates.append(f"a[href*='{domain}'][href*='.rar?']")
+        candidates.append("a[href*='mod=attachment'][href*='aid=']")
+    else:
+        candidates = candidate_selectors
+
+    # 5) 遍历点击并等待下载
+    last_error = None
+    for frx in frames_to_check:
+        for selx in candidates:
+            try:
+                loc = frx.locator(selx)
+                cnt = 0
+                try:
+                    cnt = loc.count()
+                except Exception:
+                    cnt = 0
+                if cnt > 0:
+                    try:
+                        with click_page.expect_download(timeout=timeout_download_ms) as di:
+                            loc.first.click(timeout=click_timeout_ms, force=True)
+                        download = di.value
+                        try:
+                            fn = download.suggested_filename
+                        except Exception:
+                            fn = f"{search_keyword}.rar"
+                        save_path = os.path.join(save_root, fn)
+                        download.save_as(save_path)
+                        if verbose:
+                            print(f"✅ 下载完成: {save_path}")
+                        # 新增：下载成功后提取页面解压密码并写入同名txt
+                        try:
+                            contexts_for_pwd = [
+                                frx,
+                                hit_frame,
+                                parent_context,
+                                getattr(parent_context, "main_frame", None),
+                                click_page,
+                            ]
+                            extract_and_write_password(contexts_for_pwd, save_path, timeout_ms=5000, verbose=verbose)
+                        except Exception:
+                            # 不影响下载流程
+                            pass
+                        return True, save_path, "下载完成"
+                    except Exception as e:
+                        last_error = str(e)
+                        continue
+            except Exception as e:
+                last_error = str(e)
+                continue
+
+    # 6) 兜底：未触发下载
+    if verbose:
+        if last_error:
+            print(f"⚠️ 未找到直链下载链接，或点击未触发下载：{last_error}")
+        else:
+            print("⚠️ 未找到直链下载链接，或点击未触发下载")
+    return False, None, last_error or "未找到直链下载链接，或点击未触发下载"
+
+if __name__ == "__main__":
+    with sync_playwright() as playwright:
+        run(playwright)
