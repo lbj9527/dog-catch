@@ -8,7 +8,7 @@ from playwright_stealth.stealth import stealth_sync
 from urllib.parse import urljoin, urlparse, quote_plus
 
 # 全局搜索关键字配置：直接修改此处值即可
-SEARCH_KEYWORD = "ROYD-264"
+SEARCH_KEYWORD = "JUR-479"
 
 
 # 工具函数
@@ -565,8 +565,179 @@ def download_zone_c(page_or_frame, keyword, save_root=None, options=None):
 
 
 def download_zone_d(page_or_frame, keyword, save_root=None, options=None):
-    print("ℹ️ Zone D（字幕分享区）下载逻辑暂未实现")
-    return {"success": False, "zone": "D", "message": "not_implemented", "payload": None}
+    """
+    D区（字幕分享区）下载逻辑：
+    1. 预提取解压密码（不写入）
+    2. 点击附件链接，捕获新页面弹出和下载
+    3. 下载成功后写入预提取的密码
+    """
+    import os
+    
+    # 1) 计算保存目录
+    if save_root is None:
+        save_root = os.path.join(os.path.dirname(__file__), "output", "downloads", keyword)
+    os.makedirs(save_root, exist_ok=True)
+    
+    # 2) 获取页面和上下文
+    try:
+        if hasattr(page_or_frame, 'page'):
+            click_page = page_or_frame.page
+            current_frame = page_or_frame
+        else:
+            click_page = page_or_frame
+            current_frame = click_page.main_frame
+        
+        ctx = click_page.context
+    except Exception as e:
+        print(f"❌ 获取页面上下文失败: {e}")
+        return {"success": False, "zone": "D", "message": f"context_error: {e}", "payload": None}
+    
+    # 3) 扫描附件链接
+    attachment_selectors = [
+        "dl.tattl dd p.attnm a",                         # 优先匹配压缩包链接
+        "a[href*='mod=attachment'][id^='aid']",
+        "dl.tattl a[id^='aid']",
+        "a[href*='forum.php'][href*='mod=attachment']"
+    ]
+    
+    target_link = None
+    target_filename = None
+    
+    for selector in attachment_selectors:
+        try:
+            links = current_frame.locator(selector)
+            count = links.count()
+            if count > 0:
+                print(f"🔍 找到 {count} 个附件链接")
+                # 优先选择包含关键词且非图片的链接
+                for i in range(count):
+                    link = links.nth(i)
+                    try:
+                        link_text = link.text_content() or ""
+                        # 排除图片文件
+                        if any(link_text.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif']):
+                            continue
+                        if keyword.upper() in link_text.upper():
+                            target_link = link
+                            target_filename = link_text.strip()
+                            print(f"✅ 选中包含关键词的附件: {target_filename}")
+                            break
+                    except Exception:
+                        continue
+                
+                # 如果没有找到包含关键词的，选择第一个非图片文件
+                if target_link is None:
+                    for i in range(count):
+                        link = links.nth(i)
+                        try:
+                            link_text = link.text_content() or f"{keyword}.zip"
+                            # 排除图片文件
+                            if any(link_text.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif']):
+                                continue
+                            target_link = link
+                            target_filename = link_text.strip()
+                            print(f"✅ 选中第一个非图片附件: {target_filename}")
+                            break
+                        except Exception:
+                            continue
+                
+                # 兜底：如果还没找到，选择第一个
+                if target_link is None:
+                    target_link = links.first
+                    try:
+                        target_filename = target_link.text_content() or f"{keyword}.zip"
+                    except Exception:
+                        target_filename = f"{keyword}.zip"
+                    print(f"✅ 兜底选择第一个附件: {target_filename}")
+                break
+        except Exception as e:
+            continue
+    
+    if target_link is None:
+        print("❌ 未找到附件链接")
+        return {"success": False, "zone": "D", "message": "no_attachment_found", "payload": None}
+    
+    # 4) 预提取解压密码（不写入）
+    pre_pwd = None
+    try:
+        contexts_for_pre = [current_frame, click_page, getattr(click_page, 'main_frame', None)]
+        contexts_for_pre = [ctx for ctx in contexts_for_pre if ctx is not None]
+        # 去重
+        seen = set()
+        unique_contexts = []
+        for ctx_item in contexts_for_pre:
+            if id(ctx_item) not in seen:
+                seen.add(id(ctx_item))
+                unique_contexts.append(ctx_item)
+        
+        pre_pwd = extract_and_write_password(unique_contexts, downloaded_path=None, timeout_ms=5000, verbose=True)
+        if pre_pwd:
+            print("🔎 预提取解压密码：成功（不写入）")
+        else:
+            print("🔎 预提取解压密码：未找到（继续下载）")
+    except Exception as e:
+        print(f"🔎 预提取解压密码：异常（{e}），继续下载")
+        pre_pwd = None
+    
+    # 5) 点击附件并等待下载（D区会跳转新页面下载）
+    try:
+        # 滚动到元素可见
+        target_link.scroll_into_view_if_needed(timeout=3000)
+        
+        # D区特殊处理：点击后会跳转新页面，需要在新页面监听下载
+        try:
+            # 同时监听新页面弹出和下载事件
+            with click_page.expect_popup(timeout=10000) as popup_info:
+                target_link.click(timeout=5000)
+            
+            # 获取新页面
+            new_page = popup_info.value
+            print("🪟 捕获到新页面，等待自动下载...")
+            
+            # 在新页面上监听下载事件
+            with new_page.expect_download(timeout=30000) as download_info:
+                # 等待新页面加载并自动触发下载
+                new_page.wait_for_load_state('domcontentloaded', timeout=10000)
+            
+            # 获取下载对象
+            download = download_info.value
+            print("✅ 成功捕获新页面下载")
+            
+        except Exception as e:
+            # 如果没有新页面弹出，回退到原页面监听
+            print(f"ℹ️ 未检测到新页面弹出，回退到原页面监听: {e}")
+            with click_page.expect_download(timeout=30000) as download_info:
+                target_link.click(timeout=5000)
+            download = download_info.value
+            print("✅ 成功捕获原页面下载")
+        
+        # 6) 保存下载文件
+        # 确保文件名有正确的扩展名
+        if not any(target_filename.lower().endswith(ext) for ext in ['.zip', '.rar', '.7z', '.7zip']):
+            if '.' not in target_filename:
+                target_filename += '.zip'
+        
+        save_path = os.path.join(save_root, target_filename)
+        download.save_as(save_path)
+        print(f"✅ 下载完成: {save_path}")
+        
+        # 7) 成功后写入密码
+        if pre_pwd:
+            try:
+                txt_path = os.path.splitext(save_path)[0] + ".txt"
+                with open(txt_path, 'w', encoding='utf-8') as f:
+                    f.write(pre_pwd)
+                print(f"📝 使用预提取密码写入: {txt_path}")
+            except Exception as e:
+                print(f"⚠️ 写入密码文件失败: {e}")
+        else:
+            print("ℹ️ 未预提取到密码，跳过写入")
+        
+        return {"success": True, "zone": "D", "message": "download_completed", "payload": {"save_path": save_path, "filename": target_filename}}
+        
+    except Exception as e:
+        print(f"❌ 下载失败: {e}")
+        return {"success": False, "zone": "D", "message": f"download_failed: {e}", "payload": None}
 
 
 def download_handler(section, page_or_frame, keyword, save_root=None, options=None):
@@ -655,6 +826,28 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                         else:
                             target = hit_frame.locator(sel).nth(idx)
                             target.scroll_into_view_if_needed(timeout=2000)
+                            
+                            # 预提取解压密码（购买前执行，不写入文件）
+                            pre_pwd = None
+                            try:
+                                contexts_for_pre = [hit_frame, fr, root, getattr(root, 'page', None), getattr(root, 'main_frame', None)]
+                                contexts_for_pre = [ctx for ctx in contexts_for_pre if ctx is not None]
+                                # 去重
+                                seen = set()
+                                unique_contexts = []
+                                for ctx in contexts_for_pre:
+                                    if id(ctx) not in seen:
+                                        seen.add(id(ctx))
+                                        unique_contexts.append(ctx)
+                                pre_pwd = extract_and_write_password(unique_contexts, downloaded_path=None, timeout_ms=5000, verbose=True)
+                                if pre_pwd:
+                                    print("🔎 预提取解压密码：成功（不写入）")
+                                else:
+                                    print("🔎 预提取解压密码：未找到（继续购买与下载）")
+                            except Exception as e:
+                                print(f"🔎 预提取解压密码：异常（{e}），继续购买与下载")
+                                pre_pwd = None
+                            
                             try:
                                 target.click(timeout=5000, force=True)
                             except Exception as e:
@@ -694,7 +887,19 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                                 print("✅ 已执行购买，并成功")
                                 # 购买成功后，尝试查找直链下载并保存到指定目录
                                 try:
-                                    try_download_after_purchase(hit_frame, fr, SEARCH_KEYWORD)
+                                    success, save_path, msg = try_download_after_purchase(hit_frame, fr, SEARCH_KEYWORD, skip_password_extraction=True)
+                                    if success and save_path and pre_pwd:
+                                        # 使用预提取的密码写入同名txt文件
+                                        import os
+                                        txt_path = os.path.splitext(save_path)[0] + ".txt"
+                                        try:
+                                            with open(txt_path, 'w', encoding='utf-8') as f:
+                                                f.write(pre_pwd)
+                                            print(f"📝 使用预提取密码写入: {txt_path}")
+                                        except Exception as e:
+                                            print(f"⚠️ 写入密码文件失败: {e}")
+                                    elif success and save_path and not pre_pwd:
+                                        print("ℹ️ 未预提取到密码，跳过写入")
                                 except Exception as e:
                                     print(f"⚠️ 下载处理异常: {e}")
                             else:
@@ -1322,7 +1527,7 @@ def extract_and_write_password(contexts, downloaded_path, timeout_ms=5000, verbo
         return None
 
 
-def try_download_after_purchase(hit_frame, parent_context, search_keyword, save_root=None, candidate_domains=None, candidate_selectors=None, timeout_download_ms=20000, click_timeout_ms=8000, verbose=True):
+def try_download_after_purchase(hit_frame, parent_context, search_keyword, save_root=None, candidate_domains=None, candidate_selectors=None, timeout_download_ms=20000, click_timeout_ms=8000, skip_password_extraction=False, verbose=True):
     import os
     # 1) 计算保存目录
     if save_root is None:
@@ -1402,19 +1607,20 @@ def try_download_after_purchase(hit_frame, parent_context, search_keyword, save_
                         download.save_as(save_path)
                         if verbose:
                             print(f"✅ 下载完成: {save_path}")
-                        # 新增：下载成功后提取页面解压密码并写入同名txt
-                        try:
-                            contexts_for_pwd = [
-                                frx,
-                                hit_frame,
-                                parent_context,
-                                getattr(parent_context, "main_frame", None),
-                                click_page,
-                            ]
-                            extract_and_write_password(contexts_for_pwd, save_path, timeout_ms=5000, verbose=verbose)
-                        except Exception:
-                            # 不影响下载流程
-                            pass
+                        # 新增：下载成功后提取页面解压密码并写入同名txt（可通过参数跳过）
+                        if not skip_password_extraction:
+                            try:
+                                contexts_for_pwd = [
+                                    frx,
+                                    hit_frame,
+                                    parent_context,
+                                    getattr(parent_context, "main_frame", None),
+                                    click_page,
+                                ]
+                                extract_and_write_password(contexts_for_pwd, save_path, timeout_ms=5000, verbose=verbose)
+                            except Exception:
+                                # 不影响下载流程
+                                pass
                         return True, save_path, "下载完成"
                     except Exception as e:
                         last_error = str(e)
