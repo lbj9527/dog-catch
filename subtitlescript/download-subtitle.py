@@ -8,7 +8,7 @@ from playwright_stealth.stealth import stealth_sync
 from urllib.parse import urljoin, urlparse, quote_plus
 
 # 全局搜索关键字配置：直接修改此处值即可
-SEARCH_KEYWORD = "KSBJ-397"
+SEARCH_KEYWORD = "ROYD-264"
 
 
 # 工具函数
@@ -705,35 +705,6 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
             else:
               # 兜底：未找到任何匹配元素
               print("此附件已购买")
-              # 新增：提取解压密码并写入/更新对应txt
-              try:
-                  pwd = extract_and_write_password(
-                      [root, getattr(root, "page", None), getattr(root, "main_frame", None)],
-                      downloaded_path=None,
-                      timeout_ms=5000,
-                      verbose=True
-                  )
-                  if pwd:
-                      import os
-                      save_root = os.path.join(os.path.dirname(__file__), "output", "downloads", SEARCH_KEYWORD)
-                      os.makedirs(save_root, exist_ok=True)
-                      items = os.listdir(save_root)
-                      archives = [x for x in items if x.lower().endswith((".rar", ".zip"))]
-                      txts = [x for x in items if x.lower().endswith(".txt")]
-                      if archives:
-                          base = os.path.splitext(archives[0])[0]
-                          target_txt_path = os.path.join(save_root, base + ".txt")
-                      elif txts:
-                          target_txt_path = os.path.join(save_root, txts[0])
-                      else:
-                          target_txt_path = os.path.join(save_root, f"{SEARCH_KEYWORD}.txt")
-                      with open(target_txt_path, "w", encoding="utf-8") as f:
-                          f.write(pwd)
-                      print(f"📝 已写入/更新解压密码: {target_txt_path}")
-                  else:
-                      print("ℹ️ 未找到解压密码元素，跳过写入。")
-              except Exception as e:
-                  print(f"⚠️ 提取或写入解压密码失败: {e}")
               try:
                   sys.exit(0)
               except SystemExit:
