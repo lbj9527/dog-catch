@@ -8,7 +8,7 @@ from playwright_stealth.stealth import stealth_sync
 from urllib.parse import urljoin, urlparse, quote_plus
 
 # 全局搜索关键字配置：直接修改此处值即可
-SEARCH_KEYWORD = "WAAA-561"
+SEARCH_KEYWORD = "KSBJ-397"
 
 
 # 工具函数
@@ -529,15 +529,72 @@ def choose_best_result(results):
                 return item, official
     return None, None
 
+# === 统一下载调度入口与分区实现（A/B/D占位，C复用现有新作区逻辑） ===
+
+def get_zone_code(section):
+    s = (section or "").strip()
+    if s == "自译字幕区":
+        return "A"
+    if s == "自提字幕区":
+        return "B"
+    if s == "新作区":
+        return "C"
+    if s == "字幕分享区":
+        return "D"
+    return "UNKNOWN"
+
+
+def download_zone_a(page_or_frame, keyword, save_root=None, options=None):
+    print("ℹ️ Zone A（自译字幕区）下载逻辑暂未实现")
+    return {"success": False, "zone": "A", "message": "not_implemented", "payload": None}
+
+
+def download_zone_b(page_or_frame, keyword, save_root=None, options=None):
+    print("ℹ️ Zone B（自提字幕区）下载逻辑暂未实现")
+    return {"success": False, "zone": "B", "message": "not_implemented", "payload": None}
+
+
+def download_zone_c(page_or_frame, keyword, save_root=None, options=None):
+    # 复用现有新作区逻辑（包含购买+下载）
+    try:
+        find_and_print_priority_element(page_or_frame, section="新作区", do_purchase=True)
+        return {"success": True, "zone": "C", "message": "zone_c_flow_completed", "payload": None}
+    except Exception as e:
+        print(f"❌ Zone C 执行失败: {e}")
+        return {"success": False, "zone": "C", "message": str(e), "payload": None}
+
+
+def download_zone_d(page_or_frame, keyword, save_root=None, options=None):
+    print("ℹ️ Zone D（字幕分享区）下载逻辑暂未实现")
+    return {"success": False, "zone": "D", "message": "not_implemented", "payload": None}
+
+
+def download_handler(section, page_or_frame, keyword, save_root=None, options=None):
+    if page_or_frame is None:
+        return {"success": False, "zone": None, "message": "invalid_page_or_frame", "payload": None}
+    zone = get_zone_code(section)
+    try:
+        if zone == "A":
+            return download_zone_a(page_or_frame, keyword, save_root, options)
+        elif zone == "B":
+            return download_zone_b(page_or_frame, keyword, save_root, options)
+        elif zone == "C":
+            return download_zone_c(page_or_frame, keyword, save_root, options)
+        elif zone == "D":
+            return download_zone_d(page_or_frame, keyword, save_root, options)
+        else:
+            print(f"ℹ️ 未识别的专区: {section}")
+            return {"success": False, "zone": zone, "message": "unknown_section", "payload": None}
+    except Exception as e:
+        print(f"⚠️ 下载处理异常: {e}")
+        return {"success": False, "zone": zone, "message": str(e), "payload": None}
+
 
 def find_and_print_priority_element(root, section=None, do_purchase=False):
     # 先在当前 root 扫描
     print("🔎 在帖子页按优先级查找元素: 购买主题 > 购买 > 附件付费链接文本 > 直链附件文本")
     
-    # found = scan_in_root(root)
-    # if found:
-    #     print(f"📌 命中元素文本: {found}")
-        # 新作区且允许购买时，尝试执行购买流程（仅在新作区生效）
+    # 新作区且允许购买时，尝试执行购买流程（仅在新作区生效）
     if do_purchase and (section or "").strip() == "新作区":
       # 未命中则在所有 frame 中扫描
         frames = getattr(root, 'frames', []) or []
@@ -697,11 +754,18 @@ def open_result_link(target_page, result, official_section):
         except Exception:
             pass
         print("🎉 进入成功")
-        # 进入帖子页后按优先级查找并打印元素文本；若为新作区则尝试自动购买
+        # 统一通过下载调度入口，根据专区路由执行下载流程
         try:
-            find_and_print_priority_element(target_page, section=official_section, do_purchase=True)
-        except Exception:
-            pass
+            result_obj = download_handler(official_section, target_page, SEARCH_KEYWORD, save_root=None, options=None)
+            ok = bool(result_obj.get("success"))
+            zone = result_obj.get("zone")
+            msg = result_obj.get("message")
+            if ok:
+                print(f"✅ 下载流程完成: zone={zone} msg={msg}")
+            else:
+                print(f"ℹ️ 下载流程未完成: zone={zone} msg={msg}")
+        except Exception as e:
+            print(f"⚠️ 下载流程异常: {e}")
         return True
     except Exception as e:
         print(f"❌ 进入失败: {e}")
