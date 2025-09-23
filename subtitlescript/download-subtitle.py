@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlparse, quote_plus
 
 # 全局搜索关键字配置：直接修改此处值即可
 #特殊番号FC2PPV-4620098
-SEARCH_KEYWORD = "IPTD-763"
+SEARCH_KEYWORD = "MIDA-319"
 
 
 # 工具函数
@@ -293,7 +293,7 @@ def check_login_status(page):
                     return False
 
 # 解析搜索结果列表，提取 标题、链接、发布时间、用户名、所属专区，并打印
-def scrape_search_results(root, max_items=20):
+def scrape_search_results(root, max_items=30):
     # root 可以是 Page 或 Frame
     results = []
     # 优先尝试当前 root；若未命中，则在所有 frame 中寻找结果容器
@@ -523,11 +523,21 @@ def choose_best_result(results):
         ("新作区", ["新作"]),
         ("字幕分享区", ["字幕分享"]),
     ]
+    
+    # 按优先级顺序查找，确保严格按照优先级选择
     for official, keys in priorities:
+        # 收集当前优先级的所有匹配结果
+        matching_results = []
         for item in results:
             section = norm(item.get("section", ""))
             if any(k in section for k in keys):
-                return item, official
+                matching_results.append(item)
+        
+        # 如果找到匹配结果，返回第一个（保持原有的选择逻辑）
+        if matching_results:
+            print(f"🎯 找到 {len(matching_results)} 个 '{official}' 的匹配结果，选择第一个")
+            return matching_results[0], official
+    
     return None, None
 
 # === 统一下载调度入口与分区实现（A/B/D占位，C复用现有新作区逻辑） ===
@@ -548,13 +558,18 @@ def get_zone_code(section):
 def download_zone_a(page_or_frame, keyword, save_root=None, options=None):
     """
     Zone A（自译字幕区）下载逻辑：
-    1. 提取解压密码
-    2. 打印到控制台
+    1. 检查购买主题按钮是否存在
+    2. 如果存在，执行购买流程（点击按钮→处理弹窗→提交表单）
+    3. 等待页面刷新
+    4. 点击下载链接并接管下载
+    5. 下载成功后提取解压密码并写入txt文件
     """
-    print("🔍 Zone A（自译字幕区）- 开始提取解压密码...")
+    import os
+    
+    print("🔍 Zone A（自译字幕区）- 开始下载流程...")
     
     try:
-        # 获取页面和框架上下文
+        # 1. 获取页面和框架上下文
         if hasattr(page_or_frame, 'page'):
             current_page = page_or_frame.page
             current_frame = page_or_frame
@@ -562,52 +577,197 @@ def download_zone_a(page_or_frame, keyword, save_root=None, options=None):
             current_page = page_or_frame
             current_frame = current_page.main_frame
         
-        # 准备上下文列表用于密码提取
-        contexts_for_extraction = [current_frame, current_page, getattr(current_page, 'main_frame', None)]
-        contexts_for_extraction = [ctx for ctx in contexts_for_extraction if ctx is not None]
+        # 2. 计算保存目录
+        if save_root is None:
+            save_root = os.path.join(os.path.dirname(__file__), "output", "downloads", keyword)
+        os.makedirs(save_root, exist_ok=True)
         
-        # 去重
-        seen = set()
-        unique_contexts = []
-        for ctx_item in contexts_for_extraction:
-            if id(ctx_item) not in seen:
-                seen.add(id(ctx_item))
-                unique_contexts.append(ctx_item)
+        # 3. 检查购买主题按钮是否存在
+        purchase_button_selector = "div.locked a.viewpay[title='购买主题']"
         
-        # 提取解压密码（不写入文件，只返回密码）
+        if not still_exists_check(current_frame, purchase_button_selector, "购买按钮", []):
+            print("ℹ️ 购买主题按钮不存在，主题已购买")
+            # 直接进入下载流程
+            return _zone_a_download_file(current_frame, current_page, keyword, save_root)
+        
+        print("🛒 发现购买主题按钮，开始购买流程...")
+        
+        # 4. 执行购买流程
+        success = _zone_a_handle_purchase(current_frame, current_page)
+        if not success:
+            return {"success": False, "zone": "A", "message": "purchase_failed", "payload": None}
+        
+        # 5. 等待页面刷新
+        print("⏳ 等待页面刷新...")
+        try:
+            current_page.wait_for_load_state('networkidle', timeout=10000)
+        except Exception:
+            current_frame.wait_for_timeout(2000)
+        
+        # 6. 执行下载流程
+        return _zone_a_download_file(current_frame, current_page, keyword, save_root)
+        
+    except Exception as e:
+        print(f"❌ Zone A 下载流程失败: {e}")
+        return {"success": False, "zone": "A", "message": f"download_error: {e}", "payload": None}
+
+
+def _zone_a_handle_purchase(current_frame, current_page):
+    """处理A区购买流程"""
+    try:
+        # 1. 点击购买主题按钮
+        purchase_button = current_frame.locator("div.locked a.viewpay[title='购买主题']")
+        purchase_button.click(timeout=5000)
+        print("✅ 已点击购买主题按钮")
+        
+        # 2. 等待弹窗出现并处理
+        current_frame.wait_for_timeout(1000)  # 等待弹窗加载
+        
+        # 3. 在弹窗中点击提交按钮
+        submit_button = current_frame.locator("form#payform button[name='paysubmit']")
+        submit_button.click(timeout=5000)
+        print("✅ 已点击提交按钮")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ 购买流程失败: {e}")
+        return False
+
+
+def _zone_a_download_file(current_frame, current_page, keyword, save_root):
+    """处理A区文件下载"""
+    try:
+        # 1. 查找下载链接（参考D区的附件选择器）
+        download_selectors = [
+            "dl.tattl dd p.attnm a",                         # 优先匹配压缩包链接
+            "a[href*='mod=attachment'][id^='aid']",
+            "dl.tattl a[id^='aid']",
+            "a[href*='forum.php'][href*='mod=attachment']",
+            "ignore_js_op a[href*='mod=misc'][href*='action=attachpay']",  # ignore_js_op内的付费附件
+            "a[href*='mod=misc'][href*='action=attachpay']",               # 付费附件链接（attachpay）
+            "span[id^='attach_'] a[href*='attachpay']",                    # span包装的附件链接
+            "ignore_js_op span a",                                         # ignore_js_op内span中的链接
+            "div.blockcode a",                                             # blockcode中的链接
+        ]
+        
+        download_link = None
+        target_filename = None
+        
+        for selector in download_selectors:
+            try:
+                elements = current_frame.locator(selector)
+                count = elements.count()
+                
+                if count > 0:
+                    print(f"🔍 找到 {count} 个潜在下载链接 (选择器: {selector})")
+                    
+                    for i in range(count):
+                        element = elements.nth(i)
+                        try:
+                            link_text = element.text_content() or ""
+                            link_href = element.get_attribute('href') or ""
+                            
+                            #print(f"🔍 检查链接[{i}]: 文本='{link_text}', href='{link_href}'")
+                            
+                            # 排除图片文件
+                            if any(link_text.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif']):
+                                #print(f"⏭️ 跳过图片文件: {link_text}")
+                                continue
+                            
+                            # 优先选择压缩文件
+                            if any(link_text.lower().endswith(ext) for ext in ['.zip', '.rar', '.7z', '.7zip']):
+                                download_link = element
+                                target_filename = link_text
+                                #print(f"✅ 找到压缩文件链接: {link_text}")
+                                break
+                            
+                            # 如果包含关键词，也考虑
+                            if keyword.lower() in link_text.lower() and link_href:
+                                download_link = element
+                                target_filename = link_text
+                                #print(f"✅ 找到包含关键词的链接: {link_text}")
+                                break
+                                
+                        except Exception as e:
+                            print(f"⚠️ 检查链接时出错: {e}")
+                            continue
+                    
+                    if download_link:
+                        break
+                        
+            except Exception as e:
+                print(f"⚠️ 选择器 {selector} 查找失败: {e}")
+                continue
+        
+        if not download_link:
+            print("❌ 未找到下载链接")
+            # 尝试只提取密码
+            contexts_for_extraction = [current_frame, current_page]
+            extracted_password = extract_and_write_password(
+                contexts_for_extraction, 
+                downloaded_path=None,
+                timeout_ms=8000, 
+                verbose=True
+            )
+            
+            if extracted_password:
+                print(f"ℹ️ 虽然未找到下载链接，但成功提取了密码: {extracted_password}")
+                return {
+                    "success": True, 
+                    "zone": "A", 
+                    "message": "password_only", 
+                    "payload": {"password": extracted_password}
+                }
+            else:
+                return {"success": False, "zone": "A", "message": "download_link_not_found", "payload": None}
+        
+        # 2. 预提取解压密码
+        contexts_for_extraction = [current_frame, current_page]
         extracted_password = extract_and_write_password(
-            unique_contexts, 
-            downloaded_path=None,  # 不写入文件
+            contexts_for_extraction, 
+            downloaded_path=None,  # 先不写入文件
             timeout_ms=8000, 
             verbose=True
         )
         
+        # 3. 执行下载
+        print(f"🚀 开始下载文件: {target_filename}")
+        with current_page.expect_download(timeout=30000) as download_info:
+            download_link.click(timeout=5000)
+        
+        download = download_info.value
+        
+        # 4. 保存文件
+        if not target_filename:
+            target_filename = download.suggested_filename
+        
+        # 确保文件名有正确的扩展名
+        if not any(target_filename.lower().endswith(ext) for ext in ['.zip', '.rar', '.7z', '.7zip']):
+            target_filename += '.zip'  # 默认添加.zip扩展名
+        
+        save_path = os.path.join(save_root, target_filename)
+        download.save_as(save_path)
+        
+        print(f"✅ 文件下载成功: {save_path}")
+        
+        # 5. 写入密码文件
         if extracted_password:
-            print(f"✅ Zone A 解压密码提取成功:")
-            print(f"🔑 解压密码: {extracted_password}")
-            return {
-                "success": True, 
-                "zone": "A", 
-                "message": "password_extracted", 
-                "payload": {"password": extracted_password}
-            }
-        else:
-            print("❌ Zone A 未找到解压密码")
-            return {
-                "success": False, 
-                "zone": "A", 
-                "message": "password_not_found", 
-                "payload": None
-            }
-            
-    except Exception as e:
-        print(f"❌ Zone A 密码提取失败: {e}")
+            password_file = os.path.splitext(save_path)[0] + '.txt'
+            with open(password_file, 'w', encoding='utf-8') as f:
+                f.write(extracted_password)
+            print(f"✅ 密码已写入: {password_file}")
+        
         return {
-            "success": False, 
+            "success": True, 
             "zone": "A", 
-            "message": f"extraction_error: {e}", 
-            "payload": None
+            "message": "download_completed", 
+            "payload": {"file_path": save_path, "password": extracted_password}
         }
+        
+    except Exception as e:
+        print(f"❌ 文件下载失败: {e}")
+        return {"success": False, "zone": "A", "message": f"download_error: {e}", "payload": None}
 
 
 def download_zone_b(page_or_frame, keyword, save_root=None, options=None):
