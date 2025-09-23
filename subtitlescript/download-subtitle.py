@@ -8,7 +8,8 @@ from playwright_stealth.stealth import stealth_sync
 from urllib.parse import urljoin, urlparse, quote_plus
 
 # 全局搜索关键字配置：直接修改此处值即可
-SEARCH_KEYWORD = "JUR-479"
+#特殊番号FC2PPV-4620098
+SEARCH_KEYWORD = "IPTD-763"
 
 
 # 工具函数
@@ -545,8 +546,68 @@ def get_zone_code(section):
 
 
 def download_zone_a(page_or_frame, keyword, save_root=None, options=None):
-    print("ℹ️ Zone A（自译字幕区）下载逻辑暂未实现")
-    return {"success": False, "zone": "A", "message": "not_implemented", "payload": None}
+    """
+    Zone A（自译字幕区）下载逻辑：
+    1. 提取解压密码
+    2. 打印到控制台
+    """
+    print("🔍 Zone A（自译字幕区）- 开始提取解压密码...")
+    
+    try:
+        # 获取页面和框架上下文
+        if hasattr(page_or_frame, 'page'):
+            current_page = page_or_frame.page
+            current_frame = page_or_frame
+        else:
+            current_page = page_or_frame
+            current_frame = current_page.main_frame
+        
+        # 准备上下文列表用于密码提取
+        contexts_for_extraction = [current_frame, current_page, getattr(current_page, 'main_frame', None)]
+        contexts_for_extraction = [ctx for ctx in contexts_for_extraction if ctx is not None]
+        
+        # 去重
+        seen = set()
+        unique_contexts = []
+        for ctx_item in contexts_for_extraction:
+            if id(ctx_item) not in seen:
+                seen.add(id(ctx_item))
+                unique_contexts.append(ctx_item)
+        
+        # 提取解压密码（不写入文件，只返回密码）
+        extracted_password = extract_and_write_password(
+            unique_contexts, 
+            downloaded_path=None,  # 不写入文件
+            timeout_ms=8000, 
+            verbose=True
+        )
+        
+        if extracted_password:
+            print(f"✅ Zone A 解压密码提取成功:")
+            print(f"🔑 解压密码: {extracted_password}")
+            return {
+                "success": True, 
+                "zone": "A", 
+                "message": "password_extracted", 
+                "payload": {"password": extracted_password}
+            }
+        else:
+            print("❌ Zone A 未找到解压密码")
+            return {
+                "success": False, 
+                "zone": "A", 
+                "message": "password_not_found", 
+                "payload": None
+            }
+            
+    except Exception as e:
+        print(f"❌ Zone A 密码提取失败: {e}")
+        return {
+            "success": False, 
+            "zone": "A", 
+            "message": f"extraction_error: {e}", 
+            "payload": None
+        }
 
 
 def download_zone_b(page_or_frame, keyword, save_root=None, options=None):
@@ -564,7 +625,7 @@ def download_zone_c(page_or_frame, keyword, save_root=None, options=None):
         return {"success": False, "zone": "C", "message": str(e), "payload": None}
 
 
-def download_zone_d(page_or_frame, keyword, save_root=None, options=None):
+def download_zone_d(page_or_frame, keyword, save_root=None, options=None, verbose=True):
     """
     D区（字幕分享区）下载逻辑：
     1. 预提取解压密码（不写入）
@@ -597,7 +658,12 @@ def download_zone_d(page_or_frame, keyword, save_root=None, options=None):
         "dl.tattl dd p.attnm a",                         # 优先匹配压缩包链接
         "a[href*='mod=attachment'][id^='aid']",
         "dl.tattl a[id^='aid']",
-        "a[href*='forum.php'][href*='mod=attachment']"
+        "a[href*='forum.php'][href*='mod=attachment']",
+        # 新增：支持ignore_js_op格式的附件链接
+        "ignore_js_op a[href*='mod=misc'][href*='action=attachpay']",  # ignore_js_op内的付费附件
+        "a[href*='mod=misc'][href*='action=attachpay']",               # 付费附件链接（attachpay）
+        "span[id^='attach_'] a[href*='attachpay']",                    # span包装的附件链接
+        "ignore_js_op span a",                                         # ignore_js_op内span中的链接
     ]
     
     target_link = None
@@ -614,15 +680,34 @@ def download_zone_d(page_or_frame, keyword, save_root=None, options=None):
                     link = links.nth(i)
                     try:
                         link_text = link.text_content() or ""
+                        link_href = link.get_attribute('href') or ""
+                        
+                        if verbose:
+                            print(f"🔍 检查链接[{i}]: 文本='{link_text}', href='{link_href}'")
+                        
                         # 排除图片文件
                         if any(link_text.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif']):
+                            if verbose:
+                                print(f"⏭️ 跳过图片文件: {link_text}")
                             continue
+                        
+                        # 优先选择包含关键词的链接
                         if keyword.upper() in link_text.upper():
                             target_link = link
                             target_filename = link_text.strip()
                             print(f"✅ 选中包含关键词的附件: {target_filename}")
                             break
-                    except Exception:
+                        
+                        # 对于attachpay链接，也检查是否包含压缩包后缀
+                        if 'attachpay' in link_href and any(link_text.lower().endswith(ext) for ext in ['.rar', '.zip', '.7z']):
+                            target_link = link
+                            target_filename = link_text.strip()
+                            print(f"✅ 选中付费压缩包附件: {target_filename}")
+                            break
+                            
+                    except Exception as e:
+                        if verbose:
+                            print(f"⚠️ 处理链接[{i}]时出错: {e}")
                         continue
                 
                 # 如果没有找到包含关键词的，选择第一个非图片文件
@@ -631,14 +716,29 @@ def download_zone_d(page_or_frame, keyword, save_root=None, options=None):
                         link = links.nth(i)
                         try:
                             link_text = link.text_content() or f"{keyword}.zip"
+                            link_href = link.get_attribute('href') or ""
+                            
                             # 排除图片文件
                             if any(link_text.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif']):
                                 continue
-                            target_link = link
-                            target_filename = link_text.strip()
-                            print(f"✅ 选中第一个非图片附件: {target_filename}")
-                            break
-                        except Exception:
+                            
+                            # 优先选择压缩包文件
+                            if any(link_text.lower().endswith(ext) for ext in ['.rar', '.zip', '.7z']):
+                                target_link = link
+                                target_filename = link_text.strip()
+                                print(f"✅ 选中第一个压缩包附件: {target_filename}")
+                                break
+                            
+                            # 或者选择attachpay链接
+                            if 'attachpay' in link_href:
+                                target_link = link
+                                target_filename = link_text.strip()
+                                print(f"✅ 选中第一个付费附件: {target_filename}")
+                                break
+                                
+                        except Exception as e:
+                            if verbose:
+                                print(f"⚠️ 处理备选链接[{i}]时出错: {e}")
                             continue
                 
                 # 兜底：如果还没找到，选择第一个
@@ -651,6 +751,8 @@ def download_zone_d(page_or_frame, keyword, save_root=None, options=None):
                     print(f"✅ 兜底选择第一个附件: {target_filename}")
                 break
         except Exception as e:
+            if verbose:
+                print(f"⚠️ 使用选择器 '{selector}' 时出错: {e}")
             continue
     
     if target_link is None:
@@ -827,27 +929,6 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                             target = hit_frame.locator(sel).nth(idx)
                             target.scroll_into_view_if_needed(timeout=2000)
                             
-                            # 预提取解压密码（购买前执行，不写入文件）
-                            pre_pwd = None
-                            try:
-                                contexts_for_pre = [hit_frame, fr, root, getattr(root, 'page', None), getattr(root, 'main_frame', None)]
-                                contexts_for_pre = [ctx for ctx in contexts_for_pre if ctx is not None]
-                                # 去重
-                                seen = set()
-                                unique_contexts = []
-                                for ctx in contexts_for_pre:
-                                    if id(ctx) not in seen:
-                                        seen.add(id(ctx))
-                                        unique_contexts.append(ctx)
-                                pre_pwd = extract_and_write_password(unique_contexts, downloaded_path=None, timeout_ms=5000, verbose=True)
-                                if pre_pwd:
-                                    print("🔎 预提取解压密码：成功（不写入）")
-                                else:
-                                    print("🔎 预提取解压密码：未找到（继续购买与下载）")
-                            except Exception as e:
-                                print(f"🔎 预提取解压密码：异常（{e}），继续购买与下载")
-                                pre_pwd = None
-                            
                             try:
                                 target.click(timeout=5000, force=True)
                             except Exception as e:
@@ -887,19 +968,11 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                                 print("✅ 已执行购买，并成功")
                                 # 购买成功后，尝试查找直链下载并保存到指定目录
                                 try:
-                                    success, save_path, msg = try_download_after_purchase(hit_frame, fr, SEARCH_KEYWORD, skip_password_extraction=True)
-                                    if success and save_path and pre_pwd:
-                                        # 使用预提取的密码写入同名txt文件
-                                        import os
-                                        txt_path = os.path.splitext(save_path)[0] + ".txt"
-                                        try:
-                                            with open(txt_path, 'w', encoding='utf-8') as f:
-                                                f.write(pre_pwd)
-                                            print(f"📝 使用预提取密码写入: {txt_path}")
-                                        except Exception as e:
-                                            print(f"⚠️ 写入密码文件失败: {e}")
-                                    elif success and save_path and not pre_pwd:
-                                        print("ℹ️ 未预提取到密码，跳过写入")
+                                    success, save_path, msg = try_download_after_purchase(hit_frame, fr, SEARCH_KEYWORD, skip_password_extraction=False)
+                                    if success and save_path:
+                                        print(f"✅ 新作区下载完成: {save_path}")
+                                    else:
+                                        print(f"⚠️ 新作区下载失败: {msg}")
                                 except Exception as e:
                                     print(f"⚠️ 下载处理异常: {e}")
                             else:
@@ -1434,68 +1507,225 @@ def extract_and_write_password(contexts, downloaded_path, timeout_ms=5000, verbo
         password = None
         for ctx in uniq:
             try:
-                # # 优先：根据“解压密码”锚点，获取其后第一个 .blockcode 内首个 li
-                # try:
-                #     # 非致命等待，提升稳定性
-                #     ctx.wait_for_selector("td.t_f[id^='postmessage_']", timeout=timeout_ms)
-                # except Exception:
-                #     pass
-
-                # li_el = None
-                # anchor_xpath = (
-                #     "xpath=//td[contains(@class,'t_f') and starts-with(@id,'postmessage_')]//"
-                #     "*[contains(normalize-space(.),'解压密码')]/following::div[contains(@class,'blockcode')][1]//ol/li[1]"
-                # )
-                # try:
-                #     li_el = ctx.query_selector(anchor_xpath)
-                #     if li_el is None:
-                #         li_el = ctx.wait_for_selector(anchor_xpath, timeout=1000)
-                # except Exception:
-                #     li_el = None
-
-                # if li_el:
-                #     try:
-                #         t = li_el.inner_text().strip()
-                #     except Exception:
-                #         t = ""
-                #     if t:
-                #         password = t
-                #         if verbose:
-                #             print("🔎 已根据【解压密码】锚点定位")
-
-                #回退：在帖子主体内，遍历所有 .blockcode 的首个 li，过滤 magnet/http
-                if not password:
-                    candidates_sel = "td.t_f[id^='postmessage_'] div.blockcode ol > li:first-child"
+                # 方法1: 原有的 blockcode 方法
+                try:
+                    blockcode_sel = "div.blockcode"
                     loc = None
                     try:
-                        loc = ctx.locator(candidates_sel)
+                        loc = ctx.locator(blockcode_sel)
                     except Exception:
                         loc = None
+                    
                     cnt = 0
                     try:
                         cnt = loc.count() if loc else 0
                     except Exception:
                         cnt = 0
 
-                    kept = []
+                    if verbose:
+                        print(f"🔍 回退方法：找到 {cnt} 个 div.blockcode 元素")
+
+                    # 遍历所有 blockcode 元素，获取 innerText
                     for i in range(cnt):
-                        txt = ""
                         try:
-                            txt = loc.nth(i).inner_text().strip()
-                        except Exception:
-                            txt = ""
-                        low = (txt or "").lower()
-                        if not txt:
+                            blockcode_element = loc.nth(i)
+                            inner_text = blockcode_element.inner_text().strip()
+                            
+                            if verbose:
+                                print(f"📄 blockcode[{i}] innerText: {inner_text}")
+                            
+                            if inner_text:
+                                # 简单过滤：排除明显的链接
+                                lines = inner_text.split('\n')
+                                for line in lines:
+                                    line = line.strip()
+                                    if not line:
+                                        continue
+                                    
+                                    # 排除磁力链接和HTTP链接
+                                    line_lower = line.lower()
+                                    if line_lower.startswith("magnet:") or "magnet:?" in line_lower:
+                                        continue
+                                    if line_lower.startswith("http://") or line_lower.startswith("https://"):
+                                        continue
+                                    if line_lower.startswith("pikpak://"):
+                                        continue
+                                    
+                                    # 排除"复制代码"等无关文本
+                                    if "复制代码" in line or "点击" in line or "回复" in line:
+                                        continue
+                                    
+                                    # 找到潜在的密码
+                                    password = line
+                                    if verbose:
+                                        print(f"✅ 从 blockcode[{i}] 提取到密码: {password}")
+                                    break
+                            
+                            if password:
+                                break
+                                
+                        except Exception as e:
+                            if verbose:
+                                print(f"⚠️ 处理 blockcode[{i}] 时出错: {e}")
                             continue
-                        if low.startswith("magnet:") or "magnet:?" in low:
+
+                            
+                except Exception as e:
+                    if verbose:
+                        print(f"⚠️ blockcode 方法时出错: {e}")
+
+                # 方法2: 回退到查找【解压密码】标签后的内容
+                if not password:
+                    # 尝试多种XPath选择器，包括更宽泛的搜索
+                    xpath_selectors = [
+                        "xpath=//*[contains(text(),'解压密码')]",
+                        "xpath=//*[contains(text(),'【解压密码】')]",
+                        "xpath=//td[contains(@class,'t_f')]//*[contains(text(),'解压密码')]",
+                        "xpath=//td[starts-with(@id,'postmessage_')]//*[contains(text(),'解压密码')]",
+                        "xpath=//div[contains(text(),'解压密码')]",
+                        "xpath=//*[contains(text(),'密码')]",  # 更宽泛的搜索
+                        "xpath=//*[contains(text(),'www.98T.la')]"  # 直接搜索链接文本
+                    ]
+                    
+                    password_elements = None
+                    password_count = 0
+                    used_xpath = ""
+                    
+                    for xpath in xpath_selectors:
+                        try:
+                            elements = ctx.locator(xpath)
+                            count = elements.count()
+                            if verbose:
+                                print(f"🔍 XPath: {xpath} - 找到 {count} 个元素")
+                            if count > 0:
+                                password_elements = elements
+                                password_count = count
+                                used_xpath = xpath
+                                # 输出找到的元素内容用于调试
+                                if verbose:
+                                    for i in range(min(count, 3)):  # 最多显示前3个
+                                        try:
+                                            element_text = elements.nth(i).text_content()
+                                            print(f"  元素[{i}]文本: {element_text}")
+                                        except Exception:
+                                            pass
+                                break
+                        except Exception as e:
+                            if verbose:
+                                print(f"⚠️ XPath {xpath} 执行失败: {e}")
+                    
+                    if verbose:
+                        print(f"🔍 最终使用XPath: {used_xpath}, 找到 {password_count} 个包含目标文本的元素")
+                    
+                    for i in range(password_count):
+                        try:
+                            # 获取包含"解压密码"的整行文本
+                            password_element = password_elements.nth(i)
+                            # 获取父元素或包含完整密码信息的元素
+                            parent_element = password_element.locator("xpath=..")
+                            full_text = parent_element.inner_text().strip()
+                            
+                            if verbose:
+                                print(f"📄 解压密码行[{i}] 完整文本: {full_text}")
+                            
+                            # 从文本中提取密码
+                            import re
+                            
+                            # 首先尝试直接从inner_text()获取纯文本密码（适用于font标签格式）
+                            element_inner_text = password_element.inner_text().strip()
+                            if verbose:
+                                print(f"📄 元素inner_text: {element_inner_text}")
+                            
+                            # 匹配【解压密码】：后面的内容，支持多种格式
+                            password_patterns = [
+                                r'【解压密码】[：:]\s*(.+?)(?:\s*【|$)',  # 原有格式
+                                r'【解压密码】[：:]\s*(.+)',  # 更宽泛的匹配
+                                r'解压密码[：:]\s*(.+?)(?:\s*【|$)',  # 无括号格式
+                                r'解压密码[：:]\s*(.+)'  # 无括号宽泛格式
+                            ]
+                            
+                            password_text = None
+                            for pattern in password_patterns:
+                                match = re.search(pattern, element_inner_text)
+                                if match:
+                                    password_text = match.group(1).strip()
+                                    if verbose:
+                                        print(f"✅ 使用模式 '{pattern}' 提取到: {password_text}")
+                                    break
+                            
+                            # 如果inner_text没有匹配到，尝试从full_text匹配
+                            if not password_text:
+                                for pattern in password_patterns:
+                                    match = re.search(pattern, full_text)
+                                    if match:
+                                        password_text = match.group(1).strip()
+                                        if verbose:
+                                            print(f"✅ 从完整文本使用模式 '{pattern}' 提取到: {password_text}")
+                                        break
+                            
+                            if password_text:
+                                # 如果包含HTML链接，需要提取链接文本和后续内容
+                                if '<a ' in password_text and '</a>' in password_text:
+                                    # 使用Playwright获取实际显示的文本内容
+                                    try:
+                                        # 查找包含链接的具体元素
+                                        link_xpath = f"xpath=//td[contains(@class,'t_f') and starts-with(@id,'postmessage_')]//*[contains(text(),'解压密码')]/following-sibling::*[1]//a | //td[contains(@class,'t_f') and starts-with(@id,'postmessage_')]//*[contains(text(),'解压密码')]/parent::*/following-sibling::*[1]//a"
+                                        link_elements = ctx.locator(link_xpath)
+                                        if link_elements.count() > 0:
+                                            link_text = link_elements.first.inner_text().strip()
+                                            
+                                            if verbose:
+                                                print(f"🔗 找到链接文本: {link_text}")
+                                            
+                                            # 检查链接文本是否已经包含完整密码（包含@符号）
+                                            if '@' in link_text:
+                                                # 链接文本本身就是完整密码，如: www.98T.la@ak6fgd3s9k
+                                                password = link_text
+                                                if verbose:
+                                                    print(f"✅ 从链接文本直接提取到完整密码: {password}")
+                                            else:
+                                                # 链接文本不完整，需要查找后续的@符号内容
+                                                following_text = ""
+                                                try:
+                                                    # 获取链接元素的父元素文本
+                                                    link_parent = link_elements.first.locator("xpath=..")
+                                                    parent_text = link_parent.inner_text().strip()
+                                                    
+                                                    if verbose:
+                                                        print(f"🔗 链接父元素文本: {parent_text}")
+                                                    
+                                                    # 提取@符号后的内容
+                                                    at_match = re.search(rf'{re.escape(link_text)}(@\w+)', parent_text)
+                                                    if at_match:
+                                                        following_text = at_match.group(1)
+                                                        if verbose:
+                                                            print(f"🔗 找到@后缀: {following_text}")
+                                                except Exception as e:
+                                                    if verbose:
+                                                        print(f"⚠️ 获取@后缀时出错: {e}")
+                                                
+                                                password = link_text + following_text
+                                                if verbose:
+                                                    print(f"✅ 组合链接文本和后缀得到密码: {password}")
+                                            
+                                            break
+                                    except Exception as e:
+                                        if verbose:
+                                            print(f"⚠️ 处理解压密码链接时出错: {e}")
+                                else:
+                                    # 纯文本密码，直接使用
+                                    password = password_text
+                                    if verbose:
+                                        print(f"✅ 从解压密码文本提取到密码: {password}")
+                                    break
+                            else:
+                                if verbose:
+                                    print(f"⚠️ 未能从元素[{i}]中提取到密码文本")
+                        except Exception as e:
+                            if verbose:
+                                print(f"⚠️ 处理解压密码元素[{i}]时出错: {e}")
                             continue
-                        if low.startswith("http://") or low.startswith("https://"):
-                            continue
-                        kept.append(txt)
-                    if kept:
-                        password = kept[0]
-                        if verbose:
-                            print("🧮 回退候选已过滤，已选择第一个")
+                   
             except Exception:
                 continue
             if password:
@@ -1617,9 +1847,24 @@ def try_download_after_purchase(hit_frame, parent_context, search_keyword, save_
                                     getattr(parent_context, "main_frame", None),
                                     click_page,
                                 ]
-                                extract_and_write_password(contexts_for_pwd, save_path, timeout_ms=5000, verbose=verbose)
-                            except Exception:
+                                # 过滤空值并去重
+                                contexts_for_pwd = [ctx for ctx in contexts_for_pwd if ctx is not None]
+                                seen = set()
+                                unique_contexts = []
+                                for ctx in contexts_for_pwd:
+                                    if id(ctx) not in seen:
+                                        seen.add(id(ctx))
+                                        unique_contexts.append(ctx)
+                                
+                                # 提取密码并写入文件
+                                extracted_pwd = extract_and_write_password(unique_contexts, save_path, timeout_ms=5000, verbose=verbose)
+                                if extracted_pwd:
+                                    print(f"📝 下载成功后提取并写入密码: {extracted_pwd}")
+                                else:
+                                    print("ℹ️ 下载成功但未找到解压密码")
+                            except Exception as e:
                                 # 不影响下载流程
+                                print(f"⚠️ 密码提取失败: {e}")
                                 pass
                         return True, save_path, "下载完成"
                     except Exception as e:
