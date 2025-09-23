@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlparse, quote_plus
 
 # 全局搜索关键字配置：直接修改此处值即可
 #特殊番号FC2PPV-4620098
-SEARCH_KEYWORD = "JUTA-170"
+SEARCH_KEYWORD = "HMN-733"
 
 
 # 工具函数
