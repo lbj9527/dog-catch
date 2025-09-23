@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlparse, quote_plus
 
 # 全局搜索关键字配置：直接修改此处值即可
 #特殊番号FC2PPV-4620098
-SEARCH_KEYWORD = "MIDA-319"
+SEARCH_KEYWORD = "JUTA-170"
 
 
 # 工具函数
@@ -771,8 +771,276 @@ def _zone_a_download_file(current_frame, current_page, keyword, save_root):
 
 
 def download_zone_b(page_or_frame, keyword, save_root=None, options=None):
-    print("ℹ️ Zone B（自提字幕区）下载逻辑暂未实现")
-    return {"success": False, "zone": "B", "message": "not_implemented", "payload": None}
+    """
+    Zone B（自提字幕区）下载逻辑：
+    1. 查找并筛选下载链接（过滤ed2k文件）
+    2. 点击下载链接，检测是否已购买
+    3. 如果已购买，直接下载并提示退出
+    4. 如果未购买，处理购买确认对话框
+    5. 购买完成后再次点击下载链接
+    6. 下载成功后提取解压密码并写入txt文件
+    """
+    import os
+    
+    print("🔍 Zone B（自提字幕区）- 开始下载流程...")
+    
+    try:
+        # 1. 获取页面和框架上下文
+        if hasattr(page_or_frame, 'page'):
+            current_page = page_or_frame.page
+            current_frame = page_or_frame
+        else:
+            current_page = page_or_frame
+            current_frame = current_page.main_frame
+        
+        # 2. 计算保存目录
+        if save_root is None:
+            save_root = os.path.join(os.path.dirname(__file__), "output", "downloads", keyword)
+        os.makedirs(save_root, exist_ok=True)
+        
+        # 3. 查找并筛选下载链接
+        download_link, target_filename = _zone_b_find_download_link(current_frame, keyword)
+        if not download_link:
+            return {"success": False, "zone": "B", "message": "download_link_not_found", "payload": None}
+        
+        # 4. 预提取解压密码
+        contexts_for_extraction = [current_frame, current_page]
+        extracted_password = extract_and_write_password(
+            contexts_for_extraction, 
+            downloaded_path=None,  # 先不写入文件
+            timeout_ms=8000, 
+            verbose=True
+        )
+        
+        # 5. 保存链接标识信息，用于购买后重新定位
+        link_href = download_link.get_attribute('href')
+        link_text = target_filename
+        print(f"🚀 首次点击下载链接: {target_filename}")
+        print(f"🔗 链接标识: href={link_href}")
+        
+        # 同时监听下载事件和可能的购买对话框
+        download_started = False
+        try:
+            # 尝试监听立即下载（已购买情况）
+            with current_page.expect_download(timeout=5000) as download_info:
+                download_link.click(timeout=3000)
+            
+            # 如果到这里说明立即开始下载，附件已购买
+            download = download_info.value
+            download_started = True
+            print("✅ 附件已购买，立即开始下载")
+            
+        except Exception:
+            # 没有立即下载，可能需要购买
+            print("🛒 检测到需要购买，查找购买确认对话框...")
+            
+            # 处理购买流程
+            success = _zone_b_handle_purchase(current_frame, current_page)
+            if not success:
+                return {"success": False, "zone": "B", "message": "purchase_failed", "payload": None}
+            
+            # 购买完成后重新定位同一个下载链接
+            print("🔄 购买完成，重新定位下载链接...")
+            print(f"🔍 查找链接: 文本='{link_text}'")
+            
+            # 重新查找具有相同文本内容的下载链接
+            # 注意：购买后href会完全改变，只能通过文本内容定位
+            new_download_link = None
+            try:
+                # 方案1：通过文本内容查找（购买后href已变，不能用href匹配）
+                print("🔍 通过文本内容重新定位链接...")
+                
+                # 查找所有包含目标文件名的链接
+                elements = current_frame.locator("a").all()
+                
+                for element in elements:
+                    try:
+                        element_text = element.text_content() or ""
+                        element_href = element.get_attribute('href') or ""
+                        
+                        # 匹配文本内容
+                        if element_text.strip() == link_text.strip():
+                            # 确保不是购买按钮（购买按钮文本是"购买"）
+                            if element_text.strip() != '购买':
+                                new_download_link = element
+                                print(f"✅ 重新定位到下载链接: {element_text}")
+                                print(f"🔗 新链接href: {element_href[:100]}...")
+                                break
+                    except Exception as e:
+                        continue
+                
+                if not new_download_link:
+                    # 备用方案：使用更宽松的文本匹配
+                    print("🔄 使用备用方案：宽松文本匹配...")
+                    base_filename = link_text.replace('.rar', '').replace('.zip', '').strip()
+                    
+                    for element in elements:
+                        try:
+                            element_text = element.text_content() or ""
+                            if base_filename in element_text and element_text.strip() != '购买':
+                                new_download_link = element
+                                print(f"✅ 备用方案成功定位到链接: {element_text}")
+                                break
+                        except Exception as e:
+                            continue
+                
+                if not new_download_link:
+                    print("❌ 无法重新定位下载链接")
+                    return {"success": False, "zone": "B", "message": "relink_failed", "payload": None}
+                
+            except Exception as e:
+                print(f"❌ 重新定位链接时出错: {e}")
+                return {"success": False, "zone": "B", "message": f"relink_error: {e}", "payload": None}
+            
+            # 点击重新定位的下载链接
+            print("🔄 点击重新定位的下载链接...")
+            with current_page.expect_download(timeout=30000) as download_info:
+                new_download_link.click(timeout=5000)
+            
+            download = download_info.value
+            download_started = True
+        
+        if not download_started:
+            return {"success": False, "zone": "B", "message": "download_not_started", "payload": None}
+        
+        # 6. 保存文件
+        if not target_filename:
+            target_filename = download.suggested_filename
+        
+        # 确保文件名有正确的扩展名
+        if not any(target_filename.lower().endswith(ext) for ext in ['.zip', '.rar', '.7z', '.7zip']):
+            target_filename += '.zip'  # 默认添加.zip扩展名
+        
+        save_path = os.path.join(save_root, target_filename)
+        download.save_as(save_path)
+        
+        print(f"✅ 文件下载成功: {save_path}")
+        
+        # 7. 写入密码文件
+        if extracted_password:
+            password_file = os.path.splitext(save_path)[0] + '.txt'
+            with open(password_file, 'w', encoding='utf-8') as f:
+                f.write(extracted_password)
+            print(f"✅ 密码已写入: {password_file}")
+        
+        return {
+            "success": True, 
+            "zone": "B", 
+            "message": "download_completed", 
+            "payload": {"file_path": save_path, "password": extracted_password}
+        }
+        
+    except Exception as e:
+        print(f"❌ Zone B 下载流程失败: {e}")
+        return {"success": False, "zone": "B", "message": f"download_error: {e}", "payload": None}
+
+
+def _zone_b_find_download_link(current_frame, keyword):
+    """查找并筛选B区下载链接"""
+    try:
+        # B区特有的attachpay链接选择器
+        attachpay_selector = "a[href*='action=attachpay']"
+        
+        elements = current_frame.locator(attachpay_selector)
+        count = elements.count()
+        
+        if count == 0:
+            print("❌ 未找到attachpay下载链接")
+            return None, None
+        
+        print(f"🔍 找到 {count} 个attachpay链接")
+        
+        # 筛选符合条件的链接
+        valid_links = []
+        
+        for i in range(count):
+            element = elements.nth(i)
+            try:
+                link_text = element.text_content() or ""
+                link_href = element.get_attribute('href') or ""
+                
+                print(f"🔍 检查链接[{i}]: 文本='{link_text}', href='{link_href}'")
+                
+                # 过滤掉包含ed2k的文件（大小写不敏感）
+                if 'ed2k' in link_text.lower():
+                    print(f"⏭️ 跳过ed2k文件: {link_text}")
+                    continue
+                
+                #排除"购买"文本的链接
+                if link_text.strip() == '购买':
+                    print(f"⏭️ 跳过购买按钮链接: {link_text}")
+                    continue
+                
+                # 排除图片文件
+                if any(link_text.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif']):
+                    print(f"⏭️ 跳过图片文件: {link_text}")
+                    continue
+                
+                # 添加到有效链接列表
+                valid_links.append((element, link_text))
+                print(f"✅ 有效链接: {link_text}")
+                
+            except Exception as e:
+                print(f"⚠️ 检查链接时出错: {e}")
+                continue
+        
+        if not valid_links:
+            print("❌ 未找到有效的下载链接")
+            return None, None
+        
+        # 选择第一个有效链接
+        selected_element, selected_filename = valid_links[0]
+        print(f"🎯 选择下载链接: {selected_filename}")
+        
+        return selected_element, selected_filename
+        
+    except Exception as e:
+        print(f"❌ 查找下载链接失败: {e}")
+        return None, None
+
+
+def _zone_b_handle_purchase(current_frame, current_page):
+    """处理B区购买确认对话框"""
+    try:
+        # 等待购买确认对话框出现
+        current_frame.wait_for_timeout(2000)
+        
+        # 查找购买按钮的多种可能选择器
+        purchase_selectors = [
+            "button:has-text('购买附件')",
+        ]
+        
+        purchase_button = None
+        for selector in purchase_selectors:
+            try:
+                button = current_frame.locator(selector)
+                if button.count() > 0:
+                    purchase_button = button.first
+                    print(f"✅ 找到购买按钮: {selector}")
+                    break
+            except Exception:
+                continue
+        
+        if not purchase_button:
+            print("❌ 未找到购买按钮")
+            return False
+        
+        # 点击购买按钮
+        purchase_button.click(timeout=5000)
+        print("✅ 已点击购买按钮")
+        
+        # 等待页面刷新
+        print("⏳ 等待页面刷新...")
+        try:
+            current_page.wait_for_load_state('networkidle', timeout=15000)
+        except Exception:
+            current_frame.wait_for_timeout(3000)
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ 购买流程失败: {e}")
+        return False
 
 
 def download_zone_c(page_or_frame, keyword, save_root=None, options=None):
