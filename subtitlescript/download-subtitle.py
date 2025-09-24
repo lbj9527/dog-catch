@@ -3,6 +3,7 @@ import json
 import os
 import time
 import sys
+import argparse
 from playwright.sync_api import Playwright, sync_playwright, expect
 from playwright_stealth.stealth import stealth_sync
 from urllib.parse import urljoin, urlparse, quote_plus
@@ -2485,33 +2486,80 @@ def batch_download_from_codes(video_codes, max_downloads=None, delay=2.0):
         return {"success": False, "message": f"下载失败: {e}"}
 
 
+def parse_arguments():
+    """解析命令行参数"""
+    parser = argparse.ArgumentParser(
+        description="字幕下载脚本 - 支持单次下载和批量下载",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用示例:
+  单次下载:
+    python download-subtitle.py
+    
+  从CSV文件批量下载:
+    python download-subtitle.py --csv videos.csv --type "SSIS"
+    python download-subtitle.py --csv videos.csv --interval 3.0 --max 10
+    
+  从视频编号列表批量下载:
+    python download-subtitle.py --codes "SSIS-001,MIDV-002,STARS-003"
+    python download-subtitle.py --codes "SSIS-001,SSIS-002" --interval 1.5 --max 5
+        """
+    )
+    
+    # 互斥组：CSV文件或编号列表
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        '--csv', 
+        type=str, 
+        help='CSV文件路径，用于批量下载'
+    )
+    group.add_argument(
+        '--codes', 
+        type=str, 
+        help='逗号分隔的视频编号列表，如: "SSIS-001,MIDV-002,STARS-003"'
+    )
+    
+    # 可选参数
+    parser.add_argument(
+        '--type', 
+        type=str, 
+        help='视频类型筛选（仅用于CSV模式），如: "SSIS", "MIDV"等'
+    )
+    parser.add_argument(
+        '--max', 
+        type=int, 
+        help='最大下载数量限制'
+    )
+    parser.add_argument(
+        '--interval', 
+        type=float, 
+        default=2.0,
+        help='下载间隔时间（秒），默认2.0秒'
+    )
+    
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
+    args = parse_arguments()
+    
     # 检查是否为批量下载模式
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "batch-csv" and len(sys.argv) >= 3:
-            # 批量下载模式：从CSV文件
-            csv_file = sys.argv[2]
-            video_type = sys.argv[3] if len(sys.argv) > 3 else None
-            max_downloads = int(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4].isdigit() else None
-            delay = float(sys.argv[5]) if len(sys.argv) > 5 else 2.0
-            
-            batch_download_from_csv(csv_file, video_type, max_downloads, delay)
-        elif sys.argv[1] == "batch-codes" and len(sys.argv) >= 3:
-            # 批量下载模式：从编号列表
-            codes = sys.argv[2].split(',')
-            max_downloads = int(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3].isdigit() else None
-            delay = float(sys.argv[4]) if len(sys.argv) > 4 else 2.0
-            
-            batch_download_from_codes(codes, max_downloads, delay)
-        else:
-            print("用法:")
-            print("  单次下载: python download-subtitle.py")
-            print("  CSV批量下载: python download-subtitle.py batch-csv <csv文件路径> [视频类型] [最大下载数] [间隔秒数]")
-            print("  编号批量下载: python download-subtitle.py batch-codes <编号1,编号2,编号3> [最大下载数] [间隔秒数]")
-            print("")
-            print("示例:")
-            print("  python download-subtitle.py batch-csv videos.csv 无码 10 3.0")
-            print("  python download-subtitle.py batch-codes SSIS-001,SSIS-002,SSIS-003 5 2.0")
+    if args.csv:
+        # CSV批量下载模式
+        batch_download_from_csv(
+            csv_file_path=args.csv,
+            video_type_filter=args.type,
+            max_downloads=args.max,
+            delay=args.interval
+        )
+    elif args.codes:
+        # 编号列表批量下载模式
+        codes = [code.strip() for code in args.codes.split(',')]
+        batch_download_from_codes(
+            video_codes=codes,
+            max_downloads=args.max,
+            delay=args.interval
+        )
     else:
         # 单次下载模式
         with sync_playwright() as playwright:

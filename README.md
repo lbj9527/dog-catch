@@ -41,6 +41,12 @@ dog-catch/
 │   │   ├── router/
 │   │   └── utils/                   # api.js、userAdminApi.js
 │   └── vite.config.js
+├── subtitlescript/                  # 字幕下载脚本
+│   ├── download-subtitle.py         # 主下载脚本（支持单次和批量下载）
+│   ├── csv_utils.py                 # CSV数据处理模块
+│   ├── batch_downloader.py          # 批量下载编排模块
+│   ├── requirements.txt             # Python依赖
+│   └── output/                      # 下载输出目录
 ├── start-backend.bat                # 启动后端（Windows）
 ├── start-frontend.bat               # 启动播放器静态站点（Windows）
 ├── start-admin.bat                  # 启动管理后台（Windows）
@@ -103,6 +109,85 @@ cd admin
 npm run dev
 ```
 默认地址：`http://localhost:3001`
+
+## 📥 字幕下载脚本
+
+字幕下载脚本位于 `subtitlescript/` 目录，支持单次下载和批量下载功能。
+
+### 安装依赖
+
+```bash
+cd subtitlescript
+pip install -r requirements.txt
+```
+
+### 使用方法
+
+#### 1. 单次下载
+```bash
+python download-subtitle.py
+```
+运行后会启动浏览器，手动搜索并下载字幕。
+
+#### 2. 从CSV文件批量下载
+```bash
+python download-subtitle.py --csv <CSV文件路径> [选项]
+```
+示例：
+```bash
+# 基本用法
+python download-subtitle.py --csv test_videos.csv
+
+# 指定视频类型筛选
+python download-subtitle.py --csv test_videos.csv --type "SSIS"
+
+# 设置下载间隔和最大数量
+python download-subtitle.py --csv test_videos.csv --interval 3.0 --max 10
+
+# 组合使用
+python download-subtitle.py --csv test_videos.csv --type "SSIS" --interval 1.5 --max 5
+```
+
+#### 3. 从视频编号列表批量下载
+```bash
+python download-subtitle.py --codes <编号列表> [选项]
+```
+示例：
+```bash
+# 基本用法
+python download-subtitle.py --codes "SSIS-001,MIDV-002,STARS-003"
+
+# 设置下载间隔
+python download-subtitle.py --codes "SSIS-001,SSIS-002" --interval 1.5
+
+# 设置最大下载数量
+python download-subtitle.py --codes "SSIS-001,MIDV-002,STARS-003" --max 2
+
+# 组合使用
+python download-subtitle.py --codes "SSIS-001,SSIS-002,SSIS-003" --interval 2.5 --max 3
+```
+
+### 参数说明
+
+| 参数 | 类型 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--csv` | 字符串 | CSV文件路径，用于批量下载 | - |
+| `--codes` | 字符串 | 逗号分隔的视频编号列表 | - |
+| `--type` | 字符串 | 视频类型筛选（仅CSV模式有效） | - |
+| `--max` | 整数 | 最大下载数量限制 | 无限制 |
+| `--interval` | 浮点数 | 下载间隔时间（秒） | 2.0 |
+| `-h, --help` | - | 显示帮助信息 | - |
+
+### CSV文件格式要求
+- 必须包含 `video_title` 和 `video_type` 列
+- `video_title` 列包含视频标题或编号
+- `video_type` 列包含视频类型（用于筛选）
+
+### 注意事项
+- `--csv` 和 `--codes` 参数互斥，不能同时使用
+- `--type` 参数仅在使用 `--csv` 时有效
+- 下载间隔建议设置为1.0秒以上，避免请求过于频繁
+- 使用 `--help` 可查看完整的帮助信息和使用示例
 
 ## ⚙️ 配置说明
 
@@ -225,4 +310,4 @@ URL 参数：`src`（视频源）、`type`（hls/mp4/auto）、`title`、`refere
 
 ## 📄 许可证
 
-MIT 
+MIT
