@@ -1,0 +1,24 @@
+{
+  "start_time": "2025-09-24T22:07:16.068174",
+  "last_update": "2025-09-24T22:09:42.752401",
+  "total_actresses": 24,
+  "completed_actresses": 0,
+  "current_actress": "波多野結衣",
+  "actresses_status": {
+    "波多野結衣": {
+      "url": "https://missav.live/dm217/cn/actresses/%E6%B3%A2%E5%A4%9A%E9%87%8E%E7%B5%90%E8%A1%A3",
+      "status": "processing",
+      "start_time": "2025-09-24T22:07:23.428175",
+      "total_pages": 259,
+      "completed_pages": 32,
+      "total_videos": 383,
+      "last_page": 32,
+      "errors": []
+    }
+  },
+  "statistics": {
+    "total_videos": 383,
+    "total_pages": 32,
+    "errors": []
+  }
+}
