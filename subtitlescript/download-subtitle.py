@@ -1291,9 +1291,22 @@ def download_handler(section, page_or_frame, keyword, save_root=None, options=No
         return {"success": False, "zone": zone, "message": str(e), "payload": None}
 
 
-def find_and_print_priority_element(root, section=None, do_purchase=False):
+def find_and_print_priority_element(root, section=None, do_purchase=False, search_keyword=None):
+    """
+    在帖子页按优先级查找元素并执行购买流程
+    
+    Args:
+        root: 页面或框架对象
+        section: 专区名称
+        do_purchase: 是否执行购买流程
+        search_keyword: 搜索关键词，如果为None则使用全局SEARCH_KEYWORD
+    """
+    # 支持显式传递search_keyword参数，批量模式下取消对全局变量的依赖
+    keyword = search_keyword if search_keyword is not None else SEARCH_KEYWORD
+    
     # 先在当前 root 扫描
     print("🔎 在帖子页按优先级查找元素: 购买主题 > 购买 > 附件付费链接文本 > 直链附件文本")
+    print(f"🔍 使用关键词: {keyword}")
     
     # 新作区且允许购买时，尝试执行购买流程（仅在新作区生效）
     if do_purchase and (section or "").strip() == "新作区":
@@ -1396,7 +1409,7 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
                                 print("✅ 已执行购买，并成功")
                                 # 购买成功后，尝试查找直链下载并保存到指定目录
                                 try:
-                                    success, save_path, msg = try_download_after_purchase(hit_frame, fr, SEARCH_KEYWORD, skip_password_extraction=False)
+                                    success, save_path, msg = try_download_after_purchase(hit_frame, fr, keyword, skip_password_extraction=False)
                                     if success and save_path:
                                         print(f"✅ 新作区下载完成: {save_path}")
                                     else:
@@ -1419,11 +1432,24 @@ def find_and_print_priority_element(root, section=None, do_purchase=False):
         return
 
 
-def open_result_link(target_page, result, official_section):
+def open_result_link(target_page, result, official_section, keyword=None):
+    """
+    打开搜索结果链接并执行下载流程
+    
+    Args:
+        target_page: 目标页面对象
+        result: 搜索结果字典
+        official_section: 官方专区名称
+        keyword: 搜索关键词，如果为None则使用全局SEARCH_KEYWORD
+    """
+    # 支持显式传递keyword参数，批量模式下取消对全局变量的依赖
+    search_keyword = keyword if keyword is not None else SEARCH_KEYWORD
+    
     try:
         title = result.get("title", "")
         link = result.get("link", "")
         print(f"✅ 已选择结果: [{official_section}] {title}")
+        print(f"🔍 使用关键词: {search_keyword}")
         print(f"➡️ 正在进入: {link}")
         target_page.goto(link, wait_until="domcontentloaded", timeout=20000)
         try:
@@ -1433,7 +1459,7 @@ def open_result_link(target_page, result, official_section):
         print("🎉 进入成功")
         # 统一通过下载调度入口，根据专区路由执行下载流程
         try:
-            result_obj = download_handler(official_section, target_page, SEARCH_KEYWORD, save_root=None, options=None)
+            result_obj = download_handler(official_section, target_page, search_keyword, save_root=None, options=None)
             ok = bool(result_obj.get("success"))
             zone = result_obj.get("zone")
             msg = result_obj.get("message")
@@ -2310,6 +2336,183 @@ def try_download_after_purchase(hit_frame, parent_context, search_keyword, save_
             print("⚠️ 未找到直链下载链接，或点击未触发下载")
     return False, None, last_error or "未找到直链下载链接，或点击未触发下载"
 
+# 批量下载功能入口
+def batch_download_from_csv(csv_file_path, video_type_filter=None, max_downloads=None, delay=2.0):
+    """
+    从CSV文件批量下载字幕
+    
+    Args:
+        csv_file_path: CSV文件路径
+        video_type_filter: 视频类型筛选条件，如"无码"、"有码"等
+        max_downloads: 最大下载数量限制
+        delay: 下载间隔时间（秒）
+    
+    Returns:
+        dict: 下载统计结果
+    """
+    try:
+        # 导入批量下载模块
+        from csv_utils import get_video_codes_from_csv
+        from batch_downloader import create_batch_downloader
+        
+        print(f"🚀 开始批量下载任务")
+        print(f"📁 CSV文件: {csv_file_path}")
+        print(f"🎯 视频类型筛选: {video_type_filter or '全部'}")
+        print(f"📊 最大下载数: {max_downloads or '无限制'}")
+        print(f"⏱️ 下载间隔: {delay}秒")
+        print("-" * 60)
+        
+        # 从CSV提取视频编号
+        video_codes = get_video_codes_from_csv(csv_file_path, video_type_filter)
+        
+        if not video_codes:
+            print("❌ 未从CSV文件中提取到任何视频编号")
+            return {"success": False, "message": "无有效视频编号"}
+        
+        print(f"✅ 成功提取 {len(video_codes)} 个视频编号")
+        for i, code in enumerate(video_codes[:10], 1):  # 显示前10个
+            print(f"   {i}. {code}")
+        if len(video_codes) > 10:
+            print(f"   ... 还有 {len(video_codes) - 10} 个")
+        print("-" * 60)
+        
+        # 定义单次下载函数
+        def single_download(keyword: str):
+            """执行单次下载流程"""
+            print(f"🔍 开始下载: {keyword}")
+            with sync_playwright() as playwright:
+                # 临时修改全局关键词
+                global SEARCH_KEYWORD
+                original_keyword = SEARCH_KEYWORD
+                SEARCH_KEYWORD = keyword
+                try:
+                    run(playwright)
+                finally:
+                    # 恢复原始关键词
+                    SEARCH_KEYWORD = original_keyword
+        
+        # 创建批量下载器
+        downloader = create_batch_downloader(single_download, delay=delay)
+        
+        # 执行批量下载
+        stats = downloader.download_from_codes(video_codes, max_downloads=max_downloads)
+        
+        print("=" * 60)
+        print("📊 批量下载完成统计:")
+        print(f"   ✅ 成功: {stats['success']}")
+        print(f"   ❌ 失败: {stats['failed']}")
+        print(f"   ⏭️ 跳过: {stats['skipped']}")
+        print(f"   📈 总计: {stats['total']}")
+        print("=" * 60)
+        
+        return stats
+        
+    except ImportError as e:
+        print(f"❌ 导入批量下载模块失败: {e}")
+        print("请确保 csv_utils.py 和 batch_downloader.py 文件存在")
+        return {"success": False, "message": f"模块导入失败: {e}"}
+    except Exception as e:
+        print(f"❌ 批量下载过程中发生错误: {e}")
+        return {"success": False, "message": f"下载失败: {e}"}
+
+
+def batch_download_from_codes(video_codes, max_downloads=None, delay=2.0):
+    """
+    从视频编号列表批量下载字幕
+    
+    Args:
+        video_codes: 视频编号列表
+        max_downloads: 最大下载数量限制
+        delay: 下载间隔时间（秒）
+    
+    Returns:
+        dict: 下载统计结果
+    """
+    try:
+        # 导入批量下载模块
+        from batch_downloader import create_batch_downloader
+        
+        print(f"🚀 开始批量下载任务")
+        print(f"📊 视频编号数量: {len(video_codes)}")
+        print(f"📊 最大下载数: {max_downloads or '无限制'}")
+        print(f"⏱️ 下载间隔: {delay}秒")
+        print("-" * 60)
+        
+        # 显示编号列表
+        for i, code in enumerate(video_codes[:10], 1):  # 显示前10个
+            print(f"   {i}. {code}")
+        if len(video_codes) > 10:
+            print(f"   ... 还有 {len(video_codes) - 10} 个")
+        print("-" * 60)
+        
+        # 定义单次下载函数
+        def single_download(keyword: str):
+            """执行单次下载流程"""
+            print(f"🔍 开始下载: {keyword}")
+            with sync_playwright() as playwright:
+                # 临时修改全局关键词
+                global SEARCH_KEYWORD
+                original_keyword = SEARCH_KEYWORD
+                SEARCH_KEYWORD = keyword
+                try:
+                    run(playwright)
+                finally:
+                    # 恢复原始关键词
+                    SEARCH_KEYWORD = original_keyword
+        
+        # 创建批量下载器
+        downloader = create_batch_downloader(single_download, delay=delay)
+        
+        # 执行批量下载
+        stats = downloader.download_from_codes(video_codes, max_downloads=max_downloads)
+        
+        print("=" * 60)
+        print("📊 批量下载完成统计:")
+        print(f"   ✅ 成功: {stats['success']}")
+        print(f"   ❌ 失败: {stats['failed']}")
+        print(f"   ⏭️ 跳过: {stats['skipped']}")
+        print(f"   📈 总计: {stats['total']}")
+        print("=" * 60)
+        
+        return stats
+        
+    except ImportError as e:
+        print(f"❌ 导入批量下载模块失败: {e}")
+        print("请确保 batch_downloader.py 文件存在")
+        return {"success": False, "message": f"模块导入失败: {e}"}
+    except Exception as e:
+        print(f"❌ 批量下载过程中发生错误: {e}")
+        return {"success": False, "message": f"下载失败: {e}"}
+
+
 if __name__ == "__main__":
-    with sync_playwright() as playwright:
-        run(playwright)
+    # 检查是否为批量下载模式
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "batch-csv" and len(sys.argv) >= 3:
+            # 批量下载模式：从CSV文件
+            csv_file = sys.argv[2]
+            video_type = sys.argv[3] if len(sys.argv) > 3 else None
+            max_downloads = int(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4].isdigit() else None
+            delay = float(sys.argv[5]) if len(sys.argv) > 5 else 2.0
+            
+            batch_download_from_csv(csv_file, video_type, max_downloads, delay)
+        elif sys.argv[1] == "batch-codes" and len(sys.argv) >= 3:
+            # 批量下载模式：从编号列表
+            codes = sys.argv[2].split(',')
+            max_downloads = int(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3].isdigit() else None
+            delay = float(sys.argv[4]) if len(sys.argv) > 4 else 2.0
+            
+            batch_download_from_codes(codes, max_downloads, delay)
+        else:
+            print("用法:")
+            print("  单次下载: python download-subtitle.py")
+            print("  CSV批量下载: python download-subtitle.py batch-csv <csv文件路径> [视频类型] [最大下载数] [间隔秒数]")
+            print("  编号批量下载: python download-subtitle.py batch-codes <编号1,编号2,编号3> [最大下载数] [间隔秒数]")
+            print("")
+            print("示例:")
+            print("  python download-subtitle.py batch-csv videos.csv 无码 10 3.0")
+            print("  python download-subtitle.py batch-codes SSIS-001,SSIS-002,SSIS-003 5 2.0")
+    else:
+        # 单次下载模式
+        with sync_playwright() as playwright:
+            run(playwright)
