@@ -254,4 +254,5 @@ config.local.json
 subtitlescript/venv/
 subtitlescript/output/_html_debug
 subtitlescript/session.json
+subtitlescript/session_videoID.json
 subtitlescript/__pycache__
