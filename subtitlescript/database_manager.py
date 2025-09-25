@@ -182,12 +182,37 @@ class DatabaseManager:
         now = datetime.now().isoformat()
         
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                INSERT OR REPLACE INTO actress_status 
-                (actress_name, url, status, start_time, total_pages, 
-                 completed_pages, total_videos, last_page, errors, updated_at)
-                VALUES (?, ?, 'processing', ?, 0, 0, 0, 0, '[]', ?)
-            """, (actress_name, actress_url, now, now))
+            # 检查演员是否已存在
+            cursor = conn.execute("""
+                SELECT actress_name, status FROM actress_status WHERE actress_name = ?
+            """, (actress_name,))
+            row = cursor.fetchone()
+            
+            if row:
+                # 如果演员已存在，检查状态
+                current_status = row[1]
+                if current_status == 'completed':
+                    # 如果已完成，不要重置状态，只更新URL和时间
+                    conn.execute("""
+                        UPDATE actress_status 
+                        SET url = ?, updated_at = ?
+                        WHERE actress_name = ?
+                    """, (actress_url, now, actress_name))
+                else:
+                    # 如果未完成，更新状态为processing
+                    conn.execute("""
+                        UPDATE actress_status 
+                        SET url = ?, status = 'processing', updated_at = ?
+                        WHERE actress_name = ?
+                    """, (actress_url, now, actress_name))
+            else:
+                # 如果演员不存在，创建新记录
+                conn.execute("""
+                    INSERT INTO actress_status 
+                    (actress_name, url, status, start_time, total_pages, 
+                     completed_pages, total_videos, last_page, last_position_in_page, errors, updated_at)
+                    VALUES (?, ?, 'processing', ?, 0, 0, 0, 0, 0, '[]', ?)
+                """, (actress_name, actress_url, now, now))
             conn.commit()
         
         # 更新当前处理的演员

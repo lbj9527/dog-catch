@@ -699,7 +699,11 @@ def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, re
                     last_page, last_position, existing_videos = progress_manager.db_manager.get_actress_last_video_info(actress_name)
                     
                     if last_page > 1 or last_position > 0:
-                        print(f"从第 {last_page} 页第 {last_position + 1} 个作品继续抓取 (已有 {existing_videos} 个视频)")
+                        # 检查是否需要显示断点恢复信息
+                        if last_position == 12:  # 假设每页12个作品，页面已完成
+                            print(f"从第 {last_page + 1} 页开始继续抓取 (已有 {existing_videos} 个视频)")
+                        else:
+                            print(f"从第 {last_page} 页第 {last_position + 1} 个作品继续抓取 (已有 {existing_videos} 个视频)")
                     
                     # 访问演员页面
                     content = get_page_content(page, actress_url, timeout, delay, retries)
@@ -715,8 +719,28 @@ def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, re
                     # 遍历所有页面
                     for page_no, page_url in enumerate(page_urls, 1):
                         # 跳过已完成的页面
+                        # 如果当前页面小于last_page，直接跳过
+                        # 如果当前页面等于last_page，需要检查该页面是否已完全处理完成
                         if page_no < last_page:
                             continue
+                        elif page_no == last_page:
+                            # 检查该页面是否已完全处理完成
+                            # 如果last_position_in_page等于该页面的作品总数，说明该页面已完成，跳过
+                            # 否则需要继续处理该页面的剩余作品
+                            # 这里我们先获取页面内容来确定作品数量
+                            if last_position > 0:
+                                # 获取页面内容检查作品数量
+                                temp_content = get_page_content(page, page_url, timeout, delay, retries)
+                                temp_soup = BeautifulSoup(temp_content, "html.parser")
+                                temp_items = extract_video_items(temp_soup, page_url)
+                                
+                                # 如果last_position等于或大于页面作品数，说明该页面已完成
+                                if last_position >= len(temp_items):
+                                    print(f"第 {page_no} 页已完成 ({last_position}/{len(temp_items)} 个作品)，跳过")
+                                    continue
+                                else:
+                                    print(f"第 {page_no} 页部分完成 ({last_position}/{len(temp_items)} 个作品)，继续处理")
+                            # 如果last_position为0，说明该页面还没开始处理
                             
                         print(f"正在处理第 {page_no}/{total_pages} 页...")
                         
@@ -774,22 +798,13 @@ def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, re
                         # 这里传入页面的总作品数，确保记录页面已完成
                         progress_manager.complete_page(actress_name, page_no, len(items))
                         
-                        # 检查是否需要跳转到下一页
-                        # 如果当前页的所有作品都已处理完成，更新last_page为下一页
-                        if len(items) > 0:  # 确保页面有作品
-                            with sqlite3.connect(progress_manager.db_manager.db_path) as conn:
-                                conn.execute("""
-                                    UPDATE actress_status 
-                                    SET last_page = ?, last_position_in_page = 0, updated_at = ?
-                                    WHERE actress_name = ?
-                                """, (page_no + 1, datetime.now().isoformat(), actress_name))
-                        
                         # 在每页结束后强制刷新，确保缓冲区内容全部落盘，避免中断造成漏写
                         db_writer.flush()
                         
-                        # 显示当前进度
-                        current_videos = progress_manager.db_manager.get_actress_video_count(actress_name)
-                        print(f"演员 {actress_name}: 第 {page_no}/{total_pages} 页完成，当前共 {current_videos} 个视频")
+                        # 显示当前进度 - 使用累计计数而不是数据库查询
+                        # 避免因为complete_page中的total_videos更新导致的计数混乱
+                        cumulative_videos = (page_no - 1) * 12 + len(items)  # 假设每页12个视频
+                        print(f"演员 {actress_name}: 第 {page_no}/{total_pages} 页完成，本页 {len(items)} 个视频")
                         
                         # 页面间延时
                         if page_no < total_pages:
