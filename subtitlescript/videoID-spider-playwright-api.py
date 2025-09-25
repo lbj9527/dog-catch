@@ -767,7 +767,7 @@ def crawl_actress_playwright(actress_url: str, concurrency: int, delay: float, r
             context.close()
 
 
-def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, retries: int = 3, timeout: int = 30, max_pages: int = 999):
+def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, retries: int = 3, timeout: int = 30, max_actress_pages: int = 999, actresses_max_pages: int = 50):
     """
     批量抓取所有演员页面，支持断点续传和增量写入
     """
@@ -792,7 +792,7 @@ def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, re
             
             # 获取所有演员详情页URL
             print("正在获取演员列表...")
-            actresses_urls = get_all_actresses_urls(page, timeout, delay, retries)
+            actresses_urls = get_all_actresses_urls(page, timeout, delay, retries, max_list_pages=actresses_max_pages, resume=True, progress_manager=progress_manager)
             print(f"获取到 {len(actresses_urls)} 个演员详情页")
             
             # 设置总演员数
@@ -830,7 +830,7 @@ def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, re
                     save_debug_html(content, actress_name, 1)
                     
                     # 检测总页数
-                    page_urls = detect_pagination_style_and_max_pages(soup, actress_url, max_pages)
+                    page_urls = detect_pagination_style_and_max_pages(soup, actress_url, max_actress_pages)
                     total_pages = len(page_urls)
                     print(f"检测到 {total_pages} 个分页")
                     progress_manager.update_actress_pages(actress_name, total_pages)
@@ -881,6 +881,9 @@ def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, re
                             # 增量写入CSV
                             csv_writer.add_row(row)
                         
+                        # 在每页结束后强制刷新，确保缓冲区内容全部落盘，避免中断造成漏写
+                        csv_writer.flush()
+                        
                         # 完成页面处理
                         progress_manager.complete_page(actress_name, page_no, len(items))
                         
@@ -902,6 +905,14 @@ def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, re
                     print(f"演员 {actress_name} 抓取完成! 总共找到 {total_videos} 个视频")
                     print(f"结果已保存到: {output_path}")
                     
+                except KeyboardInterrupt:
+                    # 捕获用户中断，先将缓冲区写入磁盘再退出，避免漏写
+                    print(f"\n用户中断，正在保存已抓取的数据...")
+                    try:
+                        csv_writer.close()
+                    except Exception as close_error:
+                        print(f"关闭CSV写入器时出错: {close_error}")
+                    raise  # 重新抛出KeyboardInterrupt
                 except Exception as e:
                     error_msg = f"处理演员 {actress_url} 时出错: {e}"
                     print(error_msg)
@@ -932,168 +943,81 @@ def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, re
             context.close()
 
 
-def crawl_all_actresses_playwright(concurrency: int, delay: float, retries: int, timeout: int, max_pages: int):
-    """批量抓取所有演员页面"""
-    with sync_playwright() as playwright:
-        page, context = setup_playwright_page(playwright)
-        
-        try:
-            # 访问首页进行预热
-            try:
-                sleep_delay(delay)
-                page.goto("https://missav.live/", wait_until="domcontentloaded", timeout=timeout * 1000)
-                print("网站预热成功")
-            except Exception as e:
-                print(f"[WARN] 网站预热失败: {e}")
-            
-            # 检查登录状态
-            if not check_login_status(page):
-                print("未检测到登录状态，请检查session文件")
-                return
-            
-            print("登录状态验证成功")
-            
-            # 获取所有演员的详情页URL
-            actress_urls = get_all_actresses_urls(page, timeout, delay, retries)
-            if not actress_urls:
-                print("未找到任何演员详情页，退出")
-                return
-            
-            print(f"开始批量抓取 {len(actress_urls)} 个演员的视频信息...")
-            
-            # 逐个处理每个演员
-            for i, actress_url in enumerate(actress_urls, 1):
-                print(f"\n{'='*60}")
-                print(f"正在处理第 {i}/{len(actress_urls)} 个演员: {actress_url}")
-                print(f"{'='*60}")
-                
-                try:
-                    # 获取第一页内容
-                    content = get_page_content(page, actress_url, timeout, delay, retries)
-                    soup = BeautifulSoup(content, "html.parser")
-                    
-                    # 提取演员名称 - 优先从URL提取，回退到页面内容
-                    actress_name = derive_actor_name_from_url(actress_url)
-                    if not actress_name or actress_name == "unknown":
-                        actress_name = extract_actress_name(soup)
-                    actress_name = sanitize_filename(actress_name)
-                    
-                    print(f"演员名称: {actress_name}")
-                    
-                    # 检查是否已经抓取过该演员
-                    output_path = f"output/actor_{actress_name}.csv"
-                    if os.path.exists(output_path):
-                        print(f"演员 {actress_name} 已存在，跳过")
-                        continue
-                    
-                    # 保存调试HTML
-                    save_debug_html(content, actress_name, 1)
-                    
-                    # 检测分页并生成URL列表
-                    page_urls = detect_pagination_style_and_max_pages(soup, actress_url, max_pages)
-                    print(f"检测到 {len(page_urls)} 个分页")
-                    
-                    all_rows = []
-                    
-                    # 处理每一页
-                    for page_no, page_url in enumerate(page_urls, 1):
-                        print(f"正在处理第 {page_no}/{len(page_urls)} 页: {page_url}")
-                        
-                        # 如果不是第一页，需要重新获取内容
-                        if page_no > 1:
-                            try:
-                                content = get_page_content(page, page_url, timeout, delay, retries)
-                                soup = BeautifulSoup(content, "html.parser")
-                                save_debug_html(content, actress_name, page_no)
-                            except Exception as e:
-                                print(f"获取第 {page_no} 页失败: {e}")
-                                continue
-                        
-                        # 提取视频条目
-                        items = extract_video_items(soup, page_url)
-                        print(f"第 {page_no} 页找到 {len(items)} 个视频")
-                        
-                        # 转换为CSV行
-                        for title, url in items:
-                            video_id, pattern_type = normalize_video_id(title)
-                            
-                            # 确定视频类型 - 与videoID-spider.py保持一致
-                            video_type = "普通"
-                            if url and "uncensored-leak" in url:
-                                video_type = "无码破解"
-                            elif url and "chinese-subtitle" in url:
-                                video_type = "中文字幕"
-                            
-                            row = {
-                                "video_title": title,
-                                "video_url": url,
-                                "video_type": video_type,
-                                "video_id": video_id,
-                                "id_pattern_type": pattern_type,
-                                "page_no": page_no,
-                            }
-                            all_rows.append(row)
-                    
-                    # 输出结果
-                    if all_rows:
-                        write_csv(all_rows, output_path)
-                        print(f"演员 {actress_name} 抓取完成! 总共找到 {len(all_rows)} 个视频")
-                        print(f"结果已保存到: {output_path}")
-                    else:
-                        print(f"演员 {actress_name} 未找到任何视频")
-                    
-                except Exception as e:
-                    print(f"处理演员 {actress_url} 时出错: {e}")
-                    continue
-            
-            print(f"\n{'='*60}")
-            print("所有演员抓取完成!")
-            print(f"{'='*60}")
-            
-            # 保存更新后的session
-            try:
-                context.storage_state(path="./session_videoID.json")
-                print("Session状态已更新")
-            except Exception as e:
-                print(f"保存session失败: {e}")
-        
-        finally:
-            page.close()
-            context.close()
 
-
-def get_all_actresses_urls(page: Page, timeout: int, delay: float, retries: int) -> List[str]:
-    """获取所有演员的详情页URL"""
-    actresses_list_url = "https://missav.live/cn/actresses"
-    print(f"正在获取演员列表页面: {actresses_list_url}")
+def get_all_actresses_urls(page: Page, timeout: int, delay: float, retries: int, max_list_pages: int = 50, resume: bool = True, progress_key: str = "actress_list", progress_manager: Optional[ProgressManager] = None) -> List[str]:
+    """获取所有演员的详情页URL（支持翻页 + 列表断点续抓）"""
+    base_list_url = "https://missav.live/cn/actresses"
     
-    try:
-        content = get_page_content(page, actresses_list_url, timeout, delay, retries)
-        soup = BeautifulSoup(content, "html.parser")
-        
-        actress_urls = []
-        seen = set()
-        
-        # 查找所有演员链接
-        for a in soup.find_all("a"):
-            href = a.get("href", "")
-            if not href:
-                continue
+    # 读取已保存的列表抓取进度
+    if progress_manager is None:
+        progress_manager = ProgressManager()
+    
+    saved_last_page = 0
+    saved_urls: List[str] = []
+    if resume:
+        try:
+            saved = progress_manager.progress.get(progress_key, {}) or {}
+            saved_last_page = int(saved.get("last_page", 0) or 0)
+            saved_urls = list(saved.get("urls", []) or [])
+        except Exception:
+            # 容错：进度损坏时忽略，重新开始
+            saved_last_page = 0
+            saved_urls = []
+    
+    actress_urls: List[str] = list(saved_urls)
+    seen = set(saved_urls)
+    current_page = saved_last_page + 1 if (resume and saved_last_page >= 1) else 1
+    
+    while current_page <= max_list_pages:
+        try:
+            list_url = base_list_url if current_page == 1 else f"{base_list_url}?page={current_page}"
+            print(f"正在获取演员列表第 {current_page} 页: {list_url}")
             
-            # 检查是否为演员详情页链接
-            if "/actresses/" in href and href not in seen:
-                abs_url = urljoin(actresses_list_url, href)
-                # 过滤掉排行榜等非演员页面
-                if "/actresses/ranking" not in abs_url:
-                    actress_urls.append(abs_url)
-                    seen.add(href)
-        
-        print(f"找到 {len(actress_urls)} 个演员详情页")
-        return actress_urls
-        
-    except Exception as e:
-        print(f"获取演员列表失败: {e}")
-        return []
+            content = get_page_content(page, list_url, timeout, delay, retries)
+            soup = BeautifulSoup(content, "html.parser")
+            
+            page_new = 0
+            for a in soup.find_all("a", href=True):
+                href = a.get("href", "")
+                if not href:
+                    continue
+                # 仅保留符合 /dm 且 /actresses/ 的详情页，且排除排行榜
+                if "/dm" in href and "/actresses/" in href and "/actresses/ranking" not in href:
+                    abs_url = urljoin(base_list_url, href)
+                    if abs_url not in seen:
+                        seen.add(abs_url)
+                        actress_urls.append(abs_url)
+                        page_new += 1
+            print(f"第 {current_page} 页新增 {page_new} 个演员，总计 {len(actress_urls)}")
+            
+            # 按页持久化列表抓取进度（即便中途失败也能从当前页续抓）
+            if resume:
+                try:
+                    progress_manager.progress[progress_key] = {
+                        "last_page": current_page,
+                        "urls": actress_urls,
+                    }
+                    progress_manager.save_progress()
+                except Exception as e:
+                    print(f"保存演员列表抓取进度失败: {e}")
+            
+            # 若本页没有新增演员，则停止翻页
+            if page_new == 0:
+                print(f"第 {current_page} 页无新增演员，停止翻页")
+                break
+            
+            current_page += 1
+            time.sleep(delay)
+        except Exception as e:
+            print(f"获取演员列表第 {current_page} 页失败: {e}")
+            # 第一页失败则直接返回；后续页失败视作到达末尾
+            if current_page == 1:
+                return actress_urls
+            else:
+                break
+    
+    print(f"总共找到 {len(actress_urls)} 个演员详情页 (抓取到第 {current_page - 1} 页)")
+    return actress_urls
 
 
 def main():
@@ -1102,20 +1026,22 @@ def main():
     delay = 1.0
     retries = 3
     timeout = 30
-    max_pages = 999  # 抓取每个演员的所有页
+    max_actress_pages = 6  # 每个演员的最大作品页数（测试用）
+    actresses_max_pages = 10  # 演员列表最大页数（测试用）
     
     print("MissAV 演员页面视频ID批量抓取脚本 (Playwright版本)")
     print(f"并发数: {concurrency}")
     print(f"延时: {delay}s")
     print(f"重试: {retries}次")
     print(f"超时: {timeout}s")
-    print(f"每个演员最大页数: {max_pages}")
+    print(f"每个演员最大页数: {max_actress_pages}")
+    print(f"演员列表最大页数: {actresses_max_pages}")
     print(f"支持断点续传和增量写入 (每10个视频写入一次)")
     print("-" * 50)
     
     try:
         # 使用支持断点续传的函数
-        crawl_all_actresses_with_resume(concurrency, delay, retries, timeout, max_pages)
+        crawl_all_actresses_with_resume(concurrency, delay, retries, timeout, max_actress_pages, actresses_max_pages)
     except Exception as e:
         print(f"抓取失败: {e}")
         return 1
