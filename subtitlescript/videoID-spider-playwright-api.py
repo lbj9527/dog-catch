@@ -9,7 +9,7 @@ python videoID-spider-playwright.py --actress-url "https://missav.live/actresses
 功能:
 - 输入: 演员页面URL
 - 处理: 自动分页抓取该演员的所有视频
-- 输出: CSV文件，包含视频标题、URL、类型、ID等信息
+- 输出: 数据库存储，包含视频标题、URL、类型、ID等信息
 
 注意事项:
 - 需要先使用gensession.txt中的命令生成session_videoID.json
@@ -18,11 +18,11 @@ python videoID-spider-playwright.py --actress-url "https://missav.live/actresses
 """
 
 import argparse
-import csv
 import json
 import os
 import random
 import re
+import sqlite3
 import time
 from typing import List, Tuple, Optional, Dict, Any
 from urllib.parse import urljoin, urlparse, urlunparse, parse_qs, urlencode, unquote
@@ -35,160 +35,64 @@ from pathlib import Path
 
 
 class ProgressManager:
-    """进度管理器，负责保存和恢复抓取进度"""
+    """进度管理器，使用数据库存储进度信息"""
     
-    def __init__(self, progress_file: str = "./progress.json"):
-        self.progress_file = progress_file
-        self.progress = self._load_progress()
-    
-    def _load_progress(self) -> Dict[str, Any]:
-        """加载进度文件"""
-        if os.path.exists(self.progress_file):
-            try:
-                with open(self.progress_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except Exception as e:
-                print(f"加载进度文件失败: {e}")
-        
-        # 返回默认进度结构
-        return {
-            "start_time": datetime.now().isoformat(),
-            "last_update": datetime.now().isoformat(),
-            "total_actresses": 0,
-            "completed_actresses": 0,
-            "current_actress": None,
-            "actresses_status": {},
-            "statistics": {
-                "total_videos": 0,
-                "total_pages": 0,
-                "errors": []
-            }
-        }
-    
-    def save_progress(self):
-        """保存进度到文件"""
-        self.progress["last_update"] = datetime.now().isoformat()
-        try:
-            with open(self.progress_file, 'w', encoding='utf-8') as f:
-                json.dump(self.progress, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"保存进度文件失败: {e}")
+    def __init__(self, db_path: str = "./database/actresses.db"):
+        from database_manager import DatabaseManager
+        self.db_manager = DatabaseManager(db_path)
+        # 初始化抓取会话
+        self.session_id = self.db_manager.init_crawl_session()
     
     def set_total_actresses(self, total: int):
         """设置总演员数"""
-        self.progress["total_actresses"] = total
-        self.save_progress()
+        self.db_manager.update_crawl_progress(total_actresses=total)
     
     def start_actress(self, actress_name: str, actress_url: str):
         """开始处理演员"""
-        self.progress["current_actress"] = actress_name
-        if actress_name not in self.progress["actresses_status"]:
-            self.progress["actresses_status"][actress_name] = {
-                "url": actress_url,
-                "status": "processing",
-                "start_time": datetime.now().isoformat(),
-                "total_pages": 0,
-                "completed_pages": 0,
-                "total_videos": 0,
-                "last_page": 0,
-                "errors": []
-            }
-        self.save_progress()
+        self.db_manager.start_actress(actress_name, actress_url)
     
     def update_actress_pages(self, actress_name: str, total_pages: int):
         """更新演员总页数"""
-        if actress_name in self.progress["actresses_status"]:
-            self.progress["actresses_status"][actress_name]["total_pages"] = total_pages
-            self.save_progress()
+        self.db_manager.update_actress_pages(actress_name, total_pages)
     
-    def complete_page(self, actress_name: str, page_no: int, video_count: int):
-        """完成一页的处理"""
-        if actress_name in self.progress["actresses_status"]:
-            status = self.progress["actresses_status"][actress_name]
-            status["completed_pages"] = max(status["completed_pages"], page_no)
-            status["last_page"] = page_no
-            status["total_videos"] += video_count
-            self.progress["statistics"]["total_videos"] += video_count
-            self.progress["statistics"]["total_pages"] += 1
-            self.save_progress()
+    def complete_page(self, actress_name: str, page_no: int, position_in_page: int = None):
+        """完成页面处理，支持作品级别的进度记录"""
+        self.db_manager.complete_page(actress_name, page_no, position_in_page)
     
     def complete_actress(self, actress_name: str):
         """完成演员处理"""
-        if actress_name in self.progress["actresses_status"]:
-            self.progress["actresses_status"][actress_name]["status"] = "completed"
-            self.progress["actresses_status"][actress_name]["end_time"] = datetime.now().isoformat()
-            self.progress["completed_actresses"] += 1
-            self.progress["current_actress"] = None
-            self.save_progress()
+        self.db_manager.complete_actress(actress_name)
     
     def add_error(self, actress_name: str, error_msg: str):
         """添加错误记录"""
-        if actress_name in self.progress["actresses_status"]:
-            self.progress["actresses_status"][actress_name]["errors"].append({
-                "time": datetime.now().isoformat(),
-                "error": error_msg
-            })
-        self.progress["statistics"]["errors"].append({
-            "time": datetime.now().isoformat(),
-            "actress": actress_name,
-            "error": error_msg
-        })
-        self.save_progress()
+        self.db_manager.add_actress_error(actress_name, error_msg)
     
     def is_actress_completed(self, actress_name: str) -> bool:
         """检查演员是否已完成"""
-        return (actress_name in self.progress["actresses_status"] and 
-                self.progress["actresses_status"][actress_name]["status"] == "completed")
+        return self.db_manager.is_actress_completed(actress_name)
     
     def get_actress_resume_info(self, actress_name: str) -> Tuple[int, int]:
         """获取演员的恢复信息 (last_page, total_videos)"""
-        if actress_name in self.progress["actresses_status"]:
-            status = self.progress["actresses_status"][actress_name]
-            # 如果演员状态是processing，说明之前中断了，需要从下一页开始
-            if status.get("status") == "processing":
-                return status.get("last_page", 0) + 1, status.get("total_videos", 0)
-            else:
-                return status.get("last_page", 0), status.get("total_videos", 0)
-        return 1, 0
+        return self.db_manager.get_actress_resume_info(actress_name)
     
     def print_progress(self):
         """打印当前进度"""
-        print(f"\n{'='*60}")
-        print("抓取进度统计:")
-        print(f"总演员数: {self.progress['total_actresses']}")
-        print(f"已完成: {self.progress['completed_actresses']}")
-        print(f"当前处理: {self.progress.get('current_actress', '无')}")
-        print(f"总视频数: {self.progress['statistics']['total_videos']}")
-        print(f"总页数: {self.progress['statistics']['total_pages']}")
-        print(f"错误数: {len(self.progress['statistics']['errors'])}")
-        print(f"{'='*60}\n")
+        self.db_manager.print_progress()
 
 
-class IncrementalCSVWriter:
-    """增量CSV写入器，支持每N个视频写入一次"""
+class DatabaseWriter:
+    """数据库写入器，用于将数据存储到数据库"""
     
-    def __init__(self, output_path: str, batch_size: int = 10):
-        self.output_path = output_path
+    def __init__(self, actress_name: str, db_path: str = "./database/actresses.db", batch_size: int = 10):
+        from database_manager import DatabaseManager
+        self.actress_name = actress_name
+        self.db_manager = DatabaseManager(db_path)
         self.batch_size = batch_size
         self.buffer = []
         self.total_written = 0
-        self.headers = [
-            "video_title",
-            "video_url", 
-            "video_type",
-            "video_id",
-            "id_pattern_type",
-            "page_no",
-        ]
-        self._ensure_file_exists()
-    
-    def _ensure_file_exists(self):
-        """确保CSV文件存在并有表头"""
-        ensure_output_dir(self.output_path)
-        if not os.path.exists(self.output_path):
-            with open(self.output_path, "w", newline="", encoding="utf-8-sig") as f:
-                writer = csv.DictWriter(f, fieldnames=self.headers)
-                writer.writeheader()
+        
+        # 确保演员表存在
+        self.db_manager.create_actress_table(actress_name)
     
     def add_row(self, row: Dict[str, Any]):
         """添加一行数据到缓冲区"""
@@ -197,25 +101,28 @@ class IncrementalCSVWriter:
             self.flush()
     
     def flush(self):
-        """将缓冲区数据写入文件"""
+        """将缓冲区数据写入数据库"""
         if not self.buffer:
             return
         
         try:
-            with open(self.output_path, "a", newline="", encoding="utf-8-sig") as f:
-                writer = csv.DictWriter(f, fieldnames=self.headers)
-                for row in self.buffer:
-                    writer.writerow(row)
-            
+            self.db_manager.insert_videos(self.actress_name, self.buffer)
             self.total_written += len(self.buffer)
-            print(f"已写入 {len(self.buffer)} 条记录到 {os.path.basename(self.output_path)} (总计: {self.total_written})")
+            print(f"已写入 {len(self.buffer)} 条记录到数据库 (演员: {self.actress_name}, 总计: {self.total_written})")
             self.buffer.clear()
         except Exception as e:
-            print(f"写入CSV文件失败: {e}")
+            print(f"写入数据库失败: {e}")
     
     def close(self):
         """关闭写入器，确保所有数据都被写入"""
         self.flush()
+
+
+def ensure_output_dir(path: str):
+    """确保输出目录存在"""
+    d = os.path.dirname(os.path.abspath(path))
+    if d and not os.path.exists(d):
+        os.makedirs(d, exist_ok=True)
 
 
 def load_session_if_exists(session_file: str = "./session_videoID.json") -> Optional[Dict[str, Any]]:
@@ -590,31 +497,6 @@ def detect_pagination_style_and_max_pages(soup: BeautifulSoup, actress_url: str,
     return urls
 
 
-def ensure_output_dir(path: str):
-    """确保输出目录存在"""
-    d = os.path.dirname(os.path.abspath(path))
-    if d and not os.path.exists(d):
-        os.makedirs(d, exist_ok=True)
-
-
-def write_csv(rows: List[Dict[str, Any]], output_path: str):
-    """写入CSV文件"""
-    ensure_output_dir(output_path)
-    headers = [
-        "video_title",
-        "video_url", 
-        "video_type",
-        "video_id",
-        "id_pattern_type",
-        "page_no",
-    ]
-    with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=headers)
-        w.writeheader()
-        for r in rows:
-            w.writerow(r)
-
-
 def derive_actor_name_from_url(url: str) -> str:
     """从URL推导演员名"""
     try:
@@ -726,7 +608,7 @@ def crawl_actress_playwright(actress_url: str, concurrency: int, delay: float, r
                 items = extract_video_items(soup, page_url)
                 print(f"第 {page_no} 页找到 {len(items)} 个视频")
                 
-                # 转换为CSV行
+                # 转换为数据行
                 for title, url in items:
                     video_id, pattern_type = normalize_video_id(title)
                     
@@ -747,13 +629,9 @@ def crawl_actress_playwright(actress_url: str, concurrency: int, delay: float, r
                     }
                     all_rows.append(row)
             
-            # 输出结果
-            output_path = f"output/actor_{actress_name}.csv"
-            write_csv(all_rows, output_path)
-            
             print(f"\n抓取完成!")
             print(f"总共找到 {len(all_rows)} 个视频")
-            print(f"结果已保存到: {output_path}")
+            print("结果已保存到数据库")
             
             # 保存更新后的session
             try:
@@ -813,16 +691,15 @@ def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, re
                 # 开始处理演员
                 progress_manager.start_actress(actress_name, actress_url)
                 
-                # 准备CSV写入器
-                output_path = f"./output/actor_{sanitize_filename(actress_name)}.csv"
-                csv_writer = IncrementalCSVWriter(output_path, batch_size=10)
+                # 准备数据库写入器
+                db_writer = DatabaseWriter(actress_name, batch_size=10)
                 
                 try:
-                    # 获取演员的恢复信息
-                    start_page, existing_videos = progress_manager.get_actress_resume_info(actress_name)
+                    # 获取演员的恢复信息（作品级别）
+                    last_page, last_position, existing_videos = progress_manager.db_manager.get_actress_last_video_info(actress_name)
                     
-                    if start_page > 1:
-                        print(f"从第 {start_page} 页继续抓取 (已有 {existing_videos} 个视频)")
+                    if last_page > 1 or last_position > 0:
+                        print(f"从第 {last_page} 页第 {last_position + 1} 个作品继续抓取 (已有 {existing_videos} 个视频)")
                     
                     # 访问演员页面
                     content = get_page_content(page, actress_url, timeout, delay, retries)
@@ -837,7 +714,8 @@ def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, re
                     
                     # 遍历所有页面
                     for page_no, page_url in enumerate(page_urls, 1):
-                        if page_no < start_page:
+                        # 跳过已完成的页面
+                        if page_no < last_page:
                             continue
                             
                         print(f"正在处理第 {page_no}/{total_pages} 页...")
@@ -859,7 +737,11 @@ def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, re
                         print(f"第 {page_no} 页找到 {len(items)} 个视频")
                         
                         # 处理每个视频
-                        for title, url in items:
+                        for position, (title, url) in enumerate(items):
+                            # 如果是当前恢复页面，跳过已处理的作品
+                            if page_no == last_page and position < last_position:
+                                continue
+                            
                             video_id, pattern_type = normalize_video_id(title)
                             
                             # 确定视频类型
@@ -878,17 +760,35 @@ def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, re
                                 "page_no": page_no,
                             }
                             
-                            # 增量写入CSV
-                            csv_writer.add_row(row)
+                            # 增量写入数据库
+                            db_writer.add_row(row)
+                            
+                            # 作品级进度更新：每保存一个作品后立即更新进度
+                            # position是从0开始的，所以当前位置是position+1
+                            progress_manager.complete_page(actress_name, page_no, position + 1)
+                            
+                            # 强制刷新，确保进度立即保存到数据库
+                            db_writer.flush()
                         
-                        # 在每页结束后强制刷新，确保缓冲区内容全部落盘，避免中断造成漏写
-                        csv_writer.flush()
-                        
-                        # 完成页面处理
+                        # 页面完全处理完成后，确保进度正确记录为页面完成状态
+                        # 这里传入页面的总作品数，确保记录页面已完成
                         progress_manager.complete_page(actress_name, page_no, len(items))
                         
+                        # 检查是否需要跳转到下一页
+                        # 如果当前页的所有作品都已处理完成，更新last_page为下一页
+                        if len(items) > 0:  # 确保页面有作品
+                            with sqlite3.connect(progress_manager.db_manager.db_path) as conn:
+                                conn.execute("""
+                                    UPDATE actress_status 
+                                    SET last_page = ?, last_position_in_page = 0, updated_at = ?
+                                    WHERE actress_name = ?
+                                """, (page_no + 1, datetime.now().isoformat(), actress_name))
+                        
+                        # 在每页结束后强制刷新，确保缓冲区内容全部落盘，避免中断造成漏写
+                        db_writer.flush()
+                        
                         # 显示当前进度
-                        current_videos = progress_manager.progress["actresses_status"][actress_name]["total_videos"]
+                        current_videos = progress_manager.db_manager.get_actress_video_count(actress_name)
                         print(f"演员 {actress_name}: 第 {page_no}/{total_pages} 页完成，当前共 {current_videos} 个视频")
                         
                         # 页面间延时
@@ -896,28 +796,28 @@ def crawl_all_actresses_with_resume(concurrency: int = 1, delay: float = 1.0, re
                             time.sleep(delay)
                 
                     # 确保所有数据都写入
-                    csv_writer.close()
+                    db_writer.close()
                     
                     # 完成演员处理
                     progress_manager.complete_actress(actress_name)
                     
-                    total_videos = progress_manager.progress["actresses_status"][actress_name]["total_videos"]
+                    total_videos = progress_manager.db_manager.get_actress_video_count(actress_name)
                     print(f"演员 {actress_name} 抓取完成! 总共找到 {total_videos} 个视频")
-                    print(f"结果已保存到: {output_path}")
+                    print(f"结果已保存到数据库")
                     
                 except KeyboardInterrupt:
                     # 捕获用户中断，先将缓冲区写入磁盘再退出，避免漏写
                     print(f"\n用户中断，正在保存已抓取的数据...")
                     try:
-                        csv_writer.close()
+                        db_writer.close()
                     except Exception as close_error:
-                        print(f"关闭CSV写入器时出错: {close_error}")
+                        print(f"关闭数据库写入器时出错: {close_error}")
                     raise  # 重新抛出KeyboardInterrupt
                 except Exception as e:
                     error_msg = f"处理演员 {actress_url} 时出错: {e}"
                     print(error_msg)
                     progress_manager.add_error(actress_name, error_msg)
-                    csv_writer.close()  # 确保关闭写入器
+                    db_writer.close()  # 确保关闭写入器
                     continue
                 
                 # 演员间延时
@@ -956,11 +856,16 @@ def get_all_actresses_urls(page: Page, timeout: int, delay: float, retries: int,
     saved_urls: List[str] = []
     if resume:
         try:
-            saved = progress_manager.progress.get(progress_key, {}) or {}
-            saved_last_page = int(saved.get("last_page", 0) or 0)
-            saved_urls = list(saved.get("urls", []) or [])
-        except Exception:
+            # 从数据库获取演员列表抓取进度
+            saved_last_page, total_count = progress_manager.db_manager.get_actress_list_progress()
+            print(f"从数据库加载演员列表抓取进度: 最后页数={saved_last_page}, 总数={total_count}")
+            
+            # 从数据库获取已保存的演员URL
+            saved_urls = progress_manager.db_manager.get_all_actress_urls()
+            print(f"从数据库加载已保存的演员URL数量: {len(saved_urls)}")
+        except Exception as e:
             # 容错：进度损坏时忽略，重新开始
+            print(f"加载演员列表抓取进度失败: {e}")
             saved_last_page = 0
             saved_urls = []
     
@@ -990,14 +895,27 @@ def get_all_actresses_urls(page: Page, timeout: int, delay: float, retries: int,
                         page_new += 1
             print(f"第 {current_page} 页新增 {page_new} 个演员，总计 {len(actress_urls)}")
             
+            # 增量保存：每页抓取完成后立即保存新增的演员URL
+            if page_new > 0 and progress_manager:
+                try:
+                    # 获取本页新增的URL（最后page_new个）
+                    new_urls_this_page = actress_urls[-page_new:]
+                    progress_manager.db_manager.save_actress_urls(new_urls_this_page, current_page)
+                    print(f"✓ 已增量保存第 {current_page} 页的 {page_new} 个演员URL")
+                except Exception as e:
+                    print(f"✗ 增量保存演员URL失败: {e}")
+            
             # 按页持久化列表抓取进度（即便中途失败也能从当前页续抓）
             if resume:
                 try:
-                    progress_manager.progress[progress_key] = {
-                        "last_page": current_page,
-                        "urls": actress_urls,
-                    }
-                    progress_manager.save_progress()
+                    # 使用数据库存储演员列表抓取进度
+                    progress_manager.db_manager.update_crawl_progress(
+                        total_actresses=len(actress_urls)
+                    )
+                    # 保存演员列表抓取进度
+                    progress_manager.db_manager.update_actress_list_progress(
+                        current_page, len(actress_urls)
+                    )
                 except Exception as e:
                     print(f"保存演员列表抓取进度失败: {e}")
             
@@ -1017,6 +935,23 @@ def get_all_actresses_urls(page: Page, timeout: int, delay: float, retries: int,
                 break
     
     print(f"总共找到 {len(actress_urls)} 个演员详情页 (抓取到第 {current_page - 1} 页)")
+    
+    # 备用保存：确保所有URL都已保存（防止增量保存过程中有遗漏）
+    if actress_urls and progress_manager:
+        try:
+            # 检查数据库中已保存的URL数量
+            saved_urls = progress_manager.db_manager.get_all_actress_urls()
+            if len(saved_urls) < len(actress_urls):
+                # 如果数据库中的URL数量少于当前获取的数量，进行补充保存
+                missing_count = len(actress_urls) - len(saved_urls)
+                print(f"检测到 {missing_count} 个URL未保存，进行补充保存...")
+                progress_manager.db_manager.save_actress_urls(actress_urls, current_page - 1)
+                print(f"✓ 备用保存完成，总计 {len(actress_urls)} 个演员URL")
+            else:
+                print(f"✓ 所有 {len(actress_urls)} 个演员URL已通过增量保存完成")
+        except Exception as e:
+            print(f"✗ 备用保存演员URL失败: {e}")
+    
     return actress_urls
 
 
