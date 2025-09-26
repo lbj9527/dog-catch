@@ -235,10 +235,9 @@ class DatabaseManager:
         now = datetime.now().isoformat()
         
         with sqlite3.connect(self.db_path) as conn:
-            # 从数据库表中获取实际的视频总数
-            table_name = self.sanitize_table_name(actress_name)
+            # 从统一视频表中获取实际的视频总数（按演员名过滤）
             try:
-                cursor = conn.execute(f"SELECT COUNT(*) FROM {table_name}")
+                cursor = conn.execute("SELECT COUNT(*) FROM videos WHERE actress_name = ?", (actress_name,))
                 total_videos = cursor.fetchone()[0]
             except sqlite3.OperationalError:
                 total_videos = 0
@@ -342,8 +341,6 @@ class DatabaseManager:
         """获取演员最后保存的作品信息（作品级别）
         返回: (last_page, last_position_in_page, total_videos)
         """
-        table_name = self.sanitize_table_name(actress_name)
-        
         try:
             with sqlite3.connect(self.db_path) as conn:
                 # 从actress_status表获取最后的页面和位置信息
@@ -358,12 +355,14 @@ class DatabaseManager:
                     last_page = status_row[0]
                     last_position = status_row[1] or 0
                     
-                    # 获取总作品数
-                    cursor = conn.execute(f"SELECT COUNT(*) FROM {table_name}")
-                    total_videos = cursor.fetchone()[0]
+                    # 获取总作品数（统一视频表，按演员名过滤）
+                    try:
+                        cursor = conn.execute("SELECT COUNT(*) FROM videos WHERE actress_name = ?", (actress_name,))
+                        total_videos = cursor.fetchone()[0]
+                    except sqlite3.OperationalError:
+                        total_videos = 0
                     
                     # 作品级断点续传：直接返回当前记录的位置
-                    # last_position表示已处理的作品数量，下次应该从last_position开始（0-based索引）
                     return last_page, last_position, total_videos
                 else:
                     return 1, 0, 0
@@ -440,13 +439,12 @@ class DatabaseManager:
     # ==================== 演员视频数据管理方法 ====================
     
     def create_actress_table(self, actress_name: str):
-        """为演员创建数据表"""
-        table_name = self.sanitize_table_name(actress_name)
-        
+        """为演员创建数据表（统一视频表）"""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS {table_name} (
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS videos (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    actress_name TEXT NOT NULL,
                     video_title TEXT NOT NULL,
                     video_url TEXT,
                     video_type TEXT,
@@ -459,58 +457,61 @@ class DatabaseManager:
             conn.commit()
     
     def insert_videos(self, actress_name: str, videos: List[Dict[str, Any]]):
-        """批量插入视频数据"""
+        """批量插入视频数据（统一视频表）"""
         if not videos:
             return
         
-        table_name = self.sanitize_table_name(actress_name)
+        # 确保统一视频表存在
         self.create_actress_table(actress_name)
         
         with sqlite3.connect(self.db_path) as conn:
-            conn.executemany(f"""
-                INSERT INTO {table_name} 
-                (video_title, video_url, video_type, video_id, id_pattern_type, page_no)
-                VALUES (?, ?, ?, ?, ?, ?)
+            conn.executemany("""
+                INSERT INTO videos 
+                (actress_name, video_title, video_url, video_type, video_id, id_pattern_type, page_no)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, [
-                (v['video_title'], v['video_url'], v['video_type'], 
+                (actress_name, v['video_title'], v['video_url'], v['video_type'], 
                  v['video_id'], v['id_pattern_type'], v['page_no'])
                 for v in videos
             ])
             conn.commit()
     
     def get_actress_video_count(self, actress_name: str) -> int:
-        """获取演员的视频总数"""
-        table_name = self.sanitize_table_name(actress_name)
-        
+        """获取演员的视频总数（统一视频表）"""
         try:
             with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(f"SELECT COUNT(*) FROM {table_name}")
+                cursor = conn.execute("SELECT COUNT(*) FROM videos WHERE actress_name = ?", (actress_name,))
                 return cursor.fetchone()[0]
         except sqlite3.OperationalError:
             return 0
     
     def get_actress_videos(self, actress_name: str, 
                           video_type: str = None) -> List[Dict[str, Any]]:
-        """获取演员的视频列表"""
-        table_name = self.sanitize_table_name(actress_name)
-        
+        """获取演员的视频列表（统一视频表）"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 if video_type:
-                    cursor = conn.execute(f"""
+                    cursor = conn.execute(
+                        """
                         SELECT video_title, video_url, video_type, 
                                video_id, id_pattern_type, page_no
-                        FROM {table_name} 
-                        WHERE video_type = ?
+                        FROM videos 
+                        WHERE actress_name = ? AND video_type = ?
                         ORDER BY page_no, id
-                    """, (video_type,))
+                        """,
+                        (actress_name, video_type)
+                    )
                 else:
-                    cursor = conn.execute(f"""
+                    cursor = conn.execute(
+                        """
                         SELECT video_title, video_url, video_type, 
                                video_id, id_pattern_type, page_no
-                        FROM {table_name} 
+                        FROM videos 
+                        WHERE actress_name = ?
                         ORDER BY page_no, id
-                    """)
+                        """,
+                        (actress_name,)
+                    )
                 
                 columns = ['video_title', 'video_url', 'video_type', 
                           'video_id', 'id_pattern_type', 'page_no']
