@@ -135,6 +135,19 @@
               <circle cx="18" cy="8" r="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
           </button>
+          <button id="btnOpenVideoSource" class="social-entry-btn" title="打开视频源" aria-label="打开视频源">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M21 21l-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
+        <!-- 视频源输入区域 -->
+        <div id="videoSourcePanel" class="video-source-panel" style="display: none;">
+          <div class="video-source-input-group">
+            <input type="text" id="videoSourceInput" class="video-source-input" placeholder="请输入视频地址">
+            <button id="btnOpenVideo" class="video-source-open-btn">打开</button>
+          </div>
         </div>
         <!-- 移动端内联面板容器已移除 -->
       </div>

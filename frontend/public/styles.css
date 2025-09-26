@@ -58,6 +58,35 @@ body {
 .controls button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+    background: #2a2a2a !important;
+    color: #666 !important;
+    border-color: #444 !important;
+}
+
+.controls button:disabled:hover {
+    background: #2a2a2a !important;
+    color: #666 !important;
+}
+
+/* 字幕按钮特殊禁用态样式 */
+#subtitleToggle:disabled {
+    opacity: 0.6;
+    background: #2a2a2a !important;
+    color: #666 !important;
+    border-color: #444 !important;
+    position: relative;
+}
+
+#subtitleToggle:disabled::after {
+    content: "（需要视频源）";
+    font-size: 11px;
+    color: #888;
+    margin-left: 4px;
+}
+
+#subtitleToggle:disabled:hover {
+    background: #2a2a2a !important;
+    color: #666 !important;
 }
 
 .controls select:focus,
@@ -1532,6 +1561,88 @@ body.modal-open {
     width: 16px;
     height: 16px;
     transition: transform 0.2s ease;
+}
+
+/* 视频源输入面板样式 */
+.video-source-panel {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 100;
+    pointer-events: auto;
+}
+
+.video-source-input-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    padding: 6px 12px;
+    backdrop-filter: blur(4px);
+}
+
+.video-source-input {
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 14px;
+    width: min(400px, 65vw);
+    padding: 6px 0;
+    outline: none;
+}
+
+.video-source-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.video-source-input:focus {
+    outline: none;
+}
+
+.video-source-open-btn {
+    background: rgba(0, 123, 255, 0.8);
+    border: 1px solid rgba(0, 123, 255, 0.6);
+    border-radius: 16px;
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 6px 12px;
+    transition: all 0.3s ease;
+    user-select: none;
+}
+
+.video-source-open-btn:hover {
+    background: rgba(0, 123, 255, 0.9);
+    border-color: rgba(0, 123, 255, 0.8);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3);
+}
+
+.video-source-open-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.video-source-open-btn:disabled:hover {
+    background: rgba(0, 123, 255, 0.8);
+    border-color: rgba(0, 123, 255, 0.6);
+    transform: none;
+    box-shadow: none;
+}
+
+/* 移动端文字大小优化 */
+@media (max-width: 480px) {
+    .video-source-input {
+        font-size: 12px; /* 比桌面端的14px小一号 */
+    }
+    
+    .video-source-open-btn {
+        font-size: 12px; /* 比桌面端的14px小一号 */
+    }
 }
 
 .social-entry-btn.active .social-icon {
@@ -4594,5 +4705,26 @@ body.no-scroll {
     .load-more-replies-btn {
         font-size: 11px;
         padding: 5px 12px;
+    }
+}
+
+/* 脉冲提示动画 */
+.pulse-hint {
+    animation: pulseHint 1.5s ease-in-out infinite;
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
+}
+
+@keyframes pulseHint {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
+    }
+    50% {
+        transform: scale(1.05);
+        box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
     }
 }

@@ -604,13 +604,18 @@ class VideoPlayer {
     async init() {
         // 解析URL参数
         const params = this.parseUrlParams();
-        if (!params.src) {
-            this.showMessage('缺少视频源参数', 'error');
-            return;
-        }
         
-        this.currentVideoUrl = params.src;
-        this.currentVideoId = params.video || '';
+        // 设置无视频源模式标志
+        this.noVideoSourceMode = !params.src;
+        
+        if (params.src) {
+            this.currentVideoUrl = params.src;
+            this.currentVideoId = params.video || '';
+        } else {
+            // 无视频源模式
+            this.currentVideoUrl = '';
+            this.currentVideoId = '';
+        }
         
         // 设置页面标题
         const title = params.title || 'Subtitle Dog';
@@ -633,19 +638,24 @@ class VideoPlayer {
         // 初始化DPlayer播放器
         this.initDPlayer();
         
-        // 处理视频源（播放不需要登录）
-        if (params.type === 'hls' || this.currentVideoUrl.includes('.m3u8')) {
-            this.handleHLSVideo();
+        if (this.noVideoSourceMode) {
+            // 无视频源模式：显示提示信息并禁用相关功能
+            this.setupNoVideoSourceMode();
         } else {
-            this.handleMP4Video();
-        }
-        
-        // 加载字幕（仅登录后尝试）
-        if (this.currentVideoId) {
-            if (!REQUIRE_SUBTITLE_LOGIN || this.isLoggedIn()) {
-                this.loadSubtitleVariants();
+            // 有视频源：正常处理视频
+            if (params.type === 'hls' || this.currentVideoUrl.includes('.m3u8')) {
+                this.handleHLSVideo();
             } else {
-                this.disableSubtitleUi('登录后可用');
+                this.handleMP4Video();
+            }
+            
+            // 加载字幕（仅登录后尝试）
+            if (this.currentVideoId) {
+                if (!REQUIRE_SUBTITLE_LOGIN || this.isLoggedIn()) {
+                    this.loadSubtitleVariants();
+                } else {
+                    this.disableSubtitleUi('登录后可用');
+                }
             }
         }
         
@@ -662,6 +672,88 @@ class VideoPlayer {
         
         // 自动登录后自动打开社交面板
         this.autoOpenSocialPanelIfApplicable();
+    }
+    
+    // 设置无视频源模式
+    setupNoVideoSourceMode() {
+        // 显示提示信息
+        this.showMessage('欢迎使用 Subtitle Dog！请通过视频源按钮添加视频。', 'info');
+        
+        // 确保顶部工具栏按钮始终显示
+        this.ensureTopToolbarVisible();
+        
+        // 禁用字幕按钮并显示提示
+        this.disableSubtitleUi('需要视频源');
+        
+        // 禁用视频相关的控制按钮
+        this.disableVideoControls();
+        
+        // 显示首次使用提示
+        this.showFirstTimeHint();
+    }
+    
+    // 确保顶部工具栏按钮始终显示
+    ensureTopToolbarVisible() {
+        const notificationBell = document.getElementById('notificationBell');
+        const userAvatar = document.getElementById('userAvatar');
+        
+        if (notificationBell) {
+            notificationBell.style.display = 'flex';
+        }
+        if (userAvatar) {
+            userAvatar.style.display = 'flex';
+        }
+    }
+    
+    // 禁用视频相关控制按钮
+    disableVideoControls() {
+        // 禁用播放器内的控制按钮（如果存在）
+        if (this.player && this.player.video) {
+            this.player.video.style.pointerEvents = 'none';
+            this.player.video.style.opacity = '0.5';
+        }
+        
+        // 禁用点赞按钮
+        const likeButton = document.getElementById('likeButton');
+        if (likeButton) {
+            likeButton.disabled = true;
+            likeButton.title = '需要视频源才能点赞';
+        }
+    }
+    
+    // 显示首次使用提示
+    showFirstTimeHint() {
+        // 检查是否是首次访问
+        const hasVisited = localStorage.getItem('dc_has_visited');
+        if (!hasVisited) {
+            setTimeout(() => {
+                this.showMessage('💡 提示：点击右下角的"打开视频源"按钮来添加视频！', 'info');
+                localStorage.setItem('dc_has_visited', 'true');
+            }, 2000);
+        }
+        
+        // 为"打开视频源"按钮添加点击提示动画
+        this.addOpenVideoSourceHint();
+    }
+    
+    // 为"打开视频源"按钮添加提示动画
+    addOpenVideoSourceHint() {
+        const openVideoBtn = document.getElementById('btnOpenVideoSource');
+        if (openVideoBtn) {
+            // 添加脉冲动画类
+            openVideoBtn.classList.add('pulse-hint');
+            
+            // 3秒后移除动画
+            setTimeout(() => {
+                openVideoBtn.classList.remove('pulse-hint');
+            }, 3000);
+            
+            // 点击后立即移除动画并记录用户已知晓
+            openVideoBtn.addEventListener('click', () => {
+                openVideoBtn.classList.remove('pulse-hint');
+                localStorage.setItem('dc_user_knows_open_video', 'true');
+            }, { once: true });
+        }
     }
     
     isLoggedIn() { return !!this.userToken; }
@@ -1159,6 +1251,19 @@ class VideoPlayer {
         const fallbackLink = document.getElementById('fallbackLink');
         if (fallbackLink) {
             fallbackLink.href = this.currentVideoUrl;
+        }
+        
+        // 视频源打开按钮
+        this.setupVideoSourceButton();
+    }
+    
+    setupVideoSourceButton() {
+        const btnOpenVideo = document.getElementById('btnOpenVideo');
+        if (btnOpenVideo) {
+            btnOpenVideo.addEventListener('click', () => {
+                // 暂时无任何处理
+                console.log('打开按钮被点击');
+            });
         }
     }
 
@@ -1718,18 +1823,25 @@ class VideoPlayer {
         const subtitleBtn = document.getElementById('subtitleToggle');
         const logged = this.isLoggedIn();
         loginBtn.style.display = logged ? 'none' : '';
-        if (userAvatar) userAvatar.style.display = logged ? '' : 'none';
+        
+        // 在无视频源模式下，始终显示用户头像和通知铃铛
+        if (this.noVideoSourceMode) {
+            if (userAvatar) userAvatar.style.display = 'flex';
+            const notificationBell = document.getElementById('notificationBell');
+            if (notificationBell) notificationBell.style.display = 'flex';
+        } else {
+            // 正常模式下根据登录状态控制显示
+            if (userAvatar) userAvatar.style.display = logged ? '' : 'none';
+            const notificationBell = document.getElementById('notificationBell');
+            if (notificationBell) {
+                notificationBell.style.display = logged ? '' : 'none';
+            }
+        }
         
         // 控制心愿单入口显示
         const menuWishlist = document.getElementById('menuWishlist');
         if (menuWishlist) {
             menuWishlist.style.display = logged ? '' : 'none';
-        }
-        
-        // 控制通知相关UI显示
-        const notificationBell = document.getElementById('notificationBell');
-        if (notificationBell) {
-            notificationBell.style.display = logged ? '' : 'none';
         }
         
         // 如果用户已登录，启动通知轮询
@@ -1865,6 +1977,12 @@ class VideoPlayer {
     
     // 处理HLS视频
     async handleHLSVideo() {
+        // 在无视频源模式下不执行HLS处理
+        if (this.noVideoSourceMode) {
+            this.showMessage('需要视频源才能播放HLS视频', 'warning');
+            return;
+        }
+        
         try {
             // 通过代理检查是否为master playlist（播放无需登录）
             const proxyUrl = `${API_BASE_URL}/api/hls?url=${encodeURIComponent(this.currentVideoUrl)}`;
@@ -1894,11 +2012,23 @@ class VideoPlayer {
     
     // 处理MP4视频
     handleMP4Video() {
+        // 在无视频源模式下不执行MP4处理
+        if (this.noVideoSourceMode) {
+            this.showMessage('需要视频源才能播放MP4视频', 'warning');
+            return;
+        }
+        
         this.playVideo(this.currentVideoUrl, 'mp4');
     }
     
     // 播放视频
     playVideo(url, type) {
+        // 在无视频源模式下不执行播放操作
+        if (this.noVideoSourceMode || !this.player) {
+            this.showMessage('需要视频源才能播放视频', 'warning');
+            return;
+        }
+        
         this.player.switchVideo({
             url: url,
             type: 'auto' // DPlayer 会自动检测类型
@@ -1999,6 +2129,12 @@ class VideoPlayer {
     
     // 切换清晰度
     switchQuality(url) {
+        // 在无视频源模式下不执行切换操作
+        if (this.noVideoSourceMode || !this.player || !this.player.video) {
+            this.showMessage('需要视频源才能切换清晰度', 'warning');
+            return;
+        }
+        
         const currentTime = this.player.video.currentTime;
         const wasPlaying = !this.player.video.paused;
         
@@ -2998,6 +3134,7 @@ class VideoPlayer {
         const btnSubComment = document.getElementById('btnSubComment');
         const btnUserPlaza = document.getElementById('btnUserPlaza');
         const btnRealtimeChat = document.getElementById('btnRealtimeChat');
+        const btnOpenVideoSource = document.getElementById('btnOpenVideoSource');
         
         // 绑定入口按钮事件
         if (btnSubComment) {
@@ -3016,6 +3153,32 @@ class VideoPlayer {
             btnRealtimeChat.addEventListener('click', () => {
                 this.toggleSocialFeature('realtime-chat');
             });
+        }
+        
+        if (btnOpenVideoSource) {
+            btnOpenVideoSource.addEventListener('click', () => {
+                this.toggleVideoSourcePanel();
+            });
+        }
+    }
+    
+    // 切换视频源输入面板的显示/隐藏
+    toggleVideoSourcePanel() {
+        const panel = document.getElementById('videoSourcePanel');
+        if (panel) {
+            // 正确判断当前显示状态：如果display为'none'或空字符串，则认为是隐藏的
+            const isVisible = panel.style.display === 'block';
+            panel.style.display = isVisible ? 'none' : 'block';
+            
+            // 切换按钮的激活状态
+            const btn = document.getElementById('btnOpenVideoSource');
+            if (btn) {
+                if (isVisible) {
+                    btn.classList.remove('active');
+                } else {
+                    btn.classList.add('active');
+                }
+            }
         }
     }
     
