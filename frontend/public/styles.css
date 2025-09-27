@@ -78,7 +78,7 @@ body {
 }
 
 #subtitleToggle:disabled::after {
-    content: "（需要视频源）";
+    content: "";
     font-size: 11px;
     color: #888;
     margin-left: 4px;

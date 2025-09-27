@@ -692,16 +692,17 @@ class VideoPlayer {
         this.showFirstTimeHint();
     }
     
-    // 确保顶部工具栏按钮始终显示
+    // 确保顶部工具栏按钮根据登录状态显示
     ensureTopToolbarVisible() {
+        const logged = this.isLoggedIn();
         const notificationBell = document.getElementById('notificationBell');
         const userAvatar = document.getElementById('userAvatar');
         
         if (notificationBell) {
-            notificationBell.style.display = 'flex';
+            notificationBell.style.display = logged ? 'flex' : 'none';
         }
         if (userAvatar) {
-            userAvatar.style.display = 'flex';
+            userAvatar.style.display = logged ? 'flex' : 'none';
         }
     }
     
@@ -1824,18 +1825,11 @@ class VideoPlayer {
         const logged = this.isLoggedIn();
         loginBtn.style.display = logged ? 'none' : '';
         
-        // 在无视频源模式下，始终显示用户头像和通知铃铛
-        if (this.noVideoSourceMode) {
-            if (userAvatar) userAvatar.style.display = 'flex';
-            const notificationBell = document.getElementById('notificationBell');
-            if (notificationBell) notificationBell.style.display = 'flex';
-        } else {
-            // 正常模式下根据登录状态控制显示
-            if (userAvatar) userAvatar.style.display = logged ? '' : 'none';
-            const notificationBell = document.getElementById('notificationBell');
-            if (notificationBell) {
-                notificationBell.style.display = logged ? '' : 'none';
-            }
+        // 无论是否有视频源，都根据登录状态控制显示
+        if (userAvatar) userAvatar.style.display = logged ? 'flex' : 'none';
+        const notificationBell = document.getElementById('notificationBell');
+        if (notificationBell) {
+            notificationBell.style.display = logged ? 'flex' : 'none';
         }
         
         // 控制心愿单入口显示
@@ -3186,9 +3180,18 @@ class VideoPlayer {
     toggleSocialFeature(feature) {
         // 每次操作前刷新设备状态，确保最新布局判定
         this.updateSocialState();
+        
+        // 检查是否有视频源
+        if (!this.currentVideoUrl) {
+            this.showMessage('请先打开视频源，以使用此功能', 'warning');
+            return;
+        }
+        
         // 检查登录状态
         if (!this.isLoggedIn()) {
             this.showMessage('请先登录后使用社交功能', 'warning');
+            const loginModal = document.getElementById('loginModal');
+            if (loginModal) loginModal.style.display = 'flex';
             return;
         }
         
