@@ -974,6 +974,7 @@ const defaultCors = [
     'http://localhost:5173',  // 管理端开发地址
     'http://localhost:5174',  // 播放器开发地址
     'https://player.sub-dog.top',
+    'https://admin.sub-dog.top',  // 管理后台地址
     'https://api.sub-dog.top'
 ];
 const corsList = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
