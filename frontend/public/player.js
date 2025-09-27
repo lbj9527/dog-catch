@@ -7131,32 +7131,20 @@ class VideoSourceLoader {
         const currentUrl = new URL(window.location.href);
         const newUrl = new URL(currentUrl.origin + currentUrl.pathname);
         
-        // 保留现有的查询参数（除了src和type）
-        for (const [key, value] of currentUrl.searchParams) {
-            if (key !== 'src' && key !== 'type') {
-                newUrl.searchParams.set(key, value);
-            }
-        }
-        
         // 设置新的视频源参数
         newUrl.searchParams.set('src', videoUrl);
         newUrl.searchParams.set('type', videoType);
         
-        // 自动生成视频ID和标题（如果不存在）
-        if (!newUrl.searchParams.has('video')) {
-            try {
-                const generatedId = this.generateVideoIdFromUrl(videoUrl);
-                newUrl.searchParams.set('video', generatedId);
-                
-                if (!newUrl.searchParams.has('title')) {
-                    newUrl.searchParams.set('title', `${generatedId}[自动生成]`);
-                }
-            } catch (error) {
-                console.error('生成视频ID失败:', error);
-                // 显示错误提示
-                this.showError('视频ID生成失败，请重新输入视频地址');
-                throw new Error('视频ID生成失败');
-            }
+        // 总是生成新的视频ID和标题
+        try {
+            const generatedId = this.generateVideoIdFromUrl(videoUrl);
+            newUrl.searchParams.set('video', generatedId);
+            newUrl.searchParams.set('title', `${generatedId}[自动生成]`);
+        } catch (error) {
+            console.error('生成视频ID失败:', error);
+            // 显示错误提示
+            this.showError('视频ID生成失败，请重新输入视频地址');
+            throw new Error('视频ID生成失败');
         }
         
         return newUrl.toString();
