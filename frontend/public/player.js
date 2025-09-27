@@ -7056,6 +7056,76 @@ class VideoSourceLoader {
         console.warn('警告:', message);
     }
 
+    // 基于视频URL生成唯一ID
+    generateVideoIdFromUrl(videoUrl) {
+        if (!videoUrl || typeof videoUrl !== 'string') {
+            throw new Error('无效的视频URL');
+        }
+        
+        // 清理URL，移除查询参数和片段标识符
+        const cleanUrl = videoUrl.split('?')[0].split('#')[0];
+        
+        // 提取基础路径：对于包含UUID的URL，只取到UUID部分
+        const baseUrl = this.extractBaseUrl(cleanUrl);
+        
+        // 生成哈希
+        const hash = this.simpleHash(baseUrl);
+        
+        // 格式化为 USER-XXXXXXXX
+        const videoId = `USER-${hash.substring(0, 8).toUpperCase()}`;
+        
+        return videoId;
+    }
+
+    // 提取URL的基础部分用于哈希生成
+    extractBaseUrl(url) {
+        try {
+            const urlObj = new URL(url);
+            const pathParts = urlObj.pathname.split('/').filter(part => part.length > 0);
+            
+            // 查找UUID模式的路径段（格式：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx）
+            const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            
+            for (let i = 0; i < pathParts.length; i++) {
+                if (uuidPattern.test(pathParts[i])) {
+                    // 找到UUID，返回到UUID为止的路径
+                    const baseParts = pathParts.slice(0, i + 1);
+                    return `${urlObj.protocol}//${urlObj.host}/${baseParts.join('/')}`;
+                }
+            }
+            
+            // 如果没有找到UUID，返回原始的清理后URL
+            return url;
+        } catch (error) {
+            // 如果URL解析失败，返回原始URL
+            console.warn('URL解析失败，使用原始URL:', error);
+            return url;
+        }
+    }
+
+    // 改进的哈希函数 - 使用DJB2算法变体
+    simpleHash(str) {
+        let hash = 5381; // DJB2算法的初始值
+        
+        if (str.length === 0) return hash.toString(16).padStart(8, '0');
+        
+        // 使用DJB2算法
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) + hash) + char; // hash * 33 + char
+        }
+        
+        // 添加字符串长度作为额外的散列因子，增强唯一性
+        const lengthHash = str.length * 31;
+        hash = hash ^ lengthHash;
+        
+        // 确保返回正数并转换为16进制
+        const result = Math.abs(hash).toString(16).toUpperCase();
+        
+        // 确保至少8位，不足时前补0，超过8位时截取前8位
+        return result.padStart(8, '0').substring(0, 8);
+    }
+
     // 构建新的URL参数
     buildVideoUrl(videoUrl, videoType) {
         const currentUrl = new URL(window.location.href);
@@ -7071,6 +7141,23 @@ class VideoSourceLoader {
         // 设置新的视频源参数
         newUrl.searchParams.set('src', videoUrl);
         newUrl.searchParams.set('type', videoType);
+        
+        // 自动生成视频ID和标题（如果不存在）
+        if (!newUrl.searchParams.has('video')) {
+            try {
+                const generatedId = this.generateVideoIdFromUrl(videoUrl);
+                newUrl.searchParams.set('video', generatedId);
+                
+                if (!newUrl.searchParams.has('title')) {
+                    newUrl.searchParams.set('title', `${generatedId}[自动生成]`);
+                }
+            } catch (error) {
+                console.error('生成视频ID失败:', error);
+                // 显示错误提示
+                this.showError('视频ID生成失败，请重新输入视频地址');
+                throw new Error('视频ID生成失败');
+            }
+        }
         
         return newUrl.toString();
     }
