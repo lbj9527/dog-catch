@@ -145,8 +145,31 @@
         <!-- 视频源输入区域 -->
         <div id="videoSourcePanel" class="video-source-panel" style="display: none;">
           <div class="video-source-input-group">
-            <input type="text" id="videoSourceInput" class="video-source-input" placeholder="请输入视频地址">
+            <input type="text" id="videoSourceInput" class="video-source-input" placeholder="请输入视频地址" spellcheck="false">
+            <button id="btnHistoryToggle" class="history-toggle-btn" title="显示历史记录">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M12 8v4l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+              </svg>
+            </button>
             <button id="btnOpenVideo" class="video-source-open-btn">打开</button>
+          </div>
+          <!-- 历史记录下拉列表 -->
+          <div id="historyDropdown" class="history-dropdown" style="display: none;">
+            <div class="history-header">
+              <span class="history-title">历史记录</span>
+              <button id="btnClearHistory" class="clear-history-btn" title="清空历史记录">清空</button>
+            </div>
+            <div id="historyList" class="history-list">
+              <div class="history-empty">暂无历史记录</div>
+            </div>
+          </div>
+          <!-- 加载状态和错误提示 -->
+          <div id="videoSourceStatus" class="video-source-status" style="display: none;">
+            <div class="status-content">
+              <span class="status-icon"></span>
+              <span class="status-text"></span>
+            </div>
           </div>
         </div>
         <!-- 移动端内联面板容器已移除 -->

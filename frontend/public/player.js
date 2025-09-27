@@ -1260,11 +1260,158 @@ class VideoPlayer {
     
     setupVideoSourceButton() {
         const btnOpenVideo = document.getElementById('btnOpenVideo');
-        if (btnOpenVideo) {
-            btnOpenVideo.addEventListener('click', () => {
-                // 暂时无任何处理
-                console.log('打开按钮被点击');
+        const videoSourceInput = document.getElementById('videoSourceInput');
+        const btnHistoryToggle = document.getElementById('btnHistoryToggle');
+        const historyDropdown = document.getElementById('historyDropdown');
+        const historyList = document.getElementById('historyList');
+        const btnClearHistory = document.getElementById('btnClearHistory');
+        const videoSourceStatus = document.getElementById('videoSourceStatus');
+        
+        if (!btnOpenVideo || !videoSourceInput) return;
+        
+        const videoLoader = new VideoSourceLoader(this);
+        const historyManager = new VideoSourceHistory();
+        
+        // 初始化历史记录UI
+        this.updateHistoryUI(historyManager, historyList);
+        
+        // 历史记录按钮点击事件
+        if (btnHistoryToggle) {
+            btnHistoryToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isVisible = historyDropdown.style.display !== 'none';
+                historyDropdown.style.display = isVisible ? 'none' : 'block';
+                btnHistoryToggle.classList.toggle('active', !isVisible);
+                
+                if (!isVisible) {
+                    this.updateHistoryUI(historyManager, historyList);
+                }
             });
+        }
+        
+        // 清空历史记录按钮
+        if (btnClearHistory) {
+            btnClearHistory.addEventListener('click', () => {
+                const history = historyManager.getHistory();
+                if (history.length > 0) {
+                    historyManager.clear();
+                    this.updateHistoryUI(historyManager, historyList);
+                    this.showToast('历史记录已清空', 'success');
+                }
+            });
+        }
+        
+        // 点击外部关闭历史记录下拉列表
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.video-source-panel')) {
+                historyDropdown.style.display = 'none';
+                btnHistoryToggle.classList.remove('active');
+            }
+        });
+        
+        // 打开按钮点击事件
+        btnOpenVideo.addEventListener('click', async () => {
+            const url = videoSourceInput.value.trim();
+            if (!url) {
+                this.showStatus(videoSourceStatus, 'error', '请输入视频地址');
+                return;
+            }
+            
+            // 快速检查URL格式，对于明显不支持的格式直接提示
+            if (!url.match(/^https?:\/\//i)) {
+                this.showToast('仅支持HTTP和HTTPS协议的视频地址', 'error');
+                return;
+            }
+            
+            // 尝试解析URL，如果格式无效直接提示
+            try {
+                new URL(url);
+            } catch (e) {
+                this.showToast('URL格式无效，请输入正确的视频地址', 'error');
+                return;
+            }
+            
+            this.showStatus(videoSourceStatus, 'loading', '正在验证视频地址...');
+            btnOpenVideo.disabled = true;
+            
+            try {
+                await videoLoader.loadVideoSource(url);
+            } catch (error) {
+                this.showStatus(videoSourceStatus, 'error', error.message);
+            } finally {
+                btnOpenVideo.disabled = false;
+            }
+        });
+        
+        // 输入框回车事件
+        videoSourceInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                btnOpenVideo.click();
+            }
+        });
+    }
+    
+    // 更新历史记录UI
+    updateHistoryUI(historyManager, historyList) {
+        const history = historyManager.getHistory();
+        
+        if (history.length === 0) {
+            historyList.innerHTML = '<div class="history-empty">暂无历史记录</div>';
+            return;
+        }
+        
+        historyList.innerHTML = history.map(item => `
+            <div class="history-item" data-url="${item.url}">
+                <div class="history-item-title">${item.title}</div>
+                <div class="history-item-url">${item.url}</div>
+                <div class="history-item-time">${this.formatTime(item.timestamp)}</div>
+            </div>
+        `).join('');
+        
+        // 添加历史记录项点击事件
+        historyList.querySelectorAll('.history-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const url = item.dataset.url;
+                const videoSourceInput = document.getElementById('videoSourceInput');
+                if (videoSourceInput) {
+                    videoSourceInput.value = url;
+                    document.getElementById('historyDropdown').style.display = 'none';
+                    document.getElementById('btnHistoryToggle').classList.remove('active');
+                }
+            });
+        });
+    }
+    
+    // 显示状态信息
+    showStatus(statusElement, type, message) {
+        if (!statusElement) return;
+        
+        statusElement.className = `video-source-status ${type}`;
+        statusElement.querySelector('.status-text').textContent = message;
+        statusElement.style.display = 'flex';
+        
+        // 自动隐藏成功和错误状态
+        if (type === 'success' || type === 'error') {
+            setTimeout(() => {
+                statusElement.style.display = 'none';
+            }, 3000);
+        }
+    }
+    
+    // 格式化时间
+    formatTime(timestamp) {
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diff = now - date;
+        
+        if (diff < 60000) { // 1分钟内
+            return '刚刚';
+        } else if (diff < 3600000) { // 1小时内
+            return `${Math.floor(diff / 60000)}分钟前`;
+        } else if (diff < 86400000) { // 1天内
+            return `${Math.floor(diff / 3600000)}小时前`;
+        } else {
+            return date.toLocaleDateString();
         }
     }
 
@@ -6603,3 +6750,379 @@ window.addEventListener('beforeunload', () => {
         window.videoPlayerApp = null; // 同步清理新别名
     }
 });
+
+// 视频源验证器类
+class VideoSourceValidator {
+    constructor() {
+        this.supportedFormats = ['.mp4', '.webm', '.ogg', '.avi', '.mov', '.mkv', '.flv', '.wmv'];
+        this.hlsFormats = ['.m3u8'];
+        this.timeout = 10000; // 10秒超时
+    }
+
+    // 验证URL格式
+    validateUrl(url) {
+        if (!url || typeof url !== 'string') {
+            return { valid: false, error: 'URL不能为空' };
+        }
+
+        // 去除首尾空格
+        url = url.trim();
+        
+        // 检查协议
+        if (!url.match(/^https?:\/\//i)) {
+            return { valid: false, error: '仅支持HTTP和HTTPS协议' };
+        }
+
+        try {
+            new URL(url);
+        } catch (e) {
+            return { valid: false, error: 'URL格式无效' };
+        }
+
+        return { valid: true, url: url };
+    }
+
+    // 检测视频类型
+    detectVideoType(url) {
+        const urlLower = url.toLowerCase();
+        
+        // 检查HLS流
+        if (this.hlsFormats.some(format => urlLower.includes(format))) {
+            return 'hls';
+        }
+        
+        // 检查常见视频格式
+        if (this.supportedFormats.some(format => urlLower.includes(format))) {
+            return 'mp4'; // 统一归类为mp4类型处理
+        }
+        
+        // 默认尝试作为mp4处理
+        return 'mp4';
+    }
+
+    // 检查URL可访问性
+    async checkAccessibility(url) {
+        return new Promise((resolve) => {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                controller.abort();
+                resolve({ accessible: false, error: '视频地址无效' });
+            }, 3000); // 改为3秒超时
+
+            // 首先尝试no-cors模式的HEAD请求
+            fetch(url, {
+                method: 'HEAD',
+                signal: controller.signal,
+                mode: 'no-cors'
+            })
+            .then(response => {
+                clearTimeout(timeoutId);
+                // no-cors模式下，response.ok总是false，但如果没有抛出错误说明URL可访问
+                resolve({ accessible: true, warning: '无法验证具体状态码，但URL格式正确' });
+            })
+            .catch(error => {
+                clearTimeout(timeoutId);
+                if (error.name === 'AbortError') {
+                    resolve({ accessible: false, error: '视频地址无效' });
+                } else {
+                    // 如果no-cors也失败，尝试cors模式
+                    this.checkAccessibilityWithCors(url).then(resolve);
+                }
+            });
+        });
+    }
+
+    // 使用CORS模式检查可访问性（备用方法）
+    async checkAccessibilityWithCors(url) {
+        return new Promise((resolve) => {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                controller.abort();
+                resolve({ accessible: false, error: '视频地址无效' });
+            }, 3000); // 改为3秒超时
+
+            fetch(url, {
+                method: 'HEAD',
+                signal: controller.signal,
+                mode: 'cors'
+            })
+            .then(response => {
+                clearTimeout(timeoutId);
+                if (response.ok) {
+                    resolve({ accessible: true });
+                } else {
+                    resolve({ accessible: false, error: `服务器返回错误: ${response.status}` });
+                }
+            })
+            .catch(error => {
+                clearTimeout(timeoutId);
+                if (error.name === 'AbortError') {
+                    resolve({ accessible: false, error: '视频地址无效' });
+                } else if (error.message.includes('CORS') || error.message.includes('cors')) {
+                    // CORS错误通常意味着资源存在但有跨域限制，对于视频流这很常见
+                    resolve({ accessible: true, warning: 'CORS限制，但资源可能可用' });
+                } else {
+                    resolve({ accessible: false, error: `网络错误: ${error.message}` });
+                }
+            });
+        });
+    }
+}
+
+// 视频源历史记录管理器
+class VideoSourceHistory {
+    constructor() {
+        this.storageKey = 'video_source_history';
+        this.maxItems = 20;
+    }
+
+    // 添加到历史记录
+    add(url, title = '') {
+        if (!url) return;
+        
+        const history = this.getHistory();
+        const item = {
+            url: url,
+            title: title || this.extractTitleFromUrl(url),
+            timestamp: Date.now()
+        };
+
+        // 移除重复项
+        const filtered = history.filter(h => h.url !== url);
+        
+        // 添加到开头
+        filtered.unshift(item);
+        
+        // 限制数量
+        const limited = filtered.slice(0, this.maxItems);
+        
+        // 保存
+        try {
+            localStorage.setItem(this.storageKey, JSON.stringify(limited));
+        } catch (e) {
+            console.warn('无法保存历史记录:', e);
+        }
+    }
+
+    // 获取历史记录
+    getHistory() {
+        try {
+            const stored = localStorage.getItem(this.storageKey);
+            return stored ? JSON.parse(stored) : [];
+        } catch (e) {
+            console.warn('无法读取历史记录:', e);
+            return [];
+        }
+    }
+
+    // 清空历史记录
+    clear() {
+        try {
+            localStorage.removeItem(this.storageKey);
+        } catch (e) {
+            console.warn('无法清空历史记录:', e);
+        }
+    }
+
+    // 删除单个历史记录
+    remove(url) {
+        const history = this.getHistory();
+        const filtered = history.filter(h => h.url !== url);
+        try {
+            localStorage.setItem(this.storageKey, JSON.stringify(filtered));
+        } catch (e) {
+            console.warn('无法删除历史记录:', e);
+        }
+    }
+
+    // 从URL提取标题
+    extractTitleFromUrl(url) {
+        try {
+            const urlObj = new URL(url);
+            const pathname = urlObj.pathname;
+            const filename = pathname.split('/').pop();
+            
+            if (filename && filename.includes('.')) {
+                return filename.split('.')[0];
+            }
+            
+            return urlObj.hostname;
+        } catch (e) {
+            return 'Unknown';
+        }
+    }
+}
+
+// 视频源加载器
+class VideoSourceLoader {
+    constructor(videoPlayerInstance = null) {
+        this.validator = new VideoSourceValidator();
+        this.history = new VideoSourceHistory();
+        this.videoPlayer = videoPlayerInstance;
+    }
+
+    // 显示加载状态
+    showLoading(message = '正在处理...') {
+        const btn = document.getElementById('btnOpenVideo');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = message;
+        }
+    }
+
+    // 隐藏加载状态
+    hideLoading() {
+        const btn = document.getElementById('btnOpenVideo');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '打开';
+        }
+    }
+
+    // 显示错误信息
+    showError(message) {
+        // 使用VideoPlayer实例的showToast方法或直接创建Toast
+        if (this.videoPlayer && typeof this.videoPlayer.showToast === 'function') {
+            this.videoPlayer.showToast(message, 'error', 3000);
+        } else {
+            // 直接创建Toast，不依赖VideoPlayer实例
+            this.createToast(message, 'error', 3000);
+        }
+        
+        // 隐藏验证视频框
+        const videoSourceStatus = document.getElementById('videoSourceStatus');
+        if (videoSourceStatus) {
+            videoSourceStatus.style.display = 'none';
+        }
+    }
+
+    // 创建Toast的独立方法
+    createToast(message, type = 'info', duration = 2000) {
+        // 创建或获取 Toast 容器
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            container.style.position = 'fixed';
+            container.style.bottom = '16px';
+            container.style.right = '16px';
+            container.style.zIndex = '9999';
+            container.style.display = 'flex';
+            container.style.flexDirection = 'column';
+            container.style.gap = '10px';
+            container.style.pointerEvents = 'none';
+            document.body.appendChild(container);
+        }
+
+        const toast = document.createElement('div');
+        toast.textContent = message;
+        toast.style.pointerEvents = 'none';
+        toast.style.padding = '10px 14px';
+        toast.style.borderRadius = '6px';
+        toast.style.fontSize = '14px';
+        toast.style.color = '#fff';
+        toast.style.boxShadow = '0 6px 20px rgba(0,0,0,0.2)';
+        toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(-6px)';
+
+        // 颜色方案
+        let bg = 'rgba(0,0,0,0.8)';
+        if (type === 'success') bg = 'rgba(16, 185, 129, 0.95)';
+        else if (type === 'error') bg = 'rgba(239, 68, 68, 0.95)';
+        else if (type === 'warning') bg = 'rgba(245, 158, 11, 0.95)';
+        else if (type === 'info') bg = 'rgba(59, 130, 246, 0.95)';
+        toast.style.background = bg;
+
+        container.appendChild(toast);
+        // 进入动画
+        requestAnimationFrame(() => {
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateY(0)';
+        });
+        // 自动移除
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(-6px)';
+            setTimeout(() => {
+                try { container.removeChild(toast); } catch {}
+            }, 300);
+        }, Math.max(1000, duration));
+    }
+
+    // 显示警告信息
+    showWarning(message) {
+        // 可以在这里添加更好的警告显示UI
+        console.warn('警告:', message);
+    }
+
+    // 构建新的URL参数
+    buildVideoUrl(videoUrl, videoType) {
+        const currentUrl = new URL(window.location.href);
+        const newUrl = new URL(currentUrl.origin + currentUrl.pathname);
+        
+        // 保留现有的查询参数（除了src和type）
+        for (const [key, value] of currentUrl.searchParams) {
+            if (key !== 'src' && key !== 'type') {
+                newUrl.searchParams.set(key, value);
+            }
+        }
+        
+        // 设置新的视频源参数
+        newUrl.searchParams.set('src', videoUrl);
+        newUrl.searchParams.set('type', videoType);
+        
+        return newUrl.toString();
+    }
+
+    // 主要的加载方法
+    async loadVideoSource(url, title = '') {
+        try {
+            this.showLoading('验证URL格式...');
+            
+            // 1. 验证URL格式
+            const validation = this.validator.validateUrl(url);
+            if (!validation.valid) {
+                this.showError(validation.error);
+                return false;
+            }
+            
+            const validUrl = validation.url;
+            
+            // 2. 检测视频类型
+            const videoType = this.validator.detectVideoType(validUrl);
+            
+            // 3. 检查可访问性
+            this.showLoading('检查视频可访问性...');
+            const accessibility = await this.validator.checkAccessibility(validUrl);
+            
+            if (!accessibility.accessible) {
+                this.showError(`视频源不可访问: ${accessibility.error}`);
+                return false;
+            }
+            
+            if (accessibility.warning) {
+                this.showWarning(accessibility.warning);
+            }
+            
+            // 4. 添加到历史记录
+            this.history.add(validUrl, title);
+            
+            // 5. 构建新URL并跳转
+            this.showLoading('正在加载视频...');
+            const newUrl = this.buildVideoUrl(validUrl, videoType);
+            
+            // 使用页面重新加载方式
+            window.location.href = newUrl;
+            
+            return true;
+            
+        } catch (error) {
+            console.error('加载视频源时出错:', error);
+            this.showError(`加载失败: ${error.message}`);
+            return false;
+        } finally {
+            this.hideLoading();
+        }
+    }
+}
