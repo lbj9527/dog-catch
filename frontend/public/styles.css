@@ -5024,46 +5024,130 @@ body.no-scroll {
   display: none;
 }
 
-/* 点赞列表样式 */
+/* 时间线列表样式 */
 .likes-list {
   flex: 1;
   overflow-y: auto;
   max-height: 400px;
-  padding-right: 8px;
+  padding: 0 16px 0 8px;
+  position: relative;
 }
 
 .likes-list::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
 }
 
 .likes-list::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2px;
 }
 
 .likes-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 3px;
+  background: rgba(102, 126, 234, 0.4);
+  border-radius: 2px;
 }
 
 .likes-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(102, 126, 234, 0.6);
 }
 
-/* 点赞记录项样式 */
-.likes-item {
+/* 时间线主轴 */
+.likes-list::before {
+  content: '';
+  position: absolute;
+  left: 20px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, 
+    rgba(102, 126, 234, 0.8) 0%, 
+    rgba(118, 75, 162, 0.6) 50%, 
+    rgba(102, 126, 234, 0.4) 100%);
+  border-radius: 1px;
+}
+
+/* 日期分组标题 */
+.likes-date-group {
+  margin-bottom: 24px;
+  position: relative;
+}
+
+.likes-date-header {
   display: flex;
   align-items: center;
-  padding: 12px;
-  margin-bottom: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 6px;
-  transition: all 0.2s ease;
+  margin-bottom: 16px;
+  padding-left: 40px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #667eea;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.likes-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  transform: translateY(-1px);
+.likes-date-header::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  width: 8px;
+  height: 8px;
+  background: #667eea;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+/* 时间线记录项样式 */
+.likes-item {
+  display: flex;
+  position: relative;
+  margin-bottom: 16px;
+  padding-left: 40px;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.likes-item::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  top: 12px;
+  width: 4px;
+  height: 4px;
+  background: #764ba2;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(118, 75, 162, 0.3);
+}
+
+.likes-item-bubble {
+  flex: 1;
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.08) 0%, 
+    rgba(255, 255, 255, 0.04) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 14px 16px;
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
+}
+
+.likes-item-bubble::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 16px;
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-right: 8px solid rgba(255, 255, 255, 0.1);
+}
+
+.likes-item:hover .likes-item-bubble {
+  background: linear-gradient(135deg, 
+    rgba(102, 126, 234, 0.15) 0%, 
+    rgba(118, 75, 162, 0.1) 100%);
+  border-color: rgba(102, 126, 234, 0.3);
+  transform: translateX(4px);
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.2);
 }
 
 .likes-item-content {
@@ -5075,15 +5159,24 @@ body.no-scroll {
   font-size: 14px;
   font-weight: 500;
   color: #fff;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .likes-item-meta {
-  font-size: 12px;
-  color: #999;
+  font-size: 11px;
+  color: #aaa;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0;
+}
+
+.likes-item-info {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -5093,66 +5186,141 @@ body.no-scroll {
   display: flex;
   align-items: center;
   gap: 4px;
+  font-weight: 500;
+  color: #667eea;
 }
 
 .likes-item-video {
   display: flex;
   align-items: center;
   gap: 4px;
+  opacity: 0.8;
 }
 
 .likes-item-action {
-  margin-left: 12px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .likes-jump-btn {
-  padding: 6px 12px;
+  padding: 6px 14px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border: none;
-  border-radius: 4px;
+  border-radius: 20px;
   color: white;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
 .likes-jump-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.5);
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
 }
 
 .likes-jump-btn:active {
-  transform: translateY(0);
+  transform: translateY(-1px) scale(1.02);
 }
 
 .likes-jump-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
   transform: none;
+  box-shadow: none;
 }
 
-/* 空状态和加载状态 */
+/* 动画效果 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 虚拟滚动优化 */
+.likes-list-virtual {
+  height: 400px;
+  overflow-y: auto;
+}
+
+.likes-item-placeholder {
+  height: 80px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+  margin-bottom: 16px;
+  padding-left: 40px;
+  display: flex;
+  align-items: center;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* 空状态和加载状态优化 */
 .likes-empty,
 .likes-loading {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px 20px;
+  padding: 60px 20px;
   color: #999;
   font-size: 14px;
+  text-align: center;
+}
+
+.likes-empty::before,
+.likes-loading::before {
+  content: '';
+  width: 48px;
+  height: 48px;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 50%;
+  opacity: 0.3;
+}
+
+.likes-loading::before {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .likes-empty p,
 .likes-loading p {
   margin: 0;
+  line-height: 1.5;
 }
 
-/* 响应式设计 */
+/* 响应式设计优化 */
 @media (max-width: 768px) {
   #likesModal .modal-content {
     max-width: 95vw;
-    margin: 20px auto;
+    margin: 10px auto;
+    max-height: 90vh;
   }
   
   .likes-tabs {
@@ -5164,21 +5332,135 @@ body.no-scroll {
     font-size: 13px;
   }
   
-  .likes-item {
-    padding: 10px;
-    flex-direction: column;
-    align-items: flex-start;
+  .likes-list {
+    max-height: 60vh;
+    padding: 0 8px 0 4px;
   }
   
-  .likes-item-action {
-    margin-left: 0;
-    margin-top: 8px;
-    align-self: flex-end;
+  .likes-list::before {
+    left: 16px;
+  }
+  
+  .likes-date-header {
+    padding-left: 32px;
+    font-size: 12px;
+  }
+  
+  .likes-date-header::before {
+    left: 12px;
+    width: 6px;
+    height: 6px;
+  }
+  
+  .likes-item {
+    padding-left: 32px;
+    margin-bottom: 12px;
+  }
+  
+  .likes-item::before {
+    left: 14px;
+    width: 3px;
+    height: 3px;
+  }
+  
+  .likes-item-bubble {
+    padding: 12px 14px;
+    border-radius: 10px;
+  }
+  
+  .likes-item-bubble::before {
+    left: -6px;
+    top: 14px;
+    border-right-width: 6px;
+    border-top-width: 4px;
+    border-bottom-width: 4px;
+  }
+  
+  .likes-item-title {
+    font-size: 13px;
+    margin-bottom: 6px;
   }
   
   .likes-item-meta {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
+    font-size: 10px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 0;
+  }
+  
+  .likes-item-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .likes-item-time,
+  .likes-item-video {
+    font-size: 9px;
+    white-space: nowrap;
+  }
+  
+  .likes-item-video {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .likes-jump-btn {
+    padding: 5px 12px;
+    font-size: 10px;
+    border-radius: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .likes-list {
+    max-height: 50vh;
+  }
+  
+  .likes-item-bubble {
+    padding: 10px 12px;
+  }
+  
+  .likes-item-title {
+    font-size: 12px;
+    -webkit-line-clamp: 3;
+  }
+  
+  .likes-item-meta {
+    font-size: 9px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 0;
+  }
+  
+  .likes-item-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .likes-item-time,
+  .likes-item-video {
+    font-size: 8px;
+    white-space: nowrap;
+  }
+  
+  .likes-item-video {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 80px;
+  }
+  
+  .likes-jump-btn {
+    padding: 4px 10px;
+    font-size: 9px;
   }
 }

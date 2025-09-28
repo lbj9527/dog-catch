@@ -4784,6 +4784,83 @@ class VideoPlayer {
             </div>
         `).join('');
     }
+
+    // 更新点赞记录标签计数
+    async updateLikesCounts() {
+        const subtitleCountEl = document.getElementById('subtitleLikesCount');
+        const commentCountEl = document.getElementById('commentLikesCount');
+        
+        if (!subtitleCountEl || !commentCountEl) return;
+        
+        // 检查登录状态
+        if (!this.isLoggedIn()) {
+            subtitleCountEl.textContent = '(0)';
+            commentCountEl.textContent = '(0)';
+            return;
+        }
+        
+        try {
+            // 并行请求两个接口获取计数
+            const [subtitleResponse, commentResponse] = await Promise.allSettled([
+                fetch(`${API_BASE_URL}/api/user/liked-subtitles`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${this.userToken}`
+                    }
+                }),
+                fetch(`${API_BASE_URL}/api/user/liked-comments`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${this.userToken}`
+                    }
+                })
+            ]);
+            
+            // 内部工具函数：兼容多种返回结构计算总数
+            const normalizeTotal = (payload) => {
+                // 优先判断 data 为数组：data: []
+                if (Array.isArray(payload.data)) {
+                    return payload.data.length;
+                }
+                // 判断 data 对象包含 total：data: { total: number }
+                if (payload.data && typeof payload.data.total === 'number') {
+                    return payload.data.total;
+                }
+                // 判断顶层包含 total：{ total: number }
+                if (typeof payload.total === 'number') {
+                    return payload.total;
+                }
+                // 判断顶层直接是数组：[]
+                if (Array.isArray(payload)) {
+                    return payload.length;
+                }
+                // 回退到 0
+                return 0;
+            };
+
+            // 处理字幕点赞计数
+            if (subtitleResponse.status === 'fulfilled' && subtitleResponse.value.ok) {
+                const subtitleData = await subtitleResponse.value.json();
+                const subtitleTotal = normalizeTotal(subtitleData);
+                subtitleCountEl.textContent = `(${subtitleTotal})`;
+            } else {
+                subtitleCountEl.textContent = '(0)';
+            }
+            
+            // 处理评论点赞计数
+            if (commentResponse.status === 'fulfilled' && commentResponse.value.ok) {
+                const commentData = await commentResponse.value.json();
+                const commentTotal = normalizeTotal(commentData);
+                commentCountEl.textContent = `(${commentTotal})`;
+            } else {
+                commentCountEl.textContent = '(0)';
+            }
+        } catch (error) {
+            console.error('更新点赞记录计数失败:', error);
+            subtitleCountEl.textContent = '(0)';
+            commentCountEl.textContent = '(0)';
+        }
+    }
     
     // 绑定用户选择事件
     bindUserSelectionEvents(resultsContainer, closeModal) {
@@ -6749,6 +6826,9 @@ class VideoPlayer {
             // 初始化标签页
             this.initLikesTabs();
             
+            // 更新两个标签的计数
+            this.updateLikesCounts();
+            
             // 默认显示字幕点赞
             this.showLikesTab('subtitles');
         }
@@ -6756,16 +6836,11 @@ class VideoPlayer {
     
     // 初始化点赞记录标签页
     initLikesTabs() {
-        const subtitleTab = document.getElementById('likesSubtitleTab');
-        const commentTab = document.getElementById('likesCommentTab');
+        const tabButtons = document.querySelectorAll('.likes-tabs .likes-tab');
         
-        if (subtitleTab) {
-            subtitleTab.onclick = () => this.showLikesTab('subtitles');
-        }
-        
-        if (commentTab) {
-            commentTab.onclick = () => this.showLikesTab('comments');
-        }
+        tabButtons.forEach(btn => {
+            btn.onclick = () => this.showLikesTab(btn.dataset.tab);
+        });
         
         // 关闭按钮
         const likesClose = document.getElementById('likesClose');
@@ -6783,21 +6858,21 @@ class VideoPlayer {
     // 显示指定的点赞记录标签页
     showLikesTab(type) {
         // 更新标签页状态
-        const subtitleTab = document.getElementById('likesSubtitleTab');
-        const commentTab = document.getElementById('likesCommentTab');
-        const subtitleContent = document.getElementById('likesSubtitleContent');
-        const commentContent = document.getElementById('likesCommentContent');
+        const subtitleTabBtn = document.querySelector('.likes-tab[data-tab="subtitles"]');
+        const commentTabBtn = document.querySelector('.likes-tab[data-tab="comments"]');
+        const subtitleContent = document.getElementById('subtitleLikesTab');
+        const commentContent = document.getElementById('commentLikesTab');
         
         if (type === 'subtitles') {
-            if (subtitleTab) subtitleTab.classList.add('active');
-            if (commentTab) commentTab.classList.remove('active');
+            if (subtitleTabBtn) subtitleTabBtn.classList.add('active');
+            if (commentTabBtn) commentTabBtn.classList.remove('active');
             if (subtitleContent) subtitleContent.style.display = 'block';
             if (commentContent) commentContent.style.display = 'none';
             
             this.loadLikedSubtitles();
         } else {
-            if (subtitleTab) subtitleTab.classList.remove('active');
-            if (commentTab) commentTab.classList.add('active');
+            if (subtitleTabBtn) subtitleTabBtn.classList.remove('active');
+            if (commentTabBtn) commentTabBtn.classList.add('active');
             if (subtitleContent) subtitleContent.style.display = 'none';
             if (commentContent) commentContent.style.display = 'block';
             
@@ -6807,11 +6882,20 @@ class VideoPlayer {
     
     // 加载点赞的字幕记录
     async loadLikedSubtitles() {
-        const list = document.getElementById('likesSubtitleList');
-        const empty = document.getElementById('likesSubtitleEmpty');
-        const loading = document.getElementById('likesSubtitleLoading');
+        const list = document.getElementById('subtitleLikesList');
+        const empty = document.getElementById('subtitleLikesEmpty');
+        const loading = document.getElementById('subtitleLikesLoading');
         
         if (!list || !empty || !loading) return;
+        
+        // 检查登录状态
+        if (!this.isLoggedIn()) {
+            list.style.display = 'none';
+            loading.style.display = 'none';
+            empty.style.display = 'block';
+            empty.innerHTML = '<div class="empty-message">请先登录查看点赞记录</div>';
+            return;
+        }
         
         // 显示加载状态
         list.style.display = 'none';
@@ -6819,10 +6903,10 @@ class VideoPlayer {
         loading.style.display = 'block';
         
         try {
-            const response = await fetch('/api/user/liked-subtitles', {
+            const response = await fetch(`${API_BASE_URL}/api/user/liked-subtitles`, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    'Authorization': `Bearer ${this.userToken}`
                 }
             });
             
@@ -6851,11 +6935,20 @@ class VideoPlayer {
     
     // 加载点赞的评论记录
     async loadLikedComments() {
-        const list = document.getElementById('likesCommentList');
-        const empty = document.getElementById('likesCommentEmpty');
-        const loading = document.getElementById('likesCommentLoading');
+        const list = document.getElementById('commentLikesList');
+        const empty = document.getElementById('commentLikesEmpty');
+        const loading = document.getElementById('commentLikesLoading');
         
         if (!list || !empty || !loading) return;
+        
+        // 检查登录状态
+        if (!this.isLoggedIn()) {
+            list.style.display = 'none';
+            loading.style.display = 'none';
+            empty.style.display = 'block';
+            empty.innerHTML = '<div class="empty-message">请先登录查看点赞记录</div>';
+            return;
+        }
         
         // 显示加载状态
         list.style.display = 'none';
@@ -6863,10 +6956,10 @@ class VideoPlayer {
         loading.style.display = 'block';
         
         try {
-            const response = await fetch('/api/user/liked-comments', {
+            const response = await fetch(`${API_BASE_URL}/api/user/liked-comments`, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    'Authorization': `Bearer ${this.userToken}`
                 }
             });
             
@@ -6895,48 +6988,115 @@ class VideoPlayer {
     
     // 渲染点赞的字幕记录
     renderLikedSubtitles(records) {
-        const list = document.getElementById('likesSubtitleList');
+        const list = document.getElementById('subtitleLikesList');
         if (!list) return;
         
-        list.innerHTML = records.map(record => `
-            <div class="liked-item">
-                <div class="liked-item-info">
-                    <div class="liked-item-title">${record.filename || record.original_filename || '未知字幕'}</div>
-                    <div class="liked-item-meta">
-                        <span>视频ID: ${record.video_id}</span>
-                        <span>点赞时间: ${new Date(record.created_at).toLocaleString()}</span>
+        // 按日期分组
+        const groupedRecords = this.groupRecordsByDate(records);
+        
+        list.innerHTML = Object.entries(groupedRecords).map(([date, dateRecords]) => `
+            <div class="likes-date-group">
+                <div class="likes-date-header">${date}</div>
+                ${dateRecords.map(record => `
+                    <div class="likes-item">
+                        <div class="likes-item-bubble">
+                            <div class="likes-item-content">
+                                <div class="likes-item-title">${record.filename || record.original_filename || '未知字幕'}</div>
+                                <div class="likes-item-meta">
+                                    <div class="likes-item-info">
+                                        <span class="likes-item-time">
+                                            <i class="icon-clock"></i>
+                                            ${new Date(record.created_at).toLocaleTimeString()}
+                                        </span>
+                                        <span class="likes-item-video">
+                                            <i class="icon-video"></i>
+                                            视频ID: ${record.video_id}
+                                        </span>
+                                    </div>
+                                    <div class="likes-item-action">
+                                        <button class="likes-jump-btn" onclick="window.open('${record.page_url}', '_blank')">
+                                            打开页面
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div class="liked-item-actions">
-                    <button class="liked-item-btn" onclick="window.open('${record.page_url}', '_blank')">
-                        打开页面
-                    </button>
-                </div>
+                `).join('')}
             </div>
         `).join('');
     }
     
     // 渲染点赞的评论记录
     renderLikedComments(records) {
-        const list = document.getElementById('likesCommentList');
+        const list = document.getElementById('commentLikesList');
         if (!list) return;
         
-        list.innerHTML = records.map(record => `
-            <div class="liked-item">
-                <div class="liked-item-info">
-                    <div class="liked-item-title">${record.content.substring(0, 100)}${record.content.length > 100 ? '...' : ''}</div>
-                    <div class="liked-item-meta">
-                        <span>视频ID: ${record.video_id}</span>
-                        <span>点赞时间: ${new Date(record.created_at).toLocaleString()}</span>
+        // 按日期分组
+        const groupedRecords = this.groupRecordsByDate(records);
+        
+        list.innerHTML = Object.entries(groupedRecords).map(([date, dateRecords]) => `
+            <div class="likes-date-group">
+                <div class="likes-date-header">${date}</div>
+                ${dateRecords.map(record => `
+                    <div class="likes-item">
+                        <div class="likes-item-bubble">
+                            <div class="likes-item-content">
+                                <div class="likes-item-title">${record.content.substring(0, 150)}${record.content.length > 150 ? '...' : ''}</div>
+                                <div class="likes-item-meta">
+                                    <div class="likes-item-info">
+                                        <span class="likes-item-time">
+                                            <i class="icon-clock"></i>
+                                            ${new Date(record.created_at).toLocaleTimeString()}
+                                        </span>
+                                        <span class="likes-item-video">
+                                            <i class="icon-video"></i>
+                                            视频ID: ${record.video_id}
+                                        </span>
+                                    </div>
+                                    <div class="likes-item-action">
+                                        <button class="likes-jump-btn" onclick="window.open('${record.page_url}', '_blank')">
+                                            打开页面
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div class="liked-item-actions">
-                    <button class="liked-item-btn" onclick="window.open('${record.page_url}', '_blank')">
-                        打开页面
-                    </button>
-                </div>
+                `).join('')}
             </div>
         `).join('');
+    }
+    
+    // 按日期分组记录的辅助方法
+    groupRecordsByDate(records) {
+        const groups = {};
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        records.forEach(record => {
+            const recordDate = new Date(record.created_at);
+            let dateKey;
+            
+            if (recordDate.toDateString() === today.toDateString()) {
+                dateKey = '今天';
+            } else if (recordDate.toDateString() === yesterday.toDateString()) {
+                dateKey = '昨天';
+            } else {
+                dateKey = recordDate.toLocaleDateString('zh-CN', {
+                    month: 'long',
+                    day: 'numeric'
+                });
+            }
+            
+            if (!groups[dateKey]) {
+                groups[dateKey] = [];
+            }
+            groups[dateKey].push(record);
+        });
+        
+        return groups;
     }
 }
 
@@ -7476,139 +7636,5 @@ class VideoSourceLoader {
             
             this.loadLikedComments();
         }
-    }
-    
-    // 加载点赞的字幕记录
-    async loadLikedSubtitles() {
-        const list = document.getElementById('likesSubtitleList');
-        const empty = document.getElementById('likesSubtitleEmpty');
-        const loading = document.getElementById('likesSubtitleLoading');
-        
-        if (!list || !empty || !loading) return;
-        
-        // 显示加载状态
-        list.style.display = 'none';
-        empty.style.display = 'none';
-        loading.style.display = 'block';
-        
-        try {
-            const response = await fetch('/api/user/liked-subtitles', {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error('获取点赞记录失败');
-            }
-            
-            const data = await response.json();
-            
-            if (data.records && data.records.length > 0) {
-                this.renderLikedSubtitles(data.records);
-                list.style.display = 'block';
-                empty.style.display = 'none';
-            } else {
-                list.style.display = 'none';
-                empty.style.display = 'block';
-            }
-        } catch (error) {
-            console.error('加载字幕点赞记录失败:', error);
-            list.style.display = 'none';
-            empty.style.display = 'block';
-        } finally {
-            loading.style.display = 'none';
-        }
-    }
-    
-    // 加载点赞的评论记录
-    async loadLikedComments() {
-        const list = document.getElementById('likesCommentList');
-        const empty = document.getElementById('likesCommentEmpty');
-        const loading = document.getElementById('likesCommentLoading');
-        
-        if (!list || !empty || !loading) return;
-        
-        // 显示加载状态
-        list.style.display = 'none';
-        empty.style.display = 'none';
-        loading.style.display = 'block';
-        
-        try {
-            const response = await fetch('/api/user/liked-comments', {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error('获取点赞记录失败');
-            }
-            
-            const data = await response.json();
-            
-            if (data.records && data.records.length > 0) {
-                this.renderLikedComments(data.records);
-                list.style.display = 'block';
-                empty.style.display = 'none';
-            } else {
-                list.style.display = 'none';
-                empty.style.display = 'block';
-            }
-        } catch (error) {
-            console.error('加载评论点赞记录失败:', error);
-            list.style.display = 'none';
-            empty.style.display = 'block';
-        } finally {
-            loading.style.display = 'none';
-        }
-    }
-    
-    // 渲染点赞的字幕记录
-    renderLikedSubtitles(records) {
-        const list = document.getElementById('likesSubtitleList');
-        if (!list) return;
-        
-        list.innerHTML = records.map(record => `
-            <div class="liked-item">
-                <div class="liked-item-info">
-                    <div class="liked-item-title">${record.filename || record.original_filename || '未知字幕'}</div>
-                    <div class="liked-item-meta">
-                        <span>视频ID: ${record.video_id}</span>
-                        <span>点赞时间: ${new Date(record.created_at).toLocaleString()}</span>
-                    </div>
-                </div>
-                <div class="liked-item-actions">
-                    <button class="liked-item-btn" onclick="window.open('${record.page_url}', '_blank')">
-                        打开页面
-                    </button>
-                </div>
-            </div>
-        `).join('');
-    }
-    
-    // 渲染点赞的评论记录
-    renderLikedComments(records) {
-        const list = document.getElementById('likesCommentList');
-        if (!list) return;
-        
-        list.innerHTML = records.map(record => `
-            <div class="liked-item">
-                <div class="liked-item-info">
-                    <div class="liked-item-title">${record.content.substring(0, 100)}${record.content.length > 100 ? '...' : ''}</div>
-                    <div class="liked-item-meta">
-                        <span>视频ID: ${record.video_id}</span>
-                        <span>点赞时间: ${new Date(record.created_at).toLocaleString()}</span>
-                    </div>
-                </div>
-                <div class="liked-item-actions">
-                    <button class="liked-item-btn" onclick="window.open('${record.page_url}', '_blank')">
-                        打开页面
-                    </button>
-                </div>
-            </div>
-        `).join('');
     }
 }
