@@ -384,6 +384,9 @@ video::-webkit-media-text-track-display-backdrop {
     max-height: 90vh;
     display: flex;
     flex-direction: column;
+    background: rgba(26, 26, 26, 0.35);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
 }
 
 /* 方案B：心愿单简化结构样式 */
@@ -393,7 +396,15 @@ video::-webkit-media-text-track-display-backdrop {
 @media (max-width: 420px) {
   #wishlistModal .wlFormSection .row-compact { grid-template-columns: 1fr; gap: 6px; }
 }
-#wishlistModal .wlListSection { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; padding: 0 6px 10px 8px; }
+#wishlistModal .wlListSection { 
+  flex: 1 1 auto; 
+  min-height: 0; 
+  overflow-y: auto; 
+  -webkit-overflow-scrolling: touch; 
+  overscroll-behavior: contain; 
+  touch-action: pan-y; 
+  padding: 0 6px 10px 8px;
+}
 /* 覆盖此前 #wishlistModal #wlList { height:100% } 的设定，确保由容器滚动 */
 #wishlistModal .wlListSection #wlList { height: auto; max-height: none; }
 
@@ -421,7 +432,7 @@ video::-webkit-media-text-track-display-backdrop {
 }
 
 #wishlistModal .form-row.row-compact label {
-    font-size: 13px;
+    font-size: 12px;
     color: #ccc;
     margin: 0;
     white-space: nowrap;
@@ -1369,17 +1380,36 @@ body.modal-open {
 }
 
 /* 心愿单头部瘦身 */
-#wishlistModal .modal-header { padding: 6px 8px; }
-#wishlistModal .modal-header h3 { margin: 0; font-size: 16px; line-height: 1.2; }
-#wishlistModal .modal-header .close { font-size: 16px; line-height: 1; padding: 2px 6px; }
+#wishlistModal .modal-header { 
+  padding: 6px 12px; 
+}
+#wishlistModal .modal-header h3 { 
+  margin: 0; 
+  font-size: 16px; 
+  line-height: 1.2; 
+}
+#wishlistModal .modal-header .close { 
+  font-size: 16px; 
+  line-height: 1; 
+  padding: 2px 6px; 
+}
 
 /* 紧凑间距与计数文案间距 */
-#wishlistModal .auth-panel { padding: 12px 8px 10px; /* 原16px 8px 12px*/ }
-#wishlistModal .auth-panel .form { gap: 6px; /* 原8px */ }
-#wishlistModal #wlCountText { margin-bottom: 4px; }
+#wishlistModal .auth-panel { 
+  padding: 6px 12px 12px 12px; 
+}
+#wishlistModal .auth-panel .form { 
+  gap: 6px; 
+}
+#wishlistModal #wlCountText { 
+  margin-bottom: 4px; 
+}
 
 /* 关键：允许子项在嵌套flex中收缩 */
-#wishlistModal .modal-body { min-height: 0; }
+#wishlistModal .modal-body { 
+  min-height: 0; 
+  padding: 6px 12px 12px 12px;
+}
 #wishlistModal .auth-panel { min-height: 0; }
 #wishlistModal .auth-panel .form { min-height: 0; }
 
@@ -1395,17 +1425,24 @@ body.modal-open {
 /* ===== Wishlist minimal card styling (lightweight, non-intrusive) ===== */
 #wishlistModal #wlList .wl-item {
   position: relative !important;
-  border: 1px solid #2a2a2a !important;
-  background: #141414 !important;
-  border-radius: 10px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.08) 0%, 
+    rgba(255, 255, 255, 0.04) 100%) !important;
+  backdrop-filter: blur(10px) !important;
+  border-radius: 12px !important;
   margin: 10px 0 !important;
-  padding: 12px !important;
-  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  padding: 14px 16px !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
 #wishlistModal #wlList .wl-item:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
-  border-color: #3a3a3a !important;
+  background: linear-gradient(135deg, 
+    rgba(102, 126, 234, 0.15) 0%, 
+    rgba(118, 75, 162, 0.1) 100%) !important;
+  border-color: rgba(102, 126, 234, 0.3) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.2);
 }
 
 /* Badge: add soft background and padding, keep original text color from JS */
@@ -1414,6 +1451,29 @@ body.modal-open {
   border-radius: 999px;
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.15);
+}
+
+/* 心愿单删除按钮样式 */
+#wishlistModal .wl-item button[onclick*="wlDelete"] {
+  float: right !important;
+  padding: 4px 10px !important;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  border: none !important;
+  border-radius: 12px !important;
+  color: white !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3) !important;
+}
+
+#wishlistModal .wl-item button[onclick*="wlDelete"]:hover {
+  transform: translateY(-2px) scale(1.05) !important;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.5) !important;
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%) !important;
 }
 
 /* Close button touch area on small screens */
@@ -1461,25 +1521,35 @@ body.modal-open {
 
 /* 2. 蓝色按钮样式 */
 #wishlistModal #wlAddBtn {
-  background-color: #2f77ff !important;
-  color: white !important;
-  border: none !important;
-  transition: all 0.2s ease;
+  padding: 6px 14px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 20px;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
 #wishlistModal #wlAddBtn:hover {
-  background-color: #2a69ff !important;
-  box-shadow: 0 2px 8px rgba(47, 119, 255, 0.3);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.5);
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
 }
 
 #wishlistModal #wlAddBtn:active {
-  background-color: #2258e6 !important;
-  transform: translateY(1px);
+  transform: translateY(-1px) scale(1.02);
 }
 
 #wishlistModal #wlAddBtn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 /* 3. 滚动条美化 */
@@ -4955,12 +5025,26 @@ body.no-scroll {
 /* 点赞记录对话框样式 */
 #likesModal .modal-content {
   max-height: 80vh;
+  background: rgba(26, 26, 26, 0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+#likesModal .modal-header {
+  padding: 6px 12px;
+}
+
+#likesModal .modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.2;
 }
 
 #likesModal .modal-body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  padding: 2px 12px 12px 12px;
 }
 
 /* Tab 导航样式 */
@@ -5318,7 +5402,7 @@ body.no-scroll {
 /* 响应式设计优化 */
 @media (max-width: 768px) {
   #likesModal .modal-content {
-    max-width: 95vw;
+    width: min(428px, 92vw);
     margin: 10px auto;
     max-height: 90vh;
   }
@@ -5463,4 +5547,12 @@ body.no-scroll {
     padding: 4px 10px;
     font-size: 9px;
   }
+}
+
+/* 心愿单输入框半透明背景 */
+#wlCurrentVideo, #wlNoteInput { 
+    background: rgba(255, 255, 255, 0.1) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border-radius: 8px !important;
+    color: #fff !important;
 }
