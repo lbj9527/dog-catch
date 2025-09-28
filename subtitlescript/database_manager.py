@@ -518,6 +518,132 @@ class DatabaseManager:
                 return [dict(zip(columns, row)) for row in cursor.fetchall()]
         except sqlite3.OperationalError:
             return []
+
+    # ==================== 视频详情数据管理方法 ====================
+    
+    def ensure_video_details_columns(self):
+        """确保videos表包含详情字段"""
+        with sqlite3.connect(self.db_path) as conn:
+            # 获取现有列信息
+            cursor = conn.execute("PRAGMA table_info(videos)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+            
+            # 需要添加的新列
+            new_columns = {
+                'release_date': 'TEXT',
+                'cover_url': 'TEXT',
+                'description': 'TEXT',
+                'actresses': 'TEXT',  # JSON格式存储女优列表
+                'actors': 'TEXT',  # JSON格式存储男优列表
+                'genres': 'TEXT',  # JSON格式存储类型列表
+                'series': 'TEXT',
+                'maker': 'TEXT',
+                'director': 'TEXT',
+                'detail_scraped': 'BOOLEAN DEFAULT 0',
+                'detail_scraped_at': 'TIMESTAMP'
+            }
+            
+            # 添加缺失的列
+            for column_name, column_type in new_columns.items():
+                if column_name not in existing_columns:
+                    try:
+                        conn.execute(f"ALTER TABLE videos ADD COLUMN {column_name} {column_type}")
+                        print(f"已添加列: {column_name}")
+                    except sqlite3.OperationalError as e:
+                        print(f"添加列 {column_name} 失败: {e}")
+            
+            conn.commit()
+    
+    def find_videos_by_id(self, video_id: str) -> List[Dict[str, Any]]:
+        """根据video_id查找视频记录"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("""
+                    SELECT id, actress_name, video_title, video_url, video_id, 
+                           detail_scraped, detail_scraped_at
+                    FROM videos 
+                    WHERE video_id = ?
+                """, (video_id,))
+                
+                columns = ['id', 'actress_name', 'video_title', 'video_url', 
+                          'video_id', 'detail_scraped', 'detail_scraped_at']
+                return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        except sqlite3.OperationalError:
+            return []
+    
+    def update_video_details(self, record_id: int, details: Dict[str, Any]):
+        """更新视频详情信息"""
+        import json
+        from datetime import datetime
+        
+        # 确保详情字段存在
+        self.ensure_video_details_columns()
+        
+        now = datetime.now().isoformat()
+        
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                UPDATE videos 
+                SET release_date = ?, cover_url = ?, description = ?, 
+                    actresses = ?, actors = ?, genres = ?, series = ?, maker = ?, director = ?,
+                    detail_scraped = 1, detail_scraped_at = ?
+                WHERE id = ?
+            """, (
+                details.get('release_date', ''),
+                details.get('cover_url', ''),
+                details.get('description', ''),
+                json.dumps(details.get('actresses', []), ensure_ascii=False),
+                json.dumps(details.get('actors', []), ensure_ascii=False),
+                json.dumps(details.get('genres', []), ensure_ascii=False),
+                details.get('series', ''),
+                details.get('maker', ''),
+                details.get('director', ''),
+                now,
+                record_id
+            ))
+            conn.commit()
+    
+    def get_unscraped_videos(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """获取未抓取详情的视频记录"""
+        try:
+            # 确保详情字段存在
+            self.ensure_video_details_columns()
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("""
+                    SELECT id, actress_name, video_title, video_url, video_id
+                    FROM videos 
+                    WHERE detail_scraped IS NULL OR detail_scraped = 0
+                    LIMIT ?
+                """, (limit,))
+                
+                columns = ['id', 'actress_name', 'video_title', 'video_url', 'video_id']
+                return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        except sqlite3.OperationalError:
+            return []
+    
+    def get_video_details_stats(self) -> Dict[str, int]:
+        """获取视频详情抓取统计"""
+        try:
+            # 确保详情字段存在
+            self.ensure_video_details_columns()
+            
+            with sqlite3.connect(self.db_path) as conn:
+                # 总记录数
+                cursor = conn.execute("SELECT COUNT(*) FROM videos")
+                total = cursor.fetchone()[0]
+                
+                # 已抓取详情数
+                cursor = conn.execute("SELECT COUNT(*) FROM videos WHERE detail_scraped = 1")
+                scraped = cursor.fetchone()[0]
+                
+                return {
+                    'total': total,
+                    'scraped': scraped,
+                    'unscraped': total - scraped
+                }
+        except sqlite3.OperationalError:
+            return {'total': 0, 'scraped': 0, 'unscraped': 0}
     
     # ==================== 统计和查询方法 ====================
     

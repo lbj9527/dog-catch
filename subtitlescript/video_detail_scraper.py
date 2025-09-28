@@ -5,27 +5,35 @@ MissAV 视频详情抓取脚本
 
 用法示例:
 python video_detail_scraper.py --url "https://missav.live/cn/umso-612"
+python video_detail_scraper.py --batch --limit 50  # 批量处理未抓取的视频
+python video_detail_scraper.py --batch  # 批量处理所有未抓取的视频
+python video_detail_scraper.py --url "..." --no-save  # 仅测试不保存
 
 功能:
-- 输入: 视频详情页面URL
+- 输入: 视频详情页面URL 或 批量处理模式
 - 处理: 抓取视频的详情描述和元数据信息
-- 输出: 控制台打印详情信息
+- 输出: 控制台打印详情信息，并保存到数据库
 
 注意事项:
 - 需要先使用gensession.txt中的命令生成session_videoID.json
 - 使用Playwright进行网页抓取，支持反爬机制
+- 支持断点续抓，避免重复抓取已处理的视频
 """
 
 import argparse
 import json
 import os
+import re
 import time
 from typing import Dict, List, Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from playwright.sync_api import Playwright, sync_playwright, Page, BrowserContext
 from playwright_stealth.stealth import stealth_sync
 from bs4 import BeautifulSoup
+
+# 导入数据库管理器
+from database_manager import DatabaseManager
 
 
 def load_session_if_exists(session_file: str = "./session_videoID.json") -> Optional[Dict]:
@@ -260,20 +268,98 @@ def extract_video_metadata(soup: BeautifulSoup) -> Dict[str, any]:
     return metadata
 
 
-def scrape_video_detail(url: str, timeout: int = 30):
-    """抓取视频详情信息"""
+def extract_video_id_from_url(url: str) -> Optional[str]:
+    """从URL中提取视频ID"""
+    try:
+        # 解析URL路径
+        parsed = urlparse(url)
+        path = parsed.path.strip('/')
+        
+        # 提取最后一个路径段作为视频ID
+        # 例如: https://missav.live/cn/sone-891 -> sone-891
+        if '/' in path:
+            video_id = path.split('/')[-1]
+        else:
+            video_id = path
+            
+        # 验证视频ID格式（基本验证）
+        if video_id and len(video_id) > 2:
+            return video_id.upper()  # 统一转为大写
+        
+        return None
+    except Exception as e:
+        print(f"提取视频ID失败: {e}")
+        return None
+
+
+def save_video_details_to_db(video_id: str, metadata: Dict, cover_url: str, description: str):
+    """将视频详情保存到数据库"""
+    try:
+        db_manager = DatabaseManager("./database/actresses.db")
+        
+        # 查找匹配的视频记录
+        records = db_manager.find_videos_by_id(video_id)
+        
+        if not records:
+            print(f"警告: 数据库中未找到视频ID为 {video_id} 的记录")
+            return False
+        
+        # 准备详情数据
+        details = {
+            'release_date': metadata.get('release_date', ''),
+            'cover_url': cover_url,
+            'description': description,
+            'actresses': metadata.get('actresses', []),
+            'actors': metadata.get('actors', []),
+            'genres': metadata.get('genres', []),
+            'series': metadata.get('series', ''),
+            'maker': metadata.get('maker', ''),
+            'director': metadata.get('director', '')
+        }
+        
+        # 更新所有匹配的记录
+        updated_count = 0
+        for record in records:
+            # 检查是否已经抓取过
+            if record.get('detail_scraped'):
+                print(f"记录 {record['id']} 已经抓取过详情，跳过")
+                continue
+                
+            db_manager.update_video_details(record['id'], details)
+            updated_count += 1
+            print(f"已更新记录 {record['id']}: {record['actress_name']} - {record['video_title']}")
+        
+        print(f"成功更新 {updated_count} 条记录")
+        return updated_count > 0
+        
+    except Exception as e:
+        print(f"保存到数据库失败: {e}")
+        return False
+
+
+def scrape_single_video(url: str, timeout: int = 30, save_to_db: bool = True) -> bool:
+    """抓取单个视频的详情"""
+    print(f"开始抓取视频详情: {url}")
+    
+    # 提取视频ID
+    video_id = extract_video_id_from_url(url)
+    if not video_id:
+        print("无法从URL中提取视频ID")
+        return False
+    
+    print(f"提取到视频ID: {video_id}")
+    
     with sync_playwright() as playwright:
         page, context = setup_playwright_page(playwright)
         
         try:
+            # 访问页面并获取内容
             print(f"正在访问: {url}")
-            
-            # 访问页面
             response = page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
             
             if response and response.status != 200:
                 print(f"页面访问失败，状态码: {response.status}")
-                return
+                return False
             
             # 优化：使用domcontentloaded替代networkidle，减少等待时间
             page.wait_for_load_state('domcontentloaded', timeout=5000)
@@ -288,68 +374,212 @@ def scrape_video_detail(url: str, timeout: int = 30):
             content = page.content()
             soup = BeautifulSoup(content, 'html.parser')
             
-            # 提取详情描述
+            # 抓取视频详情
             description = extract_video_description(soup)
-            
-            # 提取封面URL
+            metadata = extract_video_metadata(soup)
             cover_url = extract_cover_url(soup)
             
-            # 提取元数据
-            metadata = extract_video_metadata(soup)
+            # 打印详情信息
+            print_video_details(video_id, description, metadata, cover_url)
             
-            # 打印结果
-            print("\n" + "="*60)
-            print("视频详情信息")
-            print("="*60)
+            # 保存到数据库
+            if save_to_db:
+                success = save_video_details_to_db(video_id, metadata, cover_url, description)
+                return success
             
-            print(f"\n【详情描述】")
-            print(description)
-            
-            print(f"\n【封面URL】")
-            print(cover_url)
-            
-            print(f"\n【发行时间】")
-            print(metadata["release_date"])
-            
-            print(f"\n【女优】")
-            for actress in metadata["actresses"]:
-                print(f"  - {actress}")
-            
-            print(f"\n【男优】")
-            for actor in metadata["actors"]:
-                print(f"  - {actor}")
-            
-            print(f"\n【类型】")
-            for genre in metadata["genres"]:
-                print(f"  - {genre}")
-            
-            print(f"\n【系列】")
-            print(metadata["series"])
-            
-            print(f"\n【发行商】")
-            print(metadata["maker"])
-            
-            print(f"\n【导演】")
-            print(metadata["director"])
-            
-            print("\n" + "="*60)
+            return True
             
         except Exception as e:
             print(f"抓取失败: {e}")
+            return False
         
         finally:
             context.close()
 
 
+def scrape_batch_videos(limit: int = 100) -> Dict[str, int]:
+    """批量抓取未处理的视频详情"""
+    try:
+        db_manager = DatabaseManager("./database/actresses.db")
+        
+        # 获取统计信息
+        stats = db_manager.get_video_details_stats()
+        print(f"数据库统计: 总计 {stats['total']} 条记录，已抓取 {stats['scraped']} 条，未抓取 {stats['unscraped']} 条")
+        
+        if stats['unscraped'] == 0:
+            print("所有视频详情已抓取完成")
+            return {'total': 0, 'success': 0, 'failed': 0}
+        
+        # 获取未抓取的视频记录
+        unscraped_videos = db_manager.get_unscraped_videos(limit)
+        print(f"本次将处理 {len(unscraped_videos)} 条记录")
+        
+        success_count = 0
+        failed_count = 0
+        
+        with sync_playwright() as playwright:
+            page, context = setup_playwright_page(playwright)
+            
+            try:
+                for i, video in enumerate(unscraped_videos, 1):
+                    print(f"\n[{i}/{len(unscraped_videos)}] 处理视频: {video['video_id']}")
+                    
+                    try:
+                        # 构建视频URL（假设使用missav.live域名）
+                        video_url = f"https://missav.live/cn/{video['video_id'].lower()}"
+                        
+                        # 访问页面并获取内容
+                        response = page.goto(video_url, wait_until="domcontentloaded", timeout=30000)
+                        
+                        if response and response.status != 200:
+                            print(f"页面访问失败，状态码: {response.status}")
+                            failed_count += 1
+                            continue
+                        
+                        # 优化：使用domcontentloaded替代networkidle，减少等待时间
+                        page.wait_for_load_state('domcontentloaded', timeout=5000)
+                        
+                        # 优化：直接尝试查找video元素，减少不必要的等待
+                        try:
+                            page.wait_for_selector('video', timeout=2000)
+                        except:
+                            pass  # 如果没有video元素也继续执行
+                        
+                        # 获取页面内容
+                        content = page.content()
+                        soup = BeautifulSoup(content, 'html.parser')
+                        
+                        # 抓取详情
+                        description = extract_video_description(soup)
+                        metadata = extract_video_metadata(soup)
+                        cover_url = extract_cover_url(soup)
+                        
+                        # 准备详情数据
+                        details = {
+                            'release_date': metadata.get('release_date', ''),
+                            'cover_url': cover_url,
+                            'description': description,
+                            'actresses': metadata.get('actresses', []),
+                            'actors': metadata.get('actors', []),
+                            'genres': metadata.get('genres', []),
+                            'series': metadata.get('series', ''),
+                            'maker': metadata.get('maker', ''),
+                            'director': metadata.get('director', '')
+                        }
+                        
+                        # 更新数据库
+                        db_manager.update_video_details(video['id'], details)
+                        success_count += 1
+                        print(f"✓ 成功处理: {video['actress_name']} - {video['video_title']}")
+                        
+                        # 添加延迟避免过于频繁的请求
+                        time.sleep(2)
+                        
+                    except Exception as e:
+                        failed_count += 1
+                        print(f"✗ 处理失败: {video['video_id']} - {e}")
+                        continue
+                        
+            finally:
+                context.close()
+        
+        result = {
+            'total': len(unscraped_videos),
+            'success': success_count,
+            'failed': failed_count
+        }
+        
+        print(f"\n批量处理完成: 总计 {result['total']} 条，成功 {result['success']} 条，失败 {result['failed']} 条")
+        return result
+        
+    except Exception as e:
+        print(f"批量处理失败: {e}")
+        return {'total': 0, 'success': 0, 'failed': 0}
+
+
+def print_video_details(video_id: str, description: str, metadata: Dict, cover_url: str):
+    """打印视频详情信息"""
+    print("\n" + "="*60)
+    print("视频详情抓取结果")
+    print("="*60)
+    
+    print(f"\n【视频ID】")
+    print(video_id)
+    
+    print(f"\n【标题】")
+    print(metadata["title"])
+    
+    print(f"\n【发布日期】")
+    print(metadata["release_date"])
+    
+    print(f"\n【时长】")
+    print(metadata.get("duration", "未知"))
+    
+    print(f"\n【封面图片】")
+    print(cover_url)
+    
+    print(f"\n【描述】")
+    print(description)
+    
+    print(f"\n【女优】")
+    for actress in metadata["actresses"]:
+        print(f"  - {actress}")
+    
+    print(f"\n【男优】")
+    for actor in metadata["actors"]:
+        print(f"  - {actor}")
+    
+    print(f"\n【类型】")
+    for genre in metadata["genres"]:
+        print(f"  - {genre}")
+    
+    print(f"\n【系列】")
+    print(metadata["series"])
+    
+    print(f"\n【发行商】")
+    print(metadata["maker"])
+    
+    print(f"\n【导演】")
+    print(metadata["director"])
+    
+    print("\n" + "="*60)
+
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description="MissAV 视频详情抓取脚本")
-    parser.add_argument("--url", required=True, help="视频详情页面URL")
+    parser.add_argument("--url", help="视频详情页面URL")
+    parser.add_argument("--batch", action="store_true", help="批量处理模式")
+    parser.add_argument("--limit", type=int, default=100, help="批量处理时的记录数限制")
     parser.add_argument("--timeout", type=int, default=30, help="页面加载超时时间（秒）")
+    parser.add_argument("--no-save", action="store_true", help="不保存到数据库，仅打印结果")
     
     args = parser.parse_args()
     
-    scrape_video_detail(args.url, args.timeout)
+    # 验证参数
+    if not args.batch and not args.url:
+        parser.error("必须指定 --url 或使用 --batch 模式")
+    
+    if args.batch and args.url:
+        parser.error("--batch 和 --url 不能同时使用")
+    
+    try:
+        if args.batch:
+            # 批量处理模式
+            print("启动批量处理模式...")
+            scrape_batch_videos(args.limit)
+        else:
+            # 单个URL处理模式
+            scrape_single_video(args.url, args.timeout, not args.no_save)
+            
+    except KeyboardInterrupt:
+        print("\n用户中断操作")
+    except Exception as e:
+        print(f"程序执行失败: {e}")
+
+
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":
