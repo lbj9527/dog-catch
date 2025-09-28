@@ -904,6 +904,37 @@ db.serialize(() => {
     db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_comment_likes_user_comment ON comment_likes(user_id, comment_id)', () => {});
     db.run('CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id)', () => {});
     
+    // 检查并添加 page_url 字段到点赞表（兼容旧数据库）
+    db.all("PRAGMA table_info(subtitle_likes)", (err, columns) => {
+        if (err) {
+            console.error('检查 subtitle_likes 表结构失败:', err);
+            return;
+        }
+        
+        const hasPageUrl = columns.some(col => col.name === 'page_url');
+        if (!hasPageUrl) {
+            db.run('ALTER TABLE subtitle_likes ADD COLUMN page_url TEXT', (err) => {
+                if (err) console.error('添加 page_url 列到 subtitle_likes 表失败:', err);
+                else console.log('已添加 page_url 列到 subtitle_likes 表');
+            });
+        }
+    });
+    
+    db.all("PRAGMA table_info(comment_likes)", (err, columns) => {
+        if (err) {
+            console.error('检查 comment_likes 表结构失败:', err);
+            return;
+        }
+        
+        const hasPageUrl = columns.some(col => col.name === 'page_url');
+        if (!hasPageUrl) {
+            db.run('ALTER TABLE comment_likes ADD COLUMN page_url TEXT', (err) => {
+                if (err) console.error('添加 page_url 列到 comment_likes 表失败:', err);
+                else console.log('已添加 page_url 列到 comment_likes 表');
+            });
+        }
+    });
+    
     // 新增：通知表
     db.run(`CREATE TABLE IF NOT EXISTS notifications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -974,6 +1005,7 @@ const defaultCors = [
     'http://localhost:5173',  // 管理端开发地址
     'http://localhost:5174',  // 播放器开发地址
     'https://player.sub-dog.top',
+    'https://admin.sub-dog.top',  // 管理后台地址
     'https://api.sub-dog.top'
 ];
 const corsList = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -2397,6 +2429,7 @@ app.post('/api/subtitles/like-toggle/:video_id', authenticateUserToken, async (r
     }
 
     const userId = req.user.id;
+    const { page_url } = req.body || {};
 
     try {
         // 检查字幕是否存在
@@ -2429,8 +2462,8 @@ app.post('/api/subtitles/like-toggle/:video_id', authenticateUserToken, async (r
         } else {
             // 添加点赞
             await runAsync(
-                'INSERT INTO subtitle_likes (user_id, video_id, created_at) VALUES (?, ?, datetime("now"))',
-                [userId, videoId]
+                'INSERT INTO subtitle_likes (user_id, video_id, page_url, created_at) VALUES (?, ?, ?, datetime("now"))',
+                [userId, videoId, page_url || null]
             );
             likesCount = likesCount + 1;
             isLiked = true;
@@ -2470,6 +2503,100 @@ app.get('/api/user/wishlists', authenticateUserToken, async (req, res) => {
     } catch (e) {
         console.error(e);
         return res.status(500).json({ error: '获取心愿单失败' });
+    }
+});
+
+// 获取用户字幕点赞记录
+app.get('/api/user/liked-subtitles', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = Number(req.user.id);
+        const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+        const cursor = parseInt(req.query.cursor) || 0;
+        const params = [userId];
+        
+        let sql = `
+            SELECT 
+                sl.id, 
+                sl.video_id, 
+                sl.page_url, 
+                sl.created_at,
+                s.filename,
+                s.original_filename
+            FROM subtitle_likes sl
+            LEFT JOIN subtitles s ON LOWER(sl.video_id) = LOWER(s.video_id)
+            WHERE sl.user_id = ?
+        `;
+        
+        if (cursor > 0) { 
+            sql += ' AND sl.id < ?'; 
+            params.push(cursor); 
+        }
+        
+        sql += ' ORDER BY sl.id DESC LIMIT ?'; 
+        params.push(limit);
+        
+        const list = await getAllAsync(sql, params);
+        const nextCursor = list.length === limit ? list[list.length - 1].id : null;
+        
+        // 获取总数
+        const totalResult = await getAsync('SELECT COUNT(*) as total FROM subtitle_likes WHERE user_id = ?', [userId]);
+        const total = totalResult ? totalResult.total : 0;
+        
+        return res.json({ 
+            data: list, 
+            total: total,
+            page: { cursor: cursor || null, limit, next_cursor: nextCursor } 
+        });
+    } catch (e) {
+        console.error('获取字幕点赞记录失败:', e);
+        return res.status(500).json({ error: '获取字幕点赞记录失败' });
+    }
+});
+
+// 获取用户评论点赞记录
+app.get('/api/user/liked-comments', authenticateUserToken, async (req, res) => {
+    try {
+        const userId = Number(req.user.id);
+        const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+        const cursor = parseInt(req.query.cursor) || 0;
+        const params = [userId];
+        
+        let sql = `
+            SELECT 
+                cl.id, 
+                cl.comment_id, 
+                cl.page_url, 
+                cl.created_at,
+                sc.content,
+                sc.video_id
+            FROM comment_likes cl
+            LEFT JOIN subtitle_comments sc ON cl.comment_id = sc.id
+            WHERE cl.user_id = ?
+        `;
+        
+        if (cursor > 0) { 
+            sql += ' AND cl.id < ?'; 
+            params.push(cursor); 
+        }
+        
+        sql += ' ORDER BY cl.id DESC LIMIT ?'; 
+        params.push(limit);
+        
+        const list = await getAllAsync(sql, params);
+        const nextCursor = list.length === limit ? list[list.length - 1].id : null;
+        
+        // 获取总数
+        const totalResult = await getAsync('SELECT COUNT(*) as total FROM comment_likes WHERE user_id = ?', [userId]);
+        const total = totalResult ? totalResult.total : 0;
+        
+        return res.json({ 
+            data: list, 
+            total: total,
+            page: { cursor: cursor || null, limit, next_cursor: nextCursor } 
+        });
+    } catch (e) {
+        console.error('获取评论点赞记录失败:', e);
+        return res.status(500).json({ error: '获取评论点赞记录失败' });
     }
 });
 
@@ -3296,6 +3423,7 @@ app.post('/api/comments/:commentId/like', authenticateUserToken, async (req, res
     try {
         const { commentId } = req.params;
         const userId = req.user.id;
+        const { page_url } = req.body || {};
         
         if (!commentId) {
             return res.status(400).json({ error: '评论ID不能为空' });
@@ -3334,8 +3462,8 @@ app.post('/api/comments/:commentId/like', authenticateUserToken, async (req, res
             // 添加点赞：处理并发导致的唯一约束冲突，保证幂等，不返回500
             try {
                 const ins = await runAsync(
-                    'INSERT INTO comment_likes (user_id, comment_id) VALUES (?, ?)',
-                    [userId, commentId]
+                    'INSERT INTO comment_likes (user_id, comment_id, page_url) VALUES (?, ?, ?)',
+                    [userId, commentId, page_url || null]
                 );
                 // 获取实时点赞数
                 const likesCount = await getAsync(

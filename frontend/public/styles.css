@@ -4951,3 +4951,234 @@ body.no-scroll {
         box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
     }
 }
+
+/* 点赞记录对话框样式 */
+#likesModal .modal-content {
+  max-height: 80vh;
+}
+
+#likesModal .modal-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Tab 导航样式 */
+.likes-tabs {
+  display: flex;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 16px;
+}
+
+.likes-tab {
+  flex: 1;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.likes-tab:hover {
+  color: #ddd;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.likes-tab.active {
+  color: #667eea;
+}
+
+.likes-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #667eea;
+}
+
+.tab-count {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* Tab 内容样式 */
+.likes-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.likes-tab-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.likes-tab-content:not(.active) {
+  display: none;
+}
+
+/* 点赞列表样式 */
+.likes-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 400px;
+  padding-right: 8px;
+}
+
+.likes-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.likes-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.likes-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.likes-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* 点赞记录项样式 */
+.likes-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.likes-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.likes-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.likes-item-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.likes-item-meta {
+  font-size: 12px;
+  color: #999;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.likes-item-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.likes-item-video {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.likes-item-action {
+  margin-left: 12px;
+}
+
+.likes-jump-btn {
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 4px;
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.likes-jump-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+}
+
+.likes-jump-btn:active {
+  transform: translateY(0);
+}
+
+.likes-jump-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* 空状态和加载状态 */
+.likes-empty,
+.likes-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #999;
+  font-size: 14px;
+}
+
+.likes-empty p,
+.likes-loading p {
+  margin: 0;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  #likesModal .modal-content {
+    max-width: 95vw;
+    margin: 20px auto;
+  }
+  
+  .likes-tabs {
+    margin-bottom: 12px;
+  }
+  
+  .likes-tab {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  
+  .likes-item {
+    padding: 10px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .likes-item-action {
+    margin-left: 0;
+    margin-top: 8px;
+    align-self: flex-end;
+  }
+  
+  .likes-item-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}

@@ -96,6 +96,7 @@
 
           <!-- 菜单项 -->
           <div class="user-menu-item" id="menuWishlist">我的心愿单</div>
+          <div class="user-menu-item" id="menuLikes">我的点赞记录</div>
           <div class="user-menu-item" id="menuSettings">设置</div>
           <div class="user-menu-item" id="menuLogout">退出登录</div>
           <div class="user-menu-item" id="menuDeleteAccount">注销账户</div>
@@ -354,6 +355,52 @@
           </div>
           <div class="wlListSection">
             <div id="wlList" class="wl-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 点赞记录对话框 -->
+    <div id="likesModal" class="modal" style="display: none">
+      <div class="modal-content" style="max-width: 720px">
+        <div class="modal-header">
+          <span id="likesClose" class="close">×</span>
+          <h3>我的点赞记录</h3>
+        </div>
+        <div class="modal-body">
+          <!-- Tab 导航 -->
+          <div class="likes-tabs">
+            <button class="likes-tab active" data-tab="subtitles">
+              字幕点赞 <span id="subtitleLikesCount" class="tab-count">(0)</span>
+            </button>
+            <button class="likes-tab" data-tab="comments">
+              评论点赞 <span id="commentLikesCount" class="tab-count">(0)</span>
+            </button>
+          </div>
+          
+          <!-- Tab 内容 -->
+          <div class="likes-content">
+            <!-- 字幕点赞列表 -->
+            <div id="subtitleLikesTab" class="likes-tab-content active">
+              <div id="subtitleLikesList" class="likes-list"></div>
+              <div id="subtitleLikesEmpty" class="likes-empty" style="display: none">
+                <p>暂无字幕点赞记录</p>
+              </div>
+              <div id="subtitleLikesLoading" class="likes-loading" style="display: none">
+                <p>加载中...</p>
+              </div>
+            </div>
+            
+            <!-- 评论点赞列表 -->
+            <div id="commentLikesTab" class="likes-tab-content" style="display: none">
+              <div id="commentLikesList" class="likes-list"></div>
+              <div id="commentLikesEmpty" class="likes-empty" style="display: none">
+                <p>暂无评论点赞记录</p>
+              </div>
+              <div id="commentLikesLoading" class="likes-loading" style="display: none">
+                <p>加载中...</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
