@@ -940,8 +940,8 @@ def get_all_actresses_urls(page: Page, timeout: int, delay: float, retries: int,
                 href = a.get("href", "")
                 if not href:
                     continue
-                # 仅保留符合 /dm 且 /actresses/ 的详情页，且排除排行榜
-                if "/dm" in href and "/actresses/" in href and "/actresses/ranking" not in href:
+                # 仅保留符合 /actresses/ 的详情页，且排除排行榜
+                if "/actresses/" in href and "/actresses/ranking" not in href:
                     abs_url = urljoin(base_list_url, href)
                     if abs_url not in seen:
                         # 从URL提取演员名并进行过滤
