@@ -510,6 +510,45 @@ def derive_actor_name_from_url(url: str) -> str:
         return "unknown"
 
 
+def is_valid_actress_name(actress_name: str) -> bool:
+    """
+    检查演员名是否有效，过滤掉纯数字和字母数字组合的演员名
+    
+    过滤规则:
+    - 纯数字: 如 "123456" -> False
+    - 字母数字组合: 如 "abc123", "123abc", "a1b2c3" -> False
+    - 纯字母: 如 "张三", "田中美奈子", "Yui" -> True
+    - 包含中文、日文、韩文等非ASCII字符: -> True
+    """
+    if not actress_name or actress_name == "unknown":
+        return False
+    
+    # 移除常见的URL编码字符和特殊字符进行检查
+    clean_name = actress_name.replace("-", "").replace("_", "").replace(".", "").strip()
+    
+    if not clean_name:
+        return False
+    
+    # 检查是否为纯数字
+    if clean_name.isdigit():
+        print(f"过滤纯数字演员名: {actress_name}")
+        return False
+    
+    # 检查是否为字母数字组合（同时包含字母和数字）
+    has_letter = any(c.isalpha() for c in clean_name)
+    has_digit = any(c.isdigit() for c in clean_name)
+    
+    if has_letter and has_digit:
+        # 进一步检查是否只包含ASCII字母和数字（排除中文、日文等）
+        ascii_only = all(c.isalnum() for c in clean_name)
+        if ascii_only:
+            print(f"过滤字母数字组合演员名: {actress_name}")
+            return False
+    
+    # 其他情况都认为是有效的演员名
+    return True
+
+
 def sanitize_filename(name: str, max_len: int = 80) -> str:
     """清理文件名"""
     invalid = r'<>:"/\\|?*'
@@ -905,6 +944,11 @@ def get_all_actresses_urls(page: Page, timeout: int, delay: float, retries: int,
                 if "/dm" in href and "/actresses/" in href and "/actresses/ranking" not in href:
                     abs_url = urljoin(base_list_url, href)
                     if abs_url not in seen:
+                        # 从URL提取演员名并进行过滤
+                        actress_name = derive_actor_name_from_url(abs_url)
+                        if not is_valid_actress_name(actress_name):
+                            continue  # 跳过无效的演员名
+                        
                         seen.add(abs_url)
                         actress_urls.append(abs_url)
                         page_new += 1
@@ -976,8 +1020,8 @@ def main():
     delay = 1.0
     retries = 3
     timeout = 30
-    max_actress_pages = 6  # 每个演员的最大作品页数（测试用）
-    actresses_max_pages = 10  # 演员列表最大页数（测试用）
+    max_actress_pages = 300  # 每个演员的最大作品页数（测试用）
+    actresses_max_pages = 1500  # 演员列表最大页数（测试用）
     
     print("MissAV 演员页面视频ID批量抓取脚本 (Playwright版本)")
     print(f"并发数: {concurrency}")
