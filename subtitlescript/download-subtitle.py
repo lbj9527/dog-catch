@@ -2353,7 +2353,7 @@ def batch_download_from_csv(csv_file_path, video_type_filter=None, max_downloads
     """
     try:
         # 导入批量下载模块
-        from csv_utils import get_video_codes_from_csv
+        from db_utils import get_video_codes_from_csv  # 使用数据库模式替代CSV
         from batch_downloader import create_batch_downloader
         
         print(f"🚀 开始批量下载任务")
@@ -2414,6 +2414,98 @@ def batch_download_from_csv(csv_file_path, video_type_filter=None, max_downloads
         return {"success": False, "message": f"模块导入失败: {e}"}
     except Exception as e:
         print(f"❌ 批量下载过程中发生错误: {e}")
+        return {"success": False, "message": f"下载失败: {e}"}
+
+
+def batch_download_from_db(
+    video_type_filter=None, 
+    actress_filter=None,
+    no_subtitle=False,
+    max_downloads=None, 
+    delay=2.0
+):
+    """
+    从数据库批量下载字幕
+    
+    Args:
+        video_type_filter: 视频类型筛选
+        actress_filter: 演员名称筛选
+        no_subtitle: 是否只下载未有字幕的视频
+        max_downloads: 最大下载数量限制
+        delay: 下载间隔时间（秒）
+    
+    Returns:
+        dict: 下载统计结果
+    """
+    try:
+        # 导入数据库工具模块
+        from db_utils import get_video_codes_from_db
+        from batch_downloader import create_batch_downloader
+        
+        print(f"🚀 开始数据库批量下载任务")
+        print(f"🎯 视频类型筛选: {video_type_filter or '全部'}")
+        print(f"👩‍🎭 演员筛选: {actress_filter or '全部'}")
+        print(f"📝 字幕状态: {'仅未有字幕' if no_subtitle else '全部'}")
+        print(f"📊 最大下载数: {max_downloads or '无限制'}")
+        print(f"⏱️ 下载间隔: {delay}秒")
+        print("-" * 60)
+        
+        # 从数据库获取视频编号
+        video_codes = get_video_codes_from_db(
+            video_type=video_type_filter,
+            actress_name=actress_filter,
+            has_subtitle=False if no_subtitle else None,
+            limit=max_downloads
+        )
+        
+        if not video_codes:
+            print("❌ 未从数据库中找到匹配的视频编号")
+            return {"success": False, "message": "无匹配视频编号"}
+        
+        print(f"✅ 成功获取 {len(video_codes)} 个视频编号")
+        for i, code in enumerate(video_codes[:10], 1):  # 显示前10个
+            print(f"   {i}. {code}")
+        if len(video_codes) > 10:
+            print(f"   ... 还有 {len(video_codes) - 10} 个")
+        print("-" * 60)
+        
+        # 定义单次下载函数
+        def single_download(keyword: str):
+            """执行单次下载流程"""
+            print(f"🔍 开始下载: {keyword}")
+            with sync_playwright() as playwright:
+                # 临时修改全局关键词
+                global SEARCH_KEYWORD
+                original_keyword = SEARCH_KEYWORD
+                SEARCH_KEYWORD = keyword
+                try:
+                    run(playwright)
+                finally:
+                    # 恢复原始关键词
+                    SEARCH_KEYWORD = original_keyword
+        
+        # 创建批量下载器
+        downloader = create_batch_downloader(single_download, delay=delay)
+        
+        # 执行批量下载
+        stats = downloader.download_from_codes(video_codes, max_downloads=max_downloads)
+        
+        print("=" * 60)
+        print("📊 数据库批量下载完成统计:")
+        print(f"   ✅ 成功: {stats['success']}")
+        print(f"   ❌ 失败: {stats['failed']}")
+        print(f"   ⏭️ 跳过: {stats['skipped']}")
+        print(f"   📈 总计: {stats['total']}")
+        print("=" * 60)
+        
+        return stats
+        
+    except ImportError as e:
+        print(f"❌ 导入数据库模块失败: {e}")
+        print("请确保 db_utils.py 和 batch_downloader.py 文件存在")
+        return {"success": False, "message": f"模块导入失败: {e}"}
+    except Exception as e:
+        print(f"❌ 数据库批量下载过程中发生错误: {e}")
         return {"success": False, "message": f"下载失败: {e}"}
 
 
@@ -2496,7 +2588,12 @@ def parse_arguments():
   单次下载:
     python download-subtitle.py
     
-  从CSV文件批量下载:
+  从数据库批量下载（推荐）:
+    python download-subtitle.py --db --type "无码破解" --max 10
+    python download-subtitle.py --db --actress "波多野结衣" --interval 3.0
+    python download-subtitle.py --db --no-subtitle --max 20
+    
+  从CSV文件批量下载（兼容模式）:
     python download-subtitle.py --csv videos.csv --type "SSIS"
     python download-subtitle.py --csv videos.csv --interval 3.0 --max 10
     
@@ -2506,12 +2603,17 @@ def parse_arguments():
         """
     )
     
-    # 互斥组：CSV文件或编号列表
+    # 互斥组：数据库查询、CSV文件或编号列表
     group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        '--db', 
+        action='store_true',
+        help='从数据库批量下载（推荐模式）'
+    )
     group.add_argument(
         '--csv', 
         type=str, 
-        help='CSV文件路径，用于批量下载'
+        help='CSV文件路径，用于批量下载（兼容模式）'
     )
     group.add_argument(
         '--codes', 
@@ -2523,7 +2625,17 @@ def parse_arguments():
     parser.add_argument(
         '--type', 
         type=str, 
-        help='视频类型筛选（仅用于CSV模式），如: "SSIS", "MIDV"等'
+        help='视频类型筛选，如: "无码破解", "SSIS", "MIDV"等'
+    )
+    parser.add_argument(
+        '--actress', 
+        type=str, 
+        help='演员名称筛选（仅数据库模式），如: "波多野结衣"'
+    )
+    parser.add_argument(
+        '--no-subtitle', 
+        action='store_true',
+        help='只下载未有字幕的视频（仅数据库模式）'
     )
     parser.add_argument(
         '--max', 
@@ -2543,9 +2655,19 @@ def parse_arguments():
 if __name__ == "__main__":
     args = parse_arguments()
     
-    # 检查是否为批量下载模式
-    if args.csv:
-        # CSV批量下载模式
+    # 数据库模式
+    if args.db:
+        print("🗄️ 使用数据库模式批量下载")
+        batch_download_from_db(
+            video_type_filter=args.type,
+            actress_filter=args.actress,
+            no_subtitle=args.no_subtitle,
+            max_downloads=args.max,
+            delay=args.interval
+        )
+    # CSV模式（兼容）
+    elif args.csv:
+        print("📄 使用CSV兼容模式批量下载")
         batch_download_from_csv(
             csv_file_path=args.csv,
             video_type_filter=args.type,
