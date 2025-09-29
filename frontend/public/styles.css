@@ -5202,6 +5202,7 @@ body.no-scroll {
     rgba(118, 75, 162, 0.6) 50%, 
     rgba(102, 126, 234, 0.4) 100%);
   border-radius: 1px;
+  pointer-events: none; /* 防止时间线拦截点击事件 */
 }
 
 /* 日期分组标题 */
@@ -5220,6 +5221,7 @@ body.no-scroll {
   color: #667eea;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  cursor: pointer;
 }
 
 .likes-date-header::before {
@@ -5231,6 +5233,23 @@ body.no-scroll {
   background: #667eea;
   border-radius: 50%;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+/* 折叠箭头指示 */
+.likes-date-header::after {
+  content: '▾';
+  margin-left: 8px;
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+.likes-date-group.collapsed .likes-date-header::after {
+  transform: rotate(-90deg);
+}
+
+/* 收拢的内容容器 */
+.likes-date-group.collapsed .likes-date-items {
+  display: none;
 }
 
 /* 时间线记录项样式 */

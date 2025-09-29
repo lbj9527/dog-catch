@@ -7025,6 +7025,8 @@ class VideoPlayer {
             if (commentContent) commentContent.style.display = 'none';
             
             this.loadLikedSubtitles();
+            // 确保切换后重新绑定折叠交互
+            setTimeout(() => this.initDateGroupCollapse('subtitleLikesList'), 100);
         } else {
             if (subtitleTabBtn) subtitleTabBtn.classList.remove('active');
             if (commentTabBtn) commentTabBtn.classList.add('active');
@@ -7032,6 +7034,8 @@ class VideoPlayer {
             if (commentContent) commentContent.style.display = 'block';
             
             this.loadLikedComments();
+            // 确保切换后重新绑定折叠交互
+            setTimeout(() => this.initDateGroupCollapse('commentLikesList'), 100);
         }
     }
     
@@ -7073,6 +7077,8 @@ class VideoPlayer {
             
             if (data.data && data.data.length > 0) {
                 this.renderLikedSubtitles(data.data);
+                // 绑定折叠交互
+                this.initDateGroupCollapse('subtitleLikesList');
                 list.style.display = 'block';
                 empty.style.display = 'none';
             } else {
@@ -7126,6 +7132,8 @@ class VideoPlayer {
             
             if (data.data && data.data.length > 0) {
                 this.renderLikedComments(data.data);
+                // 绑定折叠交互
+                this.initDateGroupCollapse('commentLikesList');
                 list.style.display = 'block';
                 empty.style.display = 'none';
             } else {
@@ -7149,37 +7157,41 @@ class VideoPlayer {
         // 按日期分组
         const groupedRecords = this.groupRecordsByDate(records);
         
-        list.innerHTML = Object.entries(groupedRecords).map(([date, dateRecords]) => `
-            <div class="likes-date-group">
-                <div class="likes-date-header">${date}</div>
-                ${dateRecords.map(record => `
-                    <div class="likes-item">
-                        <div class="likes-item-bubble">
-                            <div class="likes-item-content">
-                                <div class="likes-item-title">${record.filename || record.original_filename || '未知字幕'}</div>
-                                <div class="likes-item-meta">
-                                    <div class="likes-item-info">
-                                        <span class="likes-item-time">
-                                            <i class="icon-clock"></i>
-                                            ${new Date(record.created_at).toLocaleTimeString()}
-                                        </span>
-                                        <span class="likes-item-video">
-                                            <i class="icon-video"></i>
-                                            视频ID: ${record.video_id}
-                                        </span>
-                                    </div>
-                                    <div class="likes-item-action">
-                                        <button class="likes-jump-btn" onclick="window.open('${record.page_url}', '_blank')">
-                                            打开页面
-                                        </button>
-                                    </div>
+        list.innerHTML = Object.entries(groupedRecords).map(([date, dateRecords]) => {
+            const count = Array.isArray(dateRecords) ? dateRecords.length : 0;
+            const itemsHtml = dateRecords.map(record => `
+                <div class="likes-item">
+                    <div class="likes-item-bubble">
+                        <div class="likes-item-content">
+                            <div class="likes-item-title">${record.filename || record.original_filename || '未知字幕'}</div>
+                            <div class="likes-item-meta">
+                                <div class="likes-item-info">
+                                    <span class="likes-item-time">
+                                        <i class="icon-clock"></i>
+                                        ${new Date(record.created_at).toLocaleTimeString()}
+                                    </span>
+                                    <span class="likes-item-video">
+                                        <i class="icon-video"></i>
+                                        视频ID: ${record.video_id}
+                                    </span>
+                                </div>
+                                <div class="likes-item-action">
+                                    <button class="likes-jump-btn" onclick="window.open('${record.page_url}', '_blank')">
+                                        打开页面
+                                    </button>
                                 </div>
                             </div>
                         </div>
                     </div>
-                `).join('')}
-            </div>
-        `).join('');
+                </div>
+            `).join('');
+            return `
+                <div class="likes-date-group">
+                    <div class="likes-date-header" role="button" tabindex="0" aria-expanded="true">${date} <span class="likes-date-count">(${count})</span></div>
+                    <div class="likes-date-items">${itemsHtml}</div>
+                </div>
+            `;
+        }).join('');
     }
     
     // 渲染点赞的评论记录
@@ -7190,37 +7202,97 @@ class VideoPlayer {
         // 按日期分组
         const groupedRecords = this.groupRecordsByDate(records);
         
-        list.innerHTML = Object.entries(groupedRecords).map(([date, dateRecords]) => `
-            <div class="likes-date-group">
-                <div class="likes-date-header">${date}</div>
-                ${dateRecords.map(record => `
-                    <div class="likes-item">
-                        <div class="likes-item-bubble">
-                            <div class="likes-item-content">
-                                <div class="likes-item-title">${record.content.substring(0, 150)}${record.content.length > 150 ? '...' : ''}</div>
-                                <div class="likes-item-meta">
-                                    <div class="likes-item-info">
-                                        <span class="likes-item-time">
-                                            <i class="icon-clock"></i>
-                                            ${new Date(record.created_at).toLocaleTimeString()}
-                                        </span>
-                                        <span class="likes-item-video">
-                                            <i class="icon-video"></i>
-                                            视频ID: ${record.video_id}
-                                        </span>
-                                    </div>
-                                    <div class="likes-item-action">
-                                        <button class="likes-jump-btn" onclick="window.open('${record.page_url}', '_blank')">
-                                            打开页面
-                                        </button>
-                                    </div>
+        list.innerHTML = Object.entries(groupedRecords).map(([date, dateRecords]) => {
+            const count = Array.isArray(dateRecords) ? dateRecords.length : 0;
+            const itemsHtml = dateRecords.map(record => `
+                <div class="likes-item">
+                    <div class="likes-item-bubble">
+                        <div class="likes-item-content">
+                            <div class="likes-item-title">${record.content.substring(0, 150)}${record.content.length > 150 ? '...' : ''}</div>
+                            <div class="likes-item-meta">
+                                <div class="likes-item-info">
+                                    <span class="likes-item-time">
+                                        <i class="icon-clock"></i>
+                                        ${new Date(record.created_at).toLocaleTimeString()}
+                                    </span>
+                                    <span class="likes-item-video">
+                                        <i class="icon-video"></i>
+                                        视频ID: ${record.video_id}
+                                    </span>
+                                </div>
+                                <div class="likes-item-action">
+                                    <button class="likes-jump-btn" onclick="window.open('${record.page_url}', '_blank')">
+                                        打开页面
+                                    </button>
                                 </div>
                             </div>
                         </div>
                     </div>
-                `).join('')}
-            </div>
-        `).join('');
+                </div>
+            `).join('');
+            return `
+                <div class="likes-date-group">
+                    <div class="likes-date-header" role="button" tabindex="0" aria-expanded="true">${date} <span class="likes-date-count">(${count})</span></div>
+                    <div class="likes-date-items">${itemsHtml}</div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // 初始化日期分组的收拢交互
+    initDateGroupCollapse(listId) {
+        const listEl = document.getElementById(listId);
+        if (!listEl) return;
+        
+        // 幂等性检查：避免重复绑定
+        if (listEl.dataset.collapseBound === 'true') return;
+        listEl.dataset.collapseBound = 'true';
+        
+        // 应用默认收拢状态（条目数 > 2 的分组默认收拢）
+        this.applyDefaultCollapseState(listEl);
+        
+        // 点击事件委托
+        listEl.addEventListener('click', (e) => {
+            const header = e.target.closest('.likes-date-header');
+            if (!header || !listEl.contains(header)) return;
+            const group = header.closest('.likes-date-group');
+            if (!group) return;
+            const items = group.querySelector('.likes-date-items');
+            const collapsed = group.classList.toggle('collapsed');
+            header.setAttribute('aria-expanded', (!collapsed).toString());
+            // 移除内联样式，统一用CSS类控制
+            if (items && items.style.display) {
+                items.style.display = '';
+            }
+        });
+        // 键盘可访问性
+        listEl.addEventListener('keydown', (e) => {
+            const target = e.target.closest('.likes-date-header');
+            if (!target || !listEl.contains(target)) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                target.click();
+            }
+        });
+    }
+    
+    // 应用默认收拢状态
+    applyDefaultCollapseState(listEl) {
+        const groups = listEl.querySelectorAll('.likes-date-group');
+        groups.forEach(group => {
+            const items = group.querySelector('.likes-date-items');
+            const header = group.querySelector('.likes-date-header');
+            if (!items || !header) return;
+            
+            // 计算条目数量
+            const itemCount = items.children.length;
+            
+            // 如果条目数 > 2，则默认收拢
+            if (itemCount > 2) {
+                group.classList.add('collapsed');
+                header.setAttribute('aria-expanded', 'false');
+            }
+        });
     }
     
     // 按日期分组记录的辅助方法
