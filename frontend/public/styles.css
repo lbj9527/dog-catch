@@ -1284,6 +1284,60 @@ body.modal-open {
     pointer-events: auto;
 }
 
+/* 观看数按钮样式（与点赞按钮保持一致） */
+.viewer-count-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    color: #fff;
+    cursor: default; /* 观看数按钮不可点击 */
+    transition: all 0.3s ease;
+    backdrop-filter: blur(4px);
+    font-size: 14px;
+    user-select: none;
+}
+
+.viewer-count-button:hover {
+    background: rgba(0, 0, 0, 0.8);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.viewer-count-button .viewer-icon {
+    width: 18px;
+    height: 18px;
+    transition: transform 0.2s ease;
+}
+
+.viewer-count-button .viewer-count {
+    font-weight: 500;
+    min-width: 20px;
+    text-align: center;
+}
+
+/* 响应式设计 - 移动端适配 */
+@media (max-width: 767px) {
+    .viewer-count-button {
+        padding: 6px 10px;
+        font-size: 13px;
+        border-radius: 16px;
+    }
+    
+    .viewer-count-button .viewer-icon {
+        width: 16px;
+        height: 16px;
+    }
+    
+    .viewer-count-button .viewer-count {
+        min-width: 18px;
+    }
+}
+
 .like-button {
     display: flex;
     align-items: center;

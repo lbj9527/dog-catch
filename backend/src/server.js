@@ -989,6 +989,19 @@ db.serialize(() => {
     db.run('CREATE INDEX IF NOT EXISTS idx_notifications_user_deleted ON notifications(user_id, is_deleted)', () => {});
     db.run('CREATE INDEX IF NOT EXISTS idx_notifications_user_deleted_created ON notifications(user_id, is_deleted, created_at DESC)', () => {});
     
+    // 新增：字幕观看记录表（用于统计唯一观众数）
+    db.run(`CREATE TABLE IF NOT EXISTS subtitle_viewers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        video_id TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    
+    // 为 subtitle_viewers 表创建唯一索引，确保一个用户对一个视频只能计入一次
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_subtitle_viewers_user_video ON subtitle_viewers(user_id, video_id)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_subtitle_viewers_video ON subtitle_viewers(video_id)', () => {});
+    
     // 创建默认管理员账号 (用户名: admin, 密码: admin123)
     const defaultPassword = bcrypt.hashSync('admin123', 10);
     db.run(`INSERT OR IGNORE INTO admins (username, password_hash) VALUES (?, ?)`, 
@@ -2484,6 +2497,89 @@ app.post('/api/subtitles/like-toggle/:video_id', authenticateUserToken, async (r
     } catch (err) {
         console.error('切换点赞状态失败:', err);
         res.status(500).json({ error: '切换点赞状态失败' });
+    }
+});
+
+// 获取字幕唯一观看人数（需要登录且字幕存在）
+app.get('/api/subtitles/viewers-count/:video_id', authenticateUserToken, async (req, res) => {
+    const videoId = (req.params.video_id || '').toLowerCase().trim();
+    if (!videoId) {
+        return res.status(400).json({ error: '视频ID不能为空' });
+    }
+
+    try {
+        // 检查字幕是否存在
+        const subtitle = await getAsync(
+            'SELECT id FROM subtitles WHERE lower(video_id) = lower(?)',
+            [videoId]
+        );
+        
+        if (!subtitle) {
+            return res.status(403).json({ error: '字幕不存在或无权限访问' });
+        }
+
+        // 获取唯一观看人数
+        const result = await getAsync(
+            'SELECT COUNT(DISTINCT user_id) as viewers_count FROM subtitle_viewers WHERE lower(video_id) = lower(?)',
+            [videoId]
+        );
+
+        const viewersCount = result ? result.viewers_count : 0;
+
+        res.json({
+            video_id: videoId,
+            viewers_count: viewersCount
+        });
+    } catch (err) {
+        console.error('获取观看人数失败:', err);
+        res.status(500).json({ error: '获取观看人数失败' });
+    }
+});
+
+// 上报字幕观看记录（需要登录且字幕存在）
+app.post('/api/subtitles/viewers/report/:video_id', authenticateUserToken, async (req, res) => {
+    const videoId = (req.params.video_id || '').toLowerCase().trim();
+    if (!videoId) {
+        return res.status(400).json({ error: '视频ID不能为空' });
+    }
+
+    const userId = req.user.id;
+    const { watchDurationSec } = req.body || {};
+
+    // 验证观看时长
+    if (!watchDurationSec || watchDurationSec < 60) {
+        return res.status(400).json({ error: '观看时长必须至少60秒' });
+    }
+
+    try {
+        // 检查字幕是否存在
+        const subtitle = await getAsync(
+            'SELECT id FROM subtitles WHERE lower(video_id) = lower(?)',
+            [videoId]
+        );
+        
+        if (!subtitle) {
+            return res.status(403).json({ error: '字幕不存在或无权限访问' });
+        }
+
+        // 使用 INSERT OR IGNORE 确保每个用户对每个视频只能上报一次
+        const result = await runAsync(
+            'INSERT OR IGNORE INTO subtitle_viewers (video_id, user_id, created_at) VALUES (?, ?, datetime("now"))',
+            [videoId, userId]
+        );
+
+        // 检查是否成功插入（即用户首次观看）
+        const isNewViewer = result.changes > 0;
+
+        res.json({
+            video_id: videoId,
+            success: true,
+            is_new_viewer: isNewViewer,
+            message: isNewViewer ? '观看记录已记录' : '观看记录已存在'
+        });
+    } catch (err) {
+        console.error('上报观看记录失败:', err);
+        res.status(500).json({ error: '上报观看记录失败' });
     }
 });
 

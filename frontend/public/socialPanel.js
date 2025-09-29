@@ -462,4 +462,122 @@ export class SocialPanel {
     
     return true;
   }
+
+  // 更新观看数UI
+  async updateViewerCount() {
+    const viewerCountBtn = document.getElementById('viewerCountButton');
+    const viewerCountEl = document.getElementById('viewerCount');
+    
+    console.log('[观看人数] 开始更新观看人数', {
+      viewerCountBtn: !!viewerCountBtn,
+      viewerCountEl: !!viewerCountEl
+    });
+    
+    if (!viewerCountBtn || !viewerCountEl) return;
+    
+    try {
+      // 获取当前视频ID
+      const videoId = this.getCurrentVideoId();
+      console.log('[观看人数] 获取到视频ID:', videoId);
+      
+      if (!videoId) return;
+      
+      // 统一API基址解析逻辑，与player.js保持一致
+      const urlParams = new URLSearchParams(window.location.search);
+      const apiBase = urlParams.get('api') || 
+                     (window.PLAYER_CONFIG && window.PLAYER_CONFIG.API_BASE_URL) || 
+                     'https://api.sub-dog.top';
+      const baseUrl = apiBase.replace(/\/$/, ''); // 去除结尾斜杠
+      
+      const token = sessionStorage.getItem('user_token') || localStorage.getItem('user_token') || '';
+      const url = `${baseUrl}/api/subtitles/viewers-count/${videoId}`;
+      
+      console.log('[观看人数] 发送API请求', {
+        url: url,
+        hasToken: !!token,
+        apiBase: apiBase
+      });
+      
+      // 获取观看数
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('[观看人数] API响应状态:', response.status);
+      
+      if (response.ok) {
+        const data = await response.json();
+        const count = Number(data.viewers_count || 0);
+        
+        console.log('[观看人数] 获取成功', {
+          rawData: data,
+          count: count,
+          formattedCount: this.formatViewerCount(count)
+        });
+        
+        // 更新观看数显示
+        viewerCountEl.textContent = this.formatViewerCount(count);
+        
+        // 显示观看数按钮
+        viewerCountBtn.style.display = 'flex';
+      } else {
+        console.error('[观看人数] API请求失败:', response.status);
+      }
+    } catch (error) {
+      console.error('[观看人数] 获取观看数失败:', error.message, error);
+    }
+  }
+  
+  // 格式化观看数显示
+  formatViewerCount(n) {
+    const num = Number(n) || 0;
+    if (num >= 1000) {
+      const val = (num / 1000).toFixed(1).replace(/\.0$/, '');
+      return `${val}k`;
+    }
+    try { 
+      return num.toLocaleString('zh-CN'); 
+    } catch { 
+      return String(num); 
+    }
+  }
+  
+  // 获取当前视频ID
+  getCurrentVideoId() {
+    console.log('[视频ID] 开始获取视频ID');
+    
+    // 优先从全局VideoPlayer实例获取激活的视频ID（支持字幕变体切换）
+    if (window.videoPlayerInstance && typeof window.videoPlayerInstance.getActiveVideoId === 'function') {
+      const activeId = window.videoPlayerInstance.getActiveVideoId();
+      console.log('[视频ID] 从 getActiveVideoId 获取:', activeId);
+      if (activeId) return activeId;
+    }
+    
+    // 备用方案：直接访问currentSubtitleId或currentVideoId
+    if (window.videoPlayerInstance) {
+      if (window.videoPlayerInstance.currentSubtitleId) {
+        console.log('[视频ID] 从 currentSubtitleId 获取:', window.videoPlayerInstance.currentSubtitleId);
+        return window.videoPlayerInstance.currentSubtitleId;
+      }
+      if (window.videoPlayerInstance.currentVideoId) {
+        console.log('[视频ID] 从 currentVideoId 获取:', window.videoPlayerInstance.currentVideoId);
+        return window.videoPlayerInstance.currentVideoId;
+      }
+    }
+    
+    // 最后备用方案：从URL参数获取
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlVideoId = urlParams.get('video_id') || urlParams.get('videoId');
+    console.log('[视频ID] 从URL参数获取:', urlVideoId);
+    
+    if (!urlVideoId) {
+      console.log('[视频ID] 未找到视频ID');
+    }
+    
+    return urlVideoId;
+  }
 }

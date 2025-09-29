@@ -77,6 +77,15 @@ class VideoPlayer {
         // 哈希处理去重防抖
         this._lastHashHandled = null;
         
+        // 观看时长计时相关属性
+        this.viewerTracking = {
+            consecutivePlaySeconds: 0,  // 连续播放秒数
+            hasReported: false,         // 是否已上报过观看记录
+            lastPlayTime: null,         // 上次播放时间戳
+            isPlaying: false,           // 当前是否在播放
+            trackingTimer: null         // 计时器
+        };
+        
         this.init();
     }
 
@@ -2108,6 +2117,8 @@ class VideoPlayer {
     setupPlayerEvents() {
         this.player.on('loadstart', () => {
             this.showMessage('正在加载视频...', 'loading');
+            // 重置观看计时状态
+            this.resetViewerTracking();
         });
         
         this.player.on('canplay', () => {
@@ -2117,6 +2128,8 @@ class VideoPlayer {
         
         this.player.on('error', () => {
             this.showMessage('播放失败，可能为跨域或防盗链限制', 'error');
+            // 停止观看计时
+            this.stopViewerTracking();
         });
         
         // 播放器就绪后尝试自动播放
@@ -2128,6 +2141,186 @@ class VideoPlayer {
                 });
             }
         });
+        
+        // 添加播放事件监听
+        this.player.on('play', () => {
+            this.startViewerTracking();
+        });
+        
+        // 添加暂停事件监听
+        this.player.on('pause', () => {
+            this.pauseViewerTracking();
+        });
+        
+        // 添加跳转事件监听
+        this.player.on('seeking', () => {
+            this.resetViewerTracking();
+        });
+        
+        // 监听页面可见性变化
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.pauseViewerTracking();
+            } else if (this.player && !this.player.video.paused) {
+                this.startViewerTracking();
+            }
+        });
+        
+        // 监听页面刷新/关闭
+        window.addEventListener('beforeunload', () => {
+            this.stopViewerTracking();
+        });
+    }
+    
+    // 观看时长计时相关方法
+    
+    // 开始观看计时
+    startViewerTracking() {
+        console.log('[观看统计] 尝试开始观看计时', {
+            isLoggedIn: this.isLoggedIn(),
+            subtitleUrl: this.subtitleUrl,
+            hasReported: this.viewerTracking.hasReported,
+            activeVideoId: this.getActiveVideoId()
+        });
+        
+        if (!this.isLoggedIn() || !this.subtitleUrl || this.viewerTracking.hasReported) {
+            return;
+        }
+        
+        console.log('[观看统计] 开始观看计时');
+        this.viewerTracking.isPlaying = true;
+        this.viewerTracking.lastPlayTime = Date.now();
+        
+        // 清除之前的计时器
+        if (this.viewerTracking.trackingTimer) {
+            clearInterval(this.viewerTracking.trackingTimer);
+        }
+        
+        // 每秒更新一次计时
+        this.viewerTracking.trackingTimer = setInterval(() => {
+            if (this.viewerTracking.isPlaying && this.viewerTracking.lastPlayTime) {
+                const now = Date.now();
+                const elapsed = Math.floor((now - this.viewerTracking.lastPlayTime) / 1000);
+                
+                if (elapsed >= 1) {
+                    this.viewerTracking.consecutivePlaySeconds += elapsed;
+                    this.viewerTracking.lastPlayTime = now;
+                    
+                    const needsReport = this.viewerTracking.consecutivePlaySeconds >= 60 && !this.viewerTracking.hasReported;
+                    console.log('[观看统计] 更新观看时长', {
+                        elapsed: elapsed,
+                        consecutivePlaySeconds: this.viewerTracking.consecutivePlaySeconds,
+                        needsReport: needsReport
+                    });
+                    
+                    // 检查是否达到60秒阈值
+                    if (needsReport) {
+                        console.log('[观看统计] 达到上报条件，开始上报');
+                        this.reportViewerCount();
+                    }
+                }
+            }
+        }, 1000);
+    }
+    
+    // 暂停观看计时
+    pauseViewerTracking() {
+        console.log('[观看统计] 暂停观看计时', {
+            consecutivePlaySeconds: this.viewerTracking.consecutivePlaySeconds,
+            isPlaying: this.viewerTracking.isPlaying,
+            previousSeconds: this.viewerTracking.previousSeconds,
+            hasReported: this.viewerTracking.hasReported
+        });
+        
+        this.viewerTracking.isPlaying = false;
+        this.viewerTracking.lastPlayTime = null;
+        
+        if (this.viewerTracking.trackingTimer) {
+            clearInterval(this.viewerTracking.trackingTimer);
+            this.viewerTracking.trackingTimer = null;
+        }
+    }
+    
+    // 重置观看计时
+    resetViewerTracking() {
+        console.log('[观看统计] 重置观看计时', {
+            previousConsecutivePlaySeconds: this.viewerTracking.consecutivePlaySeconds,
+            previousHasReported: this.viewerTracking.hasReported
+        });
+        
+        this.pauseViewerTracking();
+        this.viewerTracking.consecutivePlaySeconds = 0;
+        this.viewerTracking.hasReported = false;
+    }
+    
+    // 停止观看计时
+    stopViewerTracking() {
+        console.log('[观看统计] 停止观看计时', {
+            consecutivePlaySeconds: this.viewerTracking.consecutivePlaySeconds,
+            hasReported: this.viewerTracking.hasReported
+        });
+        
+        this.pauseViewerTracking();
+    }
+    
+    // 上报观看记录
+    async reportViewerCount() {
+        console.log('[观看上报] 尝试上报观看记录', {
+            isLoggedIn: this.isLoggedIn(),
+            activeVideoId: this.getActiveVideoId(),
+            hasReported: this.viewerTracking.hasReported,
+            watchDurationSec: this.viewerTracking.consecutivePlaySeconds
+        });
+        
+        if (!this.isLoggedIn() || !this.getActiveVideoId() || this.viewerTracking.hasReported) {
+            console.log('[观看上报] 跳过上报，条件不满足');
+            return;
+        }
+        
+        try {
+            const base = (API_BASE_URL || (window.PLAYER_CONFIG?.API_BASE_URL || '')).replace(/\/$/, '');
+            const url = `${base}/api/subtitles/viewers/report/${this.getActiveVideoId()}`;
+            const data = {
+                watchDurationSec: this.viewerTracking.consecutivePlaySeconds
+            };
+            
+            console.log('[观看上报] 发送请求', {
+                url: url,
+                data: data,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': this.userToken ? `Bearer ${this.userToken.substring(0, 10)}...` : 'null'
+                }
+            });
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.userToken}`
+                },
+                body: JSON.stringify(data)
+            });
+            
+            console.log('[观看上报] 响应状态:', response.status);
+            
+            if (response.ok) {
+                const result = await response.json();
+                this.viewerTracking.hasReported = true;
+                console.log('[观看上报] 上报成功:', result);
+                
+                // 通知社交面板更新观看数
+                if (this.socialPanel && typeof this.socialPanel.updateViewerCount === 'function') {
+                    this.socialPanel.updateViewerCount();
+                }
+            } else if (response.status === 403) {
+                console.log('[观看上报] 上报被拒绝：可能是未登录或视频无字幕');
+            } else {
+                console.error('[观看上报] 上报失败:', response.status);
+            }
+        } catch (error) {
+            console.error('[观看上报] 网络错误:', error.message, error);
+        }
     }
     
     // 处理HLS视频
@@ -2424,6 +2617,8 @@ class VideoPlayer {
                 subtitleBtn.textContent = '隐藏字幕';
                 // 防抖更新点赞状态
                 this.debouncedFetchLikeStatus();
+                // 更新观看数显示
+                this.updateViewerCountUI();
                 // 更新心愿单当前视频输入框
                 this.updateWishlistCurrentInput();
             } else if (response.status === 404) {
@@ -2432,6 +2627,8 @@ class VideoPlayer {
                 this.currentSubtitleId = videoId; // 设置当前字幕ID用于评论
                 // 主动获取点赞状态，即使无字幕也要显示默认状态
                 this.debouncedFetchLikeStatus();
+                // 更新观看数显示
+                this.updateViewerCountUI();
                 // 更新心愿单当前视频输入框
                 this.updateWishlistCurrentInput();
             }
@@ -2440,6 +2637,8 @@ class VideoPlayer {
             // 网络错误时也设置兜底状态
             this.currentSubtitleId = videoId;
             this.debouncedFetchLikeStatus();
+            // 更新观看数显示
+            this.updateViewerCountUI();
             this.updateWishlistCurrentInput();
         }
     }
@@ -2849,6 +3048,13 @@ class VideoPlayer {
             return `${val}k`;
         }
         try { return num.toLocaleString('zh-CN'); } catch { return String(num); }
+    }
+    
+    // 更新观看数UI
+    async updateViewerCountUI() {
+        if (this.socialPanel && typeof this.socialPanel.updateViewerCount === 'function') {
+            await this.socialPanel.updateViewerCount();
+        }
     }
     
     // 防抖更新点赞状态（字幕切换时调用）

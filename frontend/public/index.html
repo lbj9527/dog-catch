@@ -115,6 +115,14 @@
             </svg>
             <span id="likeCount" class="like-count" style="display: none">0</span>
           </button>
+          <!-- 观看数按钮 -->
+          <button id="viewerCountButton" class="viewer-count-button" title="观看数" style="display: none">
+            <svg class="viewer-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span id="viewerCount" class="viewer-count">0</span>
+          </button>
           <!-- 社交入口按钮 -->
           <button id="btnSubComment" class="social-entry-btn" title="字幕评论" aria-label="字幕评论">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -144,19 +152,19 @@
           </button>
         </div>
         <!-- 视频源输入区域 -->
-        <div id="videoSourcePanel" class="video-source-panel" style="display: none;">
+        <div id="videoSourcePanel" class="video-source-panel" style="display: none">
           <div class="video-source-input-group">
-            <input type="text" id="videoSourceInput" class="video-source-input" placeholder="请输入视频地址" spellcheck="false">
+            <input type="text" id="videoSourceInput" class="video-source-input" placeholder="请输入视频地址" spellcheck="false" />
             <button id="btnHistoryToggle" class="history-toggle-btn" title="显示历史记录">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path d="M12 8v4l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                <path d="M12 8v4l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
               </svg>
             </button>
             <button id="btnOpenVideo" class="video-source-open-btn">打开</button>
           </div>
           <!-- 历史记录下拉列表 -->
-          <div id="historyDropdown" class="history-dropdown" style="display: none;">
+          <div id="historyDropdown" class="history-dropdown" style="display: none">
             <div class="history-header">
               <span class="history-title">历史记录</span>
               <button id="btnClearHistory" class="clear-history-btn" title="清空历史记录">清空</button>
@@ -166,7 +174,7 @@
             </div>
           </div>
           <!-- 加载状态和错误提示 -->
-          <div id="videoSourceStatus" class="video-source-status" style="display: none;">
+          <div id="videoSourceStatus" class="video-source-status" style="display: none">
             <div class="status-content">
               <span class="status-icon"></span>
               <span class="status-text"></span>
@@ -370,14 +378,10 @@
         <div class="modal-body">
           <!-- Tab 导航 -->
           <div class="likes-tabs">
-            <button class="likes-tab active" data-tab="subtitles">
-              字幕点赞 <span id="subtitleLikesCount" class="tab-count">(0)</span>
-            </button>
-            <button class="likes-tab" data-tab="comments">
-              评论点赞 <span id="commentLikesCount" class="tab-count">(0)</span>
-            </button>
+            <button class="likes-tab active" data-tab="subtitles">字幕点赞 <span id="subtitleLikesCount" class="tab-count">(0)</span></button>
+            <button class="likes-tab" data-tab="comments">评论点赞 <span id="commentLikesCount" class="tab-count">(0)</span></button>
           </div>
-          
+
           <!-- Tab 内容 -->
           <div class="likes-content">
             <!-- 字幕点赞列表 -->
@@ -390,7 +394,7 @@
                 <p>加载中...</p>
               </div>
             </div>
-            
+
             <!-- 评论点赞列表 -->
             <div id="commentLikesTab" class="likes-tab-content" style="display: none">
               <div id="commentLikesList" class="likes-list"></div>
