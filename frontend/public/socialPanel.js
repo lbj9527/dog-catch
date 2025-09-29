@@ -468,17 +468,11 @@ export class SocialPanel {
     const viewerCountBtn = document.getElementById('viewerCountButton');
     const viewerCountEl = document.getElementById('viewerCount');
     
-    console.log('[观看人数] 开始更新观看人数', {
-      viewerCountBtn: !!viewerCountBtn,
-      viewerCountEl: !!viewerCountEl
-    });
-    
     if (!viewerCountBtn || !viewerCountEl) return;
     
     try {
       // 获取当前视频ID
       const videoId = this.getCurrentVideoId();
-      console.log('[观看人数] 获取到视频ID:', videoId);
       
       if (!videoId) return;
       
@@ -492,12 +486,6 @@ export class SocialPanel {
       const token = sessionStorage.getItem('user_token') || localStorage.getItem('user_token') || '';
       const url = `${baseUrl}/api/subtitles/viewers-count/${videoId}`;
       
-      console.log('[观看人数] 发送API请求', {
-        url: url,
-        hasToken: !!token,
-        apiBase: apiBase
-      });
-      
       // 获取观看数
       const response = await fetch(url, {
         method: 'GET',
@@ -507,17 +495,9 @@ export class SocialPanel {
         }
       });
       
-      console.log('[观看人数] API响应状态:', response.status);
-      
       if (response.ok) {
         const data = await response.json();
         const count = Number(data.viewers_count || 0);
-        
-        console.log('[观看人数] 获取成功', {
-          rawData: data,
-          count: count,
-          formattedCount: this.formatViewerCount(count)
-        });
         
         // 更新观看数显示
         viewerCountEl.textContent = this.formatViewerCount(count);

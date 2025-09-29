@@ -2176,18 +2176,10 @@ class VideoPlayer {
     
     // 开始观看计时
     startViewerTracking() {
-        console.log('[观看统计] 尝试开始观看计时', {
-            isLoggedIn: this.isLoggedIn(),
-            subtitleUrl: this.subtitleUrl,
-            hasReported: this.viewerTracking.hasReported,
-            activeVideoId: this.getActiveVideoId()
-        });
-        
         if (!this.isLoggedIn() || !this.subtitleUrl || this.viewerTracking.hasReported) {
             return;
         }
         
-        console.log('[观看统计] 开始观看计时');
         this.viewerTracking.isPlaying = true;
         this.viewerTracking.lastPlayTime = Date.now();
         
@@ -2207,15 +2199,9 @@ class VideoPlayer {
                     this.viewerTracking.lastPlayTime = now;
                     
                     const needsReport = this.viewerTracking.consecutivePlaySeconds >= 60 && !this.viewerTracking.hasReported;
-                    console.log('[观看统计] 更新观看时长', {
-                        elapsed: elapsed,
-                        consecutivePlaySeconds: this.viewerTracking.consecutivePlaySeconds,
-                        needsReport: needsReport
-                    });
                     
                     // 检查是否达到60秒阈值
                     if (needsReport) {
-                        console.log('[观看统计] 达到上报条件，开始上报');
                         this.reportViewerCount();
                     }
                 }
@@ -2225,13 +2211,6 @@ class VideoPlayer {
     
     // 暂停观看计时
     pauseViewerTracking() {
-        console.log('[观看统计] 暂停观看计时', {
-            consecutivePlaySeconds: this.viewerTracking.consecutivePlaySeconds,
-            isPlaying: this.viewerTracking.isPlaying,
-            previousSeconds: this.viewerTracking.previousSeconds,
-            hasReported: this.viewerTracking.hasReported
-        });
-        
         this.viewerTracking.isPlaying = false;
         this.viewerTracking.lastPlayTime = null;
         
@@ -2243,11 +2222,6 @@ class VideoPlayer {
     
     // 重置观看计时
     resetViewerTracking() {
-        console.log('[观看统计] 重置观看计时', {
-            previousConsecutivePlaySeconds: this.viewerTracking.consecutivePlaySeconds,
-            previousHasReported: this.viewerTracking.hasReported
-        });
-        
         this.pauseViewerTracking();
         this.viewerTracking.consecutivePlaySeconds = 0;
         this.viewerTracking.hasReported = false;
@@ -2255,25 +2229,12 @@ class VideoPlayer {
     
     // 停止观看计时
     stopViewerTracking() {
-        console.log('[观看统计] 停止观看计时', {
-            consecutivePlaySeconds: this.viewerTracking.consecutivePlaySeconds,
-            hasReported: this.viewerTracking.hasReported
-        });
-        
         this.pauseViewerTracking();
     }
     
     // 上报观看记录
     async reportViewerCount() {
-        console.log('[观看上报] 尝试上报观看记录', {
-            isLoggedIn: this.isLoggedIn(),
-            activeVideoId: this.getActiveVideoId(),
-            hasReported: this.viewerTracking.hasReported,
-            watchDurationSec: this.viewerTracking.consecutivePlaySeconds
-        });
-        
         if (!this.isLoggedIn() || !this.getActiveVideoId() || this.viewerTracking.hasReported) {
-            console.log('[观看上报] 跳过上报，条件不满足');
             return;
         }
         
@@ -2284,15 +2245,6 @@ class VideoPlayer {
                 watchDurationSec: this.viewerTracking.consecutivePlaySeconds
             };
             
-            console.log('[观看上报] 发送请求', {
-                url: url,
-                data: data,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': this.userToken ? `Bearer ${this.userToken.substring(0, 10)}...` : 'null'
-                }
-            });
-            
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
@@ -2302,19 +2254,16 @@ class VideoPlayer {
                 body: JSON.stringify(data)
             });
             
-            console.log('[观看上报] 响应状态:', response.status);
-            
             if (response.ok) {
                 const result = await response.json();
                 this.viewerTracking.hasReported = true;
-                console.log('[观看上报] 上报成功:', result);
                 
                 // 通知社交面板更新观看数
                 if (this.socialPanel && typeof this.socialPanel.updateViewerCount === 'function') {
                     this.socialPanel.updateViewerCount();
                 }
+                this.stopViewerTracking();
             } else if (response.status === 403) {
-                console.log('[观看上报] 上报被拒绝：可能是未登录或视频无字幕');
             } else {
                 console.error('[观看上报] 上报失败:', response.status);
             }
