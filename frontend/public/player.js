@@ -2506,7 +2506,7 @@ class VideoPlayer {
             // 名称：使用后端提供的 video_id（默认版=base；其他=base-n）
             const name = v && v.video_id ? String(v.video_id) : ((Number(v.variant) || 1) === 1 ? this.extractBaseId(this.currentVideoId) : `${this.extractBaseId(this.currentVideoId)}-${v.variant}`);
             const count = Number(v && v.likes_count != null ? v.likes_count : 0);
-            option.textContent = `${name}  ❤ ${count}`;
+            option.textContent = `${name}  ❤ ${this.formatLikeCount(count)}`;
             if (v.video_id === activeVideoId) option.selected = true;
             select.appendChild(option);
         });
@@ -2526,7 +2526,7 @@ class VideoPlayer {
             // 重新生成该项的显示文本
             const name = v && v.video_id ? String(v.video_id) : this.extractBaseId(this.currentVideoId);
             const count = Number(v && v.likes_count != null ? v.likes_count : 0);
-            options[idx].textContent = `${name}  ❤ ${count}`;
+            options[idx].textContent = `${name}  ❤ ${this.formatLikeCount(count)}`;
         }
     }
 
@@ -4385,7 +4385,7 @@ class VideoPlayer {
                 <div class="comment-actions-right">
                     <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${id}">
                         <span class="like-icon">${user_liked ? '❤️' : '🤍'}</span>
-                        <span class="like-count">${likes_count}</span>
+                        <span class="like-count">${this.formatLikeCount(likes_count)}</span>
                     </button>
                 </div>
             </div>
@@ -4565,7 +4565,7 @@ class VideoPlayer {
                         likeBtn.classList.remove('liked');
                         likeIcon.textContent = '🤍';
                     }
-                    likeCount.textContent = Number(data.likes_count ?? data.likesCount ?? 0);
+                    likeCount.textContent = this.formatLikeCount(Number(data.likes_count ?? data.likesCount ?? 0));
                 }
             }
             
@@ -4610,7 +4610,7 @@ class VideoPlayer {
                         likeBtn.classList.remove('liked');
                         likeIcon.textContent = '🤍';
                     }
-                    likeCount.textContent = Number(data.likes_count ?? data.likesCount ?? 0);
+                    likeCount.textContent = this.formatLikeCount(Number(data.likes_count ?? data.likesCount ?? 0));
                 }
             }
             
@@ -4997,7 +4997,7 @@ class VideoPlayer {
             if (subtitleResponse.status === 'fulfilled' && subtitleResponse.value.ok) {
                 const subtitleData = await subtitleResponse.value.json();
                 const subtitleTotal = normalizeTotal(subtitleData);
-                subtitleCountEl.textContent = `(${subtitleTotal})`;
+                subtitleCountEl.textContent = `(${this.formatLikeCount(subtitleTotal)})`;
             } else {
                 subtitleCountEl.textContent = '(0)';
             }
@@ -5006,7 +5006,7 @@ class VideoPlayer {
             if (commentResponse.status === 'fulfilled' && commentResponse.value.ok) {
                 const commentData = await commentResponse.value.json();
                 const commentTotal = normalizeTotal(commentData);
-                commentCountEl.textContent = `(${commentTotal})`;
+                commentCountEl.textContent = `(${this.formatLikeCount(commentTotal)})`;
             } else {
                 commentCountEl.textContent = '(0)';
             }
@@ -5831,7 +5831,7 @@ class VideoPlayer {
                 <div class="comment-actions-right">
                     <button class="like-btn ${user_liked ? 'liked' : ''}" data-comment-id="${reply.id}">
                         <span class="like-icon">${user_liked ? '❤️' : '🤍'}</span>
-                        <span class="like-count">${likes_count}</span>
+                        <span class="like-count">${this.formatLikeCount(likes_count)}</span>
                     </button>
                 </div>
             </div>
@@ -5957,12 +5957,12 @@ class VideoPlayer {
                                 }
                                 const newCount = (result && (result.likes_count ?? result.likesCount));
                                 if (newCount !== undefined && newCount !== null) {
-                                    likeCount.textContent = Number(newCount);
+                                    likeCount.textContent = this.formatLikeCount(Number(newCount));
                                 } else if (result && result.liked === true) {
                                     const current = Number((likeCount.textContent || '').trim() || '0');
                                     if (current === 0) {
                                         // 后端未返回点赞数但告知已点赞，做最小正确性兜底：保证至少为1
-                                        likeCount.textContent = '1';
+                                        likeCount.textContent = this.formatLikeCount(1);
                                     }
                                 }
                             }
