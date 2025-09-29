@@ -528,12 +528,10 @@ export class SocialPanel {
   
   // 获取当前视频ID
   getCurrentVideoId() {
-    console.log('[视频ID] 开始获取视频ID');
     
     // 优先从全局VideoPlayer实例获取激活的视频ID（支持字幕变体切换）
     if (window.videoPlayerInstance && typeof window.videoPlayerInstance.getActiveVideoId === 'function') {
       const activeId = window.videoPlayerInstance.getActiveVideoId();
-      console.log('[视频ID] 从 getActiveVideoId 获取:', activeId);
       if (activeId) return activeId;
     }
     
