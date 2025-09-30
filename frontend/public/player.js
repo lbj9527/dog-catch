@@ -3660,6 +3660,15 @@ class VideoPlayer {
             }, 100);
         }
         
+        // 如果是实时聊天功能，初始化聊天面板
+        if (feature === 'realtime-chat') {
+            // 使用 setTimeout 确保 DOM 已渲染
+            setTimeout(() => {
+                this.initRealtimeChat();
+            }, 100);
+        }
+        
+        
         // 排行榜面板：绑定Tab事件并加载默认榜单
         if (feature === 'user-plaza') {
             setTimeout(() => {
@@ -3762,16 +3771,322 @@ class VideoPlayer {
     // 获取实时聊天内容
     getRealtimeChatContent() {
         return `
-            <div class="social-placeholder">
-                <div class="placeholder-icon">💭</div>
-                <h3>实时聊天</h3>
-                <p>与正在观看的用户实时交流讨论。</p>
-                <div class="placeholder-features">
-                    <div class="feature-item">⚡ 实时消息</div>
-                    <div class="feature-item">🎬 同步观影</div>
-                    <div class="feature-item">🎉 表情互动</div>
+            <div class="chat-panel-content">
+                <!-- Tab 导航和搜索框 -->
+                <div class="chat-tab-nav">
+                    <div class="chat-tab-buttons">
+                        <button class="chat-tab-btn active" data-tab="chats">聊天</button>
+                        <button class="chat-tab-btn" data-tab="contacts">通讯录</button>
+                    </div>
+                    <div class="chat-search-container">
+                        <input type="text" class="chat-search-input" placeholder="搜索聊天记录" id="chatSearch">
+                        <input type="text" class="chat-search-input" placeholder="搜索联系人" id="contactSearch" style="display: none;">
+                    </div>
                 </div>
-                <p class="placeholder-note">功能开发中，敬请期待...</p>
+
+                <!-- 面板内容 -->
+                <div class="chat-panel-pages" style="position: relative; flex: 1; overflow: hidden;">
+                    <!-- 聊天列表页面 -->
+                    <div class="chat-page active" id="chatsPage">
+                        <div class="chat-list-container" id="chatsList">
+                            <div class="chat-item" data-chat-id="1" data-name="张三" data-type="private">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">张</div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">张三</div>
+                                        <div class="chat-item-message">你好，最近怎么样？</div>
+                                    </div>
+                                    <div class="chat-item-meta">
+                                        <div class="chat-item-time">14:30</div>
+                                        <div class="unread-badge">2</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="chat-item" data-chat-id="2" data-name="前端开发群" data-type="group">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">前</div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">
+                                            前端开发群
+                                            <span class="group-tag">群</span>
+                                        </div>
+                                        <div class="chat-item-message">李四: 今天的需求改动有点大</div>
+                                    </div>
+                                    <div class="chat-item-meta">
+                                        <div class="chat-item-time">13:45</div>
+                                        <div class="unread-badge">5</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="chat-item" data-chat-id="3" data-name="王五" data-type="private">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">王</div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">王五</div>
+                                        <div class="chat-item-message">文件已发送</div>
+                                    </div>
+                                    <div class="chat-item-meta">
+                                        <div class="chat-item-time">昨天</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="chat-item" data-chat-id="4" data-name="赵六" data-type="private">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">赵</div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">赵六</div>
+                                        <div class="chat-item-message">明天的会议记得参加</div>
+                                    </div>
+                                    <div class="chat-item-meta">
+                                        <div class="chat-item-time">12:15</div>
+                                        <div class="unread-badge">1</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="chat-item" data-chat-id="5" data-name="产品讨论组" data-type="group">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">产</div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">
+                                            产品讨论组
+                                            <span class="group-tag">群</span>
+                                        </div>
+                                        <div class="chat-item-message">小明: 新版本的原型图已经完成</div>
+                                    </div>
+                                    <div class="chat-item-meta">
+                                        <div class="chat-item-time">11:30</div>
+                                        <div class="unread-badge">3</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="chat-item" data-chat-id="6" data-name="孙七" data-type="private">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">孙</div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">孙七</div>
+                                        <div class="chat-item-message">周末一起看电影吗？</div>
+                                    </div>
+                                    <div class="chat-item-meta">
+                                        <div class="chat-item-time">10:45</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="chat-item" data-chat-id="7" data-name="技术交流群" data-type="group">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">技</div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">
+                                            技术交流群
+                                            <span class="group-tag">群</span>
+                                        </div>
+                                        <div class="chat-item-message">老王: 分享一个很棒的开源项目</div>
+                                    </div>
+                                    <div class="chat-item-meta">
+                                        <div class="chat-item-time">09:20</div>
+                                        <div class="unread-badge">8</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="chat-item" data-chat-id="8" data-name="周八" data-type="private">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">周</div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">周八</div>
+                                        <div class="chat-item-message">项目进度如何了？</div>
+                                    </div>
+                                    <div class="chat-item-meta">
+                                        <div class="chat-item-time">昨天</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 通讯录页面 -->
+                    <div class="chat-page" id="contactsPage">
+                        <div class="chat-list-container" id="contactsList">
+                            <div class="contact-item" data-user-id="1" data-name="张三">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">
+                                        张
+                                        <div class="online-status online"></div>
+                                    </div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">张三</div>
+                                        <div class="chat-item-status">在线</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="contact-item" data-user-id="2" data-name="李四">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">
+                                        李
+                                        <div class="online-status online"></div>
+                                    </div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">李四</div>
+                                        <div class="chat-item-status">在线</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="contact-item" data-user-id="3" data-name="王五">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">
+                                        王
+                                        <div class="online-status offline"></div>
+                                    </div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">王五</div>
+                                        <div class="chat-item-status">2小时前在线</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="contact-item" data-user-id="4" data-name="赵六">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">
+                                        赵
+                                        <div class="online-status online"></div>
+                                    </div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">赵六</div>
+                                        <div class="chat-item-status">在线</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="contact-item" data-user-id="5" data-name="孙七">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">
+                                        孙
+                                        <div class="online-status offline"></div>
+                                    </div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">孙七</div>
+                                        <div class="chat-item-status">30分钟前在线</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="contact-item" data-user-id="6" data-name="周八">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">
+                                        周
+                                        <div class="online-status online"></div>
+                                    </div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">周八</div>
+                                        <div class="chat-item-status">在线</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="contact-item" data-user-id="7" data-name="吴九">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">
+                                        吴
+                                        <div class="online-status offline"></div>
+                                    </div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">吴九</div>
+                                        <div class="chat-item-status">1天前在线</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="contact-item" data-user-id="8" data-name="郑十">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">
+                                        郑
+                                        <div class="online-status online"></div>
+                                    </div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">郑十</div>
+                                        <div class="chat-item-status">在线</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 聊天界面 -->
+                    <div class="chat-page" id="chatView">
+                        <div class="chat-view">
+                            <div class="chat-header">
+                                <button class="chat-back-btn" id="backBtn">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+                                    </svg>
+                                </button>
+                                <div class="chat-header-avatar" id="chatAvatar">张</div>
+                                <div class="chat-info">
+                                    <h3 id="chatName">张三</h3>
+                                    <p id="chatStatus">在线</p>
+                                </div>
+                            </div>
+                            <div class="chat-messages" id="chatMessages">
+                                <div class="message">
+                                    <div class="message-avatar">张</div>
+                                    <div class="message-content">
+                                        <div class="message-text">你好，最近怎么样？</div>
+                                        <div class="message-time">14:30</div>
+                                    </div>
+                                </div>
+                                <div class="message own">
+                                    <div class="message-avatar">我</div>
+                                    <div class="message-content">
+                                        <div class="message-text">还不错，工作挺忙的。你呢？</div>
+                                        <div class="message-time">14:32</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="chat-input">
+                                <div class="input-box">
+                                    <textarea class="message-input" placeholder="输入消息..." rows="1" id="messageInput"></textarea>
+                                    <button class="send-btn" id="sendBtn">发送</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 用户资料页面 -->
+                    <div class="chat-page" id="profileView">
+                        <div class="profile-view">
+                            <button class="chat-back-btn" id="profileBackBtn" style="position: absolute; top: 16px; left: 16px; display: flex;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+                                </svg>
+                            </button>
+                            <div class="profile-avatar" id="profileAvatar">张</div>
+                            <div class="profile-name" id="profileName">张三</div>
+                            <div class="profile-status" id="profileStatus">在线</div>
+                            <div class="profile-info">
+                                <div class="info-item">
+                                    <span class="info-label">用户ID</span>
+                                    <span class="info-value" id="profileId">001</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">注册时间</span>
+                                    <span class="info-value" id="profileJoinTime">2024-01-15</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">最后在线</span>
+                                    <span class="info-value" id="profileLastSeen">刚刚</span>
+                                </div>
+                            </div>
+                            <button class="greet-btn" id="greetBtn">打招呼</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
     }
@@ -7113,6 +7428,308 @@ class VideoPlayer {
             // 默认显示字幕点赞
             this.showLikesTab('subtitles');
         }
+    }
+    
+    // 初始化实时聊天面板
+    initRealtimeChat() {
+        // 获取聊天面板的DOM元素
+        const chatPanel = this.socialPanel.getElement();
+        if (!chatPanel) return;
+        
+        // 初始化聊天面板状态
+        this.chatState = {
+            currentPage: 'chats',
+            currentChat: null,
+            currentProfile: null
+        };
+        
+        // 绑定事件监听器
+        this.bindChatEvents(chatPanel);
+    }
+    
+    // 绑定聊天面板事件
+    bindChatEvents(chatPanel) {
+        // Tab 切换
+        const tabBtns = chatPanel.querySelectorAll('.chat-tab-btn');
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const tab = e.target.dataset.tab;
+                this.switchChatTab(tab, chatPanel);
+            });
+        });
+
+        // 返回按钮
+        const backBtn = chatPanel.querySelector('#backBtn');
+        const profileBackBtn = chatPanel.querySelector('#profileBackBtn');
+        if (backBtn) {
+            backBtn.addEventListener('click', () => {
+                this.goBackInChat(chatPanel);
+            });
+        }
+        if (profileBackBtn) {
+            profileBackBtn.addEventListener('click', () => {
+                this.goBackInChat(chatPanel);
+            });
+        }
+
+        // 聊天项点击
+        const chatItems = chatPanel.querySelectorAll('.chat-item');
+        chatItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                const chatId = e.currentTarget.dataset.chatId;
+                const name = e.currentTarget.dataset.name;
+                const type = e.currentTarget.dataset.type;
+                this.openChat(chatId, name, type, chatPanel);
+            });
+        });
+
+        // 联系人点击
+        const contactItems = chatPanel.querySelectorAll('.contact-item');
+        contactItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                const userId = e.currentTarget.dataset.userId;
+                const name = e.currentTarget.dataset.name;
+                this.openProfile(userId, name, chatPanel);
+            });
+        });
+
+        // 打招呼按钮
+        const greetBtn = chatPanel.querySelector('#greetBtn');
+        if (greetBtn) {
+            greetBtn.addEventListener('click', () => {
+                this.greetUser(chatPanel);
+            });
+        }
+
+        // 发送消息
+        const sendBtn = chatPanel.querySelector('#sendBtn');
+        if (sendBtn) {
+            sendBtn.addEventListener('click', () => {
+                this.sendMessage(chatPanel);
+            });
+        }
+
+        // 输入框回车发送
+        const messageInput = chatPanel.querySelector('#messageInput');
+        if (messageInput) {
+            messageInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.sendMessage(chatPanel);
+                }
+            });
+
+            // 自动调整输入框高度
+            messageInput.addEventListener('input', (e) => {
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 100) + 'px';
+            });
+        }
+
+        // 搜索功能
+        const chatSearch = chatPanel.querySelector('#chatSearch');
+        const contactSearch = chatPanel.querySelector('#contactSearch');
+        if (chatSearch) {
+            chatSearch.addEventListener('input', (e) => {
+                this.searchChats(e.target.value, chatPanel);
+            });
+        }
+        if (contactSearch) {
+            contactSearch.addEventListener('input', (e) => {
+                this.searchContacts(e.target.value, chatPanel);
+            });
+        }
+    }
+    
+    // 切换聊天标签页
+    switchChatTab(tab, chatPanel) {
+        // 更新tab按钮状态
+        const tabBtns = chatPanel.querySelectorAll('.chat-tab-btn');
+        tabBtns.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tab);
+        });
+
+        // 切换搜索框显示
+        const chatSearch = chatPanel.querySelector('#chatSearch');
+        const contactSearch = chatPanel.querySelector('#contactSearch');
+        
+        if (tab === 'chats') {
+            if (chatSearch) chatSearch.style.display = 'block';
+            if (contactSearch) contactSearch.style.display = 'none';
+        } else if (tab === 'contacts') {
+            if (chatSearch) chatSearch.style.display = 'none';
+            if (contactSearch) contactSearch.style.display = 'block';
+        }
+
+        // 切换页面
+        const pages = chatPanel.querySelectorAll('.chat-page');
+        pages.forEach(page => {
+            page.classList.remove('active');
+        });
+
+        if (tab === 'chats') {
+            const chatsPage = chatPanel.querySelector('#chatsPage');
+            if (chatsPage) chatsPage.classList.add('active');
+        } else if (tab === 'contacts') {
+            const contactsPage = chatPanel.querySelector('#contactsPage');
+            if (contactsPage) contactsPage.classList.add('active');
+        }
+
+        this.chatState.currentPage = tab;
+    }
+    
+    // 打开聊天界面
+    openChat(chatId, name, type, chatPanel) {
+        this.chatState.currentChat = { id: chatId, name, type };
+        
+        // 更新聊天界面信息
+        const chatName = chatPanel.querySelector('#chatName');
+        const chatAvatar = chatPanel.querySelector('#chatAvatar');
+        const chatStatus = chatPanel.querySelector('#chatStatus');
+        const backBtn = chatPanel.querySelector('#backBtn');
+        
+        if (chatName) chatName.textContent = name;
+        if (chatAvatar) chatAvatar.textContent = name.charAt(0);
+        if (chatStatus) chatStatus.textContent = type === 'group' ? '群聊' : '在线';
+        if (backBtn) backBtn.style.display = 'flex';
+
+        // 清除未读标记
+        const chatItem = chatPanel.querySelector(`[data-chat-id="${chatId}"]`);
+        if (chatItem) {
+            const unreadBadge = chatItem.querySelector('.unread-badge');
+            if (unreadBadge) {
+                unreadBadge.remove();
+            }
+        }
+
+        this.showChatPage('chatView', chatPanel);
+    }
+    
+    // 打开用户资料页面
+    openProfile(userId, name, chatPanel) {
+        this.chatState.currentProfile = { id: userId, name };
+        
+        // 更新资料页面信息
+        const profileName = chatPanel.querySelector('#profileName');
+        const profileAvatar = chatPanel.querySelector('#profileAvatar');
+        const profileId = chatPanel.querySelector('#profileId');
+        
+        if (profileName) profileName.textContent = name;
+        if (profileAvatar) profileAvatar.textContent = name.charAt(0);
+        if (profileId) profileId.textContent = userId.padStart(3, '0');
+
+        this.showChatPage('profileView', chatPanel);
+    }
+    
+    // 打招呼功能
+    greetUser(chatPanel) {
+        if (!this.chatState.currentProfile) return;
+
+        // 切换到聊天tab
+        this.switchChatTab('chats', chatPanel);
+        
+        // 延迟一下再打开聊天界面，让tab切换动画完成
+        setTimeout(() => {
+            this.openChat(this.chatState.currentProfile.id, this.chatState.currentProfile.name, 'private', chatPanel);
+            
+            // 自动发送打招呼消息
+            setTimeout(() => {
+                this.addMessage('你好！很高兴认识你 👋', true, chatPanel);
+            }, 300);
+        }, 100);
+    }
+    
+    // 显示指定页面
+    showChatPage(pageId, chatPanel) {
+        const pages = chatPanel.querySelectorAll('.chat-page');
+        pages.forEach(page => {
+            page.classList.remove('active');
+        });
+        
+        const targetPage = chatPanel.querySelector(`#${pageId}`);
+        if (targetPage) {
+            targetPage.classList.add('active');
+        }
+    }
+    
+    // 返回功能
+    goBackInChat(chatPanel) {
+        if (this.chatState.currentPage === 'chats') {
+            this.showChatPage('chatsPage', chatPanel);
+        } else if (this.chatState.currentPage === 'contacts') {
+            this.showChatPage('contactsPage', chatPanel);
+        }
+        this.chatState.currentChat = null;
+        this.chatState.currentProfile = null;
+        
+        // 隐藏返回按钮
+        const backBtn = chatPanel.querySelector('#backBtn');
+        if (backBtn) backBtn.style.display = 'none';
+    }
+    
+    // 发送消息
+    sendMessage(chatPanel) {
+        const input = chatPanel.querySelector('#messageInput');
+        if (!input) return;
+        
+        const text = input.value.trim();
+        if (!text) return;
+
+        this.addMessage(text, true, chatPanel);
+        input.value = '';
+        input.style.height = 'auto';
+
+        // 模拟对方回复
+        setTimeout(() => {
+            const replies = ['收到！', '好的', '明白了', '👍', '没问题'];
+            const reply = replies[Math.floor(Math.random() * replies.length)];
+            this.addMessage(reply, false, chatPanel);
+        }, 1000 + Math.random() * 2000);
+    }
+    
+    // 添加消息
+    addMessage(text, isOwn, chatPanel) {
+        const messagesContainer = chatPanel.querySelector('#chatMessages');
+        if (!messagesContainer) return;
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${isOwn ? 'own' : ''}`;
+        
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        
+        messageDiv.innerHTML = `
+            <div class="message-avatar">${isOwn ? '我' : (this.chatState.currentChat ? this.chatState.currentChat.name.charAt(0) : '对')}</div>
+            <div class="message-content">
+                <div class="message-text">${text}</div>
+                <div class="message-time">${timeStr}</div>
+            </div>
+        `;
+        
+        messagesContainer.appendChild(messageDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+    
+    // 搜索聊天记录
+    searchChats(query, chatPanel) {
+        const items = chatPanel.querySelectorAll('.chat-item');
+        items.forEach(item => {
+            const name = item.dataset.name.toLowerCase();
+            const message = item.querySelector('.chat-item-message');
+            const messageText = message ? message.textContent.toLowerCase() : '';
+            const visible = name.includes(query.toLowerCase()) || messageText.includes(query.toLowerCase());
+            item.style.display = visible ? 'block' : 'none';
+        });
+    }
+    
+    // 搜索联系人
+    searchContacts(query, chatPanel) {
+        const items = chatPanel.querySelectorAll('.contact-item');
+        items.forEach(item => {
+            const name = item.dataset.name.toLowerCase();
+            const visible = name.includes(query.toLowerCase());
+            item.style.display = visible ? 'block' : 'none';
+        });
     }
     
     // 初始化点赞记录标签页
