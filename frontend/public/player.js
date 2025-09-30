@@ -3635,7 +3635,7 @@ class VideoPlayer {
                 panelType = 'subtitle';
                 break;
             case 'user-plaza':
-                title = '用户广场';
+                title = '字幕排行榜';
                 content = this.getUserPlazaContent();
                 panelType = 'plaza';
                 break;
@@ -7070,16 +7070,20 @@ class VideoPlayer {
             const btnDisabled = !it.page_url;
             const btn = btnDisabled ? '<button class="rank-open-btn" disabled>打开页面</button>' : `<button class="rank-open-btn" data-url="${this.escapeHtml(it.page_url)}">打开页面</button>`;
             return `
-                <div class="rank-item">
+                <div class="rank-item rank-item-animate" style="animation-delay: ${idx * 0.1}s;">
                     <div class="rank-item-bubble">
                         <div class="rank-item-content">
-                            <div class="rank-item-title">${idx + 1}. ${title}</div>
+                            <div class="rank-item-header">
+                                <div class="rank-item-title-group">
+                                    <div class="rank-item-title">${idx + 1}. ${title}</div>
+                                    <span class="rank-item-info"><i>${icon}</i> ${cnt}</span>
+                                </div>
+                                <div class="rank-item-action">${btn}</div>
+                            </div>
                             <div class="rank-item-meta">
-                                <span class="rank-item-info"><i>${icon}</i> ${cnt}</span>
                                 <span class="rank-item-video"><i class="icon-video"></i> 视频ID: ${vid}</span>
                                 <span class="rank-item-time"><i class="icon-clock"></i> ${time}</span>
                             </div>
-                            <div class="rank-item-action">${btn}</div>
                         </div>
                     </div>
                 </div>`;
