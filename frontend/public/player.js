@@ -1407,21 +1407,9 @@ class VideoPlayer {
         }
     }
     
-    // 格式化时间
+    // 格式化时间（同一天内显示“刚刚/分钟前/小时前”，跨自然日显示“YYYY-MM-DD”）
     formatTime(timestamp) {
-        const date = new Date(timestamp);
-        const now = new Date();
-        const diff = now - date;
-        
-        if (diff < 60000) { // 1分钟内
-            return '刚刚';
-        } else if (diff < 3600000) { // 1小时内
-            return `${Math.floor(diff / 60000)}分钟前`;
-        } else if (diff < 86400000) { // 1天内
-            return `${Math.floor(diff / 3600000)}小时前`;
-        } else {
-            return date.toLocaleDateString();
-        }
+        return this.formatTimeAgo(timestamp);
     }
 
     setupAuthUi() {
@@ -3054,7 +3042,7 @@ class VideoPlayer {
                      <div style="font-weight:bold;margin-bottom:4px;">${this.escapeHtml(item.video_id || item.base_video_id)}</div>
                      ${item.note ? `<div style="color:#666;margin-bottom:8px;">${this.escapeHtml(item.note)}</div>` : ''}
                      <div style="font-size:12px;color:#999;">
-                         ${new Date(item.created_at).toLocaleString()}
+                         ${this.formatTimeAgo(item.created_at || item.createdAt)}
                          <button onclick="window.videoPlayerInstance.wlDelete(${item.id})" style="float:right;background:#ff4444;color:white;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;">删除</button>
                      </div>
                      <span class="wl-status-badge" style="position:absolute;top:8px;right:8px;font-size:12px;color:${badgeColor};">${badgeText}</span>
@@ -4635,7 +4623,7 @@ class VideoPlayer {
         // 这里可以集成现有的提示系统
     }
 
-    // 格式化时间
+    // 格式化时间（同一天内显示“刚刚/分钟前/小时前”，跨自然日显示“YYYY-MM-DD”）
     formatTimeAgo(timestamp) {
         // 处理空值情况
         if (!timestamp) {
@@ -4654,6 +4642,14 @@ class VideoPlayer {
             } else {
                 time = new Date(timestamp);
             }
+        } else if (typeof timestamp === 'number') {
+            // 处理时间戳：10位为秒，13位为毫秒
+            const len = timestamp.toString().length;
+            if (len === 10) {
+                time = new Date(timestamp * 1000);
+            } else {
+                time = new Date(timestamp);
+            }
         } else {
             time = new Date(timestamp);
         }
@@ -4663,18 +4659,21 @@ class VideoPlayer {
             return '刚刚';
         }
         
-        const diff = now - time;
+        // 跨自然日则直接显示 YYYY-MM-DD
+        const isSameDay = now.toDateString() === time.toDateString();
+        if (!isSameDay) {
+            return this.formatDateYMD(timestamp);
+        }
         
+        // 同一天，显示相对时间
+        let diff = now - time;
+        if (diff < 0) diff = 0; // 避免未来时间出现负值
         const minutes = Math.floor(diff / 60000);
         const hours = Math.floor(diff / 3600000);
-        const days = Math.floor(diff / 86400000);
         
         if (minutes < 1) return '刚刚';
         if (minutes < 60) return `${minutes}分钟前`;
-        if (hours < 24) return `${hours}小时前`;
-        if (days < 30) return `${days}天前`;
-        
-        return time.toLocaleDateString('zh-CN');
+        return `${hours}小时前`;
     }
 
     // 格式化日期为年月日格式
@@ -4711,10 +4710,10 @@ class VideoPlayer {
         }
         
         const year = time.getFullYear();
-        const month = time.getMonth() + 1;
-        const day = time.getDate();
+        const month = String(time.getMonth() + 1).padStart(2, '0');
+        const day = String(time.getDate()).padStart(2, '0');
         
-        return `${year}年${month}月${day}日`;
+        return `${year}-${month}-${day}`;
     }
 
     // HTML转义
@@ -7168,7 +7167,7 @@ class VideoPlayer {
                                 <div class="likes-item-info">
                                     <span class="likes-item-time">
                                         <i class="icon-clock"></i>
-                                        ${new Date(record.created_at).toLocaleTimeString()}
+                                        ${this.formatTimeAgo(record.created_at ?? record.createdAt)}
                                     </span>
                                     <span class="likes-item-video">
                                         <i class="icon-video"></i>
@@ -7213,7 +7212,7 @@ class VideoPlayer {
                                 <div class="likes-item-info">
                                     <span class="likes-item-time">
                                         <i class="icon-clock"></i>
-                                        ${new Date(record.created_at).toLocaleTimeString()}
+                                        ${this.formatTimeAgo(record.created_at ?? record.createdAt)}
                                     </span>
                                     <span class="likes-item-video">
                                         <i class="icon-video"></i>
@@ -7303,18 +7302,28 @@ class VideoPlayer {
         yesterday.setDate(yesterday.getDate() - 1);
         
         records.forEach(record => {
-            const recordDate = new Date(record.created_at);
+            const ts = record.created_at ?? record.createdAt;
+            const recordDate = (() => {
+                if (!ts) return new Date(NaN);
+                if (typeof ts === 'string') {
+                    if (!ts.includes('T') && !ts.includes('Z')) {
+                        return new Date(ts.replace(' ', 'T') + 'Z');
+                    }
+                    return new Date(ts);
+                } else if (typeof ts === 'number') {
+                    const len = ts.toString().length;
+                    if (len === 10) return new Date(ts * 1000);
+                    return new Date(ts);
+                }
+                return new Date(ts);
+            })();
             let dateKey;
             
-            if (recordDate.toDateString() === today.toDateString()) {
-                dateKey = '今天';
-            } else if (recordDate.toDateString() === yesterday.toDateString()) {
-                dateKey = '昨天';
+            if (!isNaN(recordDate.getTime())) {
+                // 分组标题统一使用 YYYY-MM-DD（跨自然日）
+                dateKey = this.formatDateYMD(ts);
             } else {
-                dateKey = recordDate.toLocaleDateString('zh-CN', {
-                    month: 'long',
-                    day: 'numeric'
-                });
+                dateKey = '未知日期';
             }
             
             if (!groups[dateKey]) {
