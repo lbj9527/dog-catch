@@ -2230,7 +2230,8 @@ class VideoPlayer {
             const base = (API_BASE_URL || (window.PLAYER_CONFIG?.API_BASE_URL || '')).replace(/\/$/, '');
             const url = `${base}/api/subtitles/viewers/report/${this.getActiveVideoId()}`;
             const data = {
-                watchDurationSec: this.viewerTracking.consecutivePlaySeconds
+                watchDurationSec: this.viewerTracking.consecutivePlaySeconds,
+                page_url: window.location.href
             };
             
             const response = await fetch(url, {
@@ -3658,6 +3659,18 @@ class VideoPlayer {
                 this.initSubtitleComments();
             }, 100);
         }
+        
+        // 排行榜面板：绑定Tab事件并加载默认榜单
+        if (feature === 'user-plaza') {
+            setTimeout(() => {
+                if (typeof this.bindRankEvents === 'function') {
+                    this.bindRankEvents();
+                }
+                if (typeof this.loadRank === 'function') {
+                    this.loadRank('liked');
+                }
+            }, 0);
+        }
     }
     
     // 获取字幕评论内容
@@ -3725,19 +3738,23 @@ class VideoPlayer {
         `;
     }
     
-    // 获取用户广场内容
+    // 获取排行榜内容（极简卡片式）
     getUserPlazaContent() {
         return `
-            <div class="social-placeholder">
-                <div class="placeholder-icon">👥</div>
-                <h3>用户广场</h3>
-                <p>与其他用户交流互动，分享观影心得。</p>
-                <div class="placeholder-features">
-                    <div class="feature-item">👤 用户动态</div>
-                    <div class="feature-item">⭐ 推荐内容</div>
-                    <div class="feature-item">🎯 话题讨论</div>
+            <div class="rank-container">
+                <div class="rank-tabs" role="tablist" aria-label="排行榜类型">
+                    <button class="rank-tab active" data-rank="liked" role="tab" aria-selected="true">点赞最多</button>
+                    <button class="rank-tab" data-rank="viewed" role="tab" aria-selected="false">观看最多</button>
                 </div>
-                <p class="placeholder-note">功能开发中，敬请期待...</p>
+                <div class="rank-content">
+                    <div class="rank-list" id="rankList" aria-live="polite"></div>
+                    <div class="rank-empty" id="rankEmpty" style="display:none;">暂无数据</div>
+                    <div class="rank-loading" id="rankLoading" style="display:none;">
+                        <div class="loading-spinner"></div>
+                        <span>加载中...</span>
+                    </div>
+                    <div class="rank-error" id="rankError" style="display:none;"></div>
+                </div>
             </div>
         `;
     }
@@ -6968,6 +6985,112 @@ class VideoPlayer {
         }
         
         return response.json();
+    }
+
+    // 绑定排行榜Tab事件
+    bindRankEvents() {
+        const tabs = document.querySelectorAll('.rank-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected','false'); });
+                tab.classList.add('active');
+                tab.setAttribute('aria-selected','true');
+                const type = tab.dataset.rank || 'liked';
+                this.loadRank(type);
+            });
+        });
+    }
+
+    // 加载指定类型的榜单
+    async loadRank(type = 'liked') {
+        const listEl = document.getElementById('rankList');
+        const emptyEl = document.getElementById('rankEmpty');
+        const loadingEl = document.getElementById('rankLoading');
+        const errorEl = document.getElementById('rankError');
+        if (!listEl || !emptyEl || !loadingEl || !errorEl) return;
+
+        listEl.innerHTML = '';
+        emptyEl.style.display = 'none';
+        errorEl.style.display = 'none';
+        loadingEl.style.display = 'flex';
+
+        try {
+            const limit = 50;
+            let data = [];
+            if (type === 'liked') {
+                data = await this.fetchTopLikedSubtitles(limit);
+            } else {
+                data = await this.fetchTopViewedSubtitles(limit);
+            }
+            loadingEl.style.display = 'none';
+            if (!Array.isArray(data) || data.length === 0) {
+                emptyEl.style.display = 'block';
+                return;
+            }
+            this.renderRankList(listEl, data, type);
+        } catch (e) {
+            console.error('加载排行榜失败:', e);
+            loadingEl.style.display = 'none';
+            errorEl.textContent = '加载失败，请稍后重试';
+            errorEl.style.display = 'block';
+        }
+    }
+
+    // 获取点赞最多榜单
+    async fetchTopLikedSubtitles(limit = 50) {
+        const base = (API_BASE_URL || (window.PLAYER_CONFIG?.API_BASE_URL || '')).replace(/\/$/, '');
+        const url = `${base}/api/rank/subtitles/top-liked?limit=${limit}`;
+        const headers = { 'Authorization': `Bearer ${this.userToken || ''}` };
+        const resp = await fetch(url, { headers });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json = await resp.json();
+        return Array.isArray(json.data) ? json.data : [];
+    }
+
+    // 获取观看最多榜单
+    async fetchTopViewedSubtitles(limit = 50) {
+        const base = (API_BASE_URL || (window.PLAYER_CONFIG?.API_BASE_URL || '')).replace(/\/$/, '');
+        const url = `${base}/api/rank/subtitles/top-viewed?limit=${limit}`;
+        const headers = { 'Authorization': `Bearer ${this.userToken || ''}` };
+        const resp = await fetch(url, { headers });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json = await resp.json();
+        return Array.isArray(json.data) ? json.data : [];
+    }
+
+    // 渲染极简卡片式榜单
+    renderRankList(container, items, type = 'liked') {
+        const icon = type === 'liked' ? '👍' : '👀';
+        const countKey = type === 'liked' ? 'likes_count' : 'viewers_count';
+        container.innerHTML = items.map((it, idx) => {
+            const title = this.escapeHtml(it.title || '未知字幕');
+            const vid = this.escapeHtml(it.video_id || '未知');
+            const cnt = Number(it[countKey] || 0);
+            const time = this.formatTimeAgo(it.updated_at || it.created_at);
+            const btnDisabled = !it.page_url;
+            const btn = btnDisabled ? '<button class="rank-open-btn" disabled>打开页面</button>' : `<button class="rank-open-btn" data-url="${this.escapeHtml(it.page_url)}">打开页面</button>`;
+            return `
+                <div class="rank-item">
+                    <div class="rank-item-bubble">
+                        <div class="rank-item-content">
+                            <div class="rank-item-title">${idx + 1}. ${title}</div>
+                            <div class="rank-item-meta">
+                                <span class="rank-item-info"><i>${icon}</i> ${cnt}</span>
+                                <span class="rank-item-video"><i class="icon-video"></i> 视频ID: ${vid}</span>
+                                <span class="rank-item-time"><i class="icon-clock"></i> ${time}</span>
+                            </div>
+                            <div class="rank-item-action">${btn}</div>
+                        </div>
+                    </div>
+                </div>`;
+        }).join('');
+        // 绑定打开页面事件
+        container.querySelectorAll('.rank-open-btn[data-url]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const u = btn.getAttribute('data-url');
+                if (u) window.open(u, '_blank', 'noopener');
+            });
+        });
     }
     
     // 显示点赞记录弹窗

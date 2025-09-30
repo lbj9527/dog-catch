@@ -5629,3 +5629,32 @@ body.no-scroll {
     border-radius: 8px !important;
     color: #fff !important;
 }
+
+/* ===== 排行榜（Aurora Accent）样式 ===== */
+.rank-container { margin-top: 12px; padding: 8px 0; }
+.rank-tabs { display:flex; gap:8px; margin-bottom:10px; }
+.rank-tab { padding:6px 12px; border-radius:999px; background:#15171c; color:#e5e7eb; border:1px solid rgba(255,255,255,0.08); cursor:pointer; transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1); }
+.rank-tab.active { background: linear-gradient(135deg, #7C3AED 0%, #00C2FF 100%); color:#fff; box-shadow:0 6px 18px rgba(0,194,255,0.22); border-color:transparent; }
+.rank-tab:hover { transform: translateY(-1px); }
+.rank-content { position:relative; }
+.rank-loading { display:flex; align-items:center; justify-content:center; gap:8px; }
+.rank-error, .rank-empty { padding:12px; background:#13161a; border:1px solid rgba(255,255,255,0.06); border-radius:8px; color:#cbd5e1; }
+.rank-list { display:grid; grid-template-columns: repeat(auto-fill, minmax(320px,1fr)); gap:12px; }
+.rank-item { background:#111318; border-radius:12px; position:relative; overflow:hidden; border:1px solid rgba(255,255,255,0.06); box-shadow:0 8px 24px rgba(0,0,0,0.18); transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.18s cubic-bezier(0.22, 1, 0.36, 1); }
+.rank-item::before { content:""; position:absolute; inset:-1px; border-radius:12px; pointer-events:none; background: linear-gradient(135deg, rgba(124,58,237,0.15) 0%, rgba(0,194,255,0.15) 100%); opacity:0; transition: opacity 0.18s ease; }
+.rank-item:hover { transform: translateY(-2px) scale(1.03); box-shadow:0 14px 36px rgba(0,0,0,0.32); }
+.rank-item:hover::before { opacity:1; }
+.rank-item-bubble { padding:14px 14px 12px; }
+.rank-item-title { font-weight:600; font-size:16px; color:#f1f5f9; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient: vertical; overflow:hidden; }
+.rank-item-title:hover { text-decoration: underline; text-decoration-color: rgba(124,58,237,0.6); }
+.rank-item-meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; color:#cbd5e1; }
+.rank-item-meta i { font-style:normal; }
+.rank-item-info { color:#93c5fd; } .rank-item-video { color:#a5b4fc; } .rank-item-time { color:#cbd5e1; }
+.rank-item-action { margin-top:10px; display:flex; justify-content:flex-end; }
+.rank-open-btn { padding:6px 12px; border-radius:8px; background: rgba(17,19,24,0.8); color:#e5e7eb; border:1px solid rgba(255,255,255,0.12); cursor:pointer; transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1); box-shadow:0 0 0 0 rgba(124,58,237,0.0); }
+.rank-open-btn:hover { border-color:transparent; background: linear-gradient(135deg, rgba(124,58,237,0.35) 0%, rgba(0,194,255,0.35) 100%); box-shadow:0 8px 22px rgba(124,58,237,0.25), 0 4px 18px rgba(0,194,255,0.25); }
+.rank-open-btn:disabled { opacity:0.5; cursor:not-allowed; }
+.rank-item:nth-child(1) .rank-item-title::before { content:"🏆"; margin-right:6px; }
+.rank-item:nth-child(2) .rank-item-title::before { content:"🥈"; margin-right:6px; }
+.rank-item:nth-child(3) .rank-item-title::before { content:"🥉"; margin-right:6px; }
+@media (max-width:767px){ .rank-list { grid-template-columns:1fr; } .rank-item-bubble { padding:12px; } }

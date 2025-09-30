@@ -1001,6 +1001,9 @@ db.serialize(() => {
     // 为 subtitle_viewers 表创建唯一索引，确保一个用户对一个视频只能计入一次
     db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_subtitle_viewers_user_video ON subtitle_viewers(user_id, video_id)', () => {});
     db.run('CREATE INDEX IF NOT EXISTS idx_subtitle_viewers_video ON subtitle_viewers(video_id)', () => {});
+
+    // 补充列：为 subtitle_viewers 表添加 page_url（如果不存在）
+    db.run('ALTER TABLE subtitle_viewers ADD COLUMN page_url TEXT', () => {});
     
     // 创建默认管理员账号 (用户名: admin, 密码: admin123)
     const defaultPassword = bcrypt.hashSync('admin123', 10);
@@ -2501,6 +2504,34 @@ app.post('/api/subtitles/like-toggle/:video_id', authenticateUserToken, async (r
 });
 
 // 获取字幕唯一观看人数（需要登录且字幕存在）
+// 字幕点赞最多排行榜（默认50条）
+app.get('/api/rank/subtitles/top-liked', authenticateAnyToken, async (req, res) => {
+    const limitRaw = (req.query.limit || '50').toString().trim();
+    const limit = Math.min(Math.max(parseInt(limitRaw, 10) || 50, 1), 100);
+    try {
+        const rows = await getAllAsync(
+            'SELECT video_id, filename, original_filename, likes_count, updated_at FROM subtitles WHERE likes_count IS NOT NULL AND likes_count > 0 ORDER BY likes_count DESC, updated_at DESC LIMIT ?',
+            [limit]
+        );
+        // 为每条记录获取最近一次page_url（如有）
+        const data = [];
+        for (const r of rows) {
+            const p = await getAsync('SELECT page_url FROM subtitle_likes WHERE lower(video_id)=lower(?) ORDER BY created_at DESC LIMIT 1', [r.video_id]);
+            data.push({
+                video_id: r.video_id,
+                title: r.filename || r.original_filename || null,
+                likes_count: r.likes_count || 0,
+                updated_at: r.updated_at || null,
+                page_url: p && p.page_url ? p.page_url : null
+            });
+        }
+        res.json({ data });
+    } catch (err) {
+        console.error('获取点赞排行榜失败:', err);
+        res.status(500).json({ error: '获取排行榜失败' });
+    }
+});
+
 app.get('/api/subtitles/viewers-count/:video_id', authenticateUserToken, async (req, res) => {
     const videoId = (req.params.video_id || '').toLowerCase().trim();
     if (!videoId) {
@@ -2537,6 +2568,45 @@ app.get('/api/subtitles/viewers-count/:video_id', authenticateUserToken, async (
 });
 
 // 上报字幕观看记录（需要登录且字幕存在）
+// 字幕观看最多排行榜（默认50条）
+app.get('/api/rank/subtitles/top-viewed', authenticateAnyToken, async (req, res) => {
+    const limitRaw = (req.query.limit || '50').toString().trim();
+    const limit = Math.min(Math.max(parseInt(limitRaw, 10) || 50, 1), 100);
+    try {
+        const rows = await getAllAsync(
+            `SELECT s.video_id, s.filename, s.original_filename, s.updated_at, COUNT(DISTINCT v.user_id) AS viewers_count
+             FROM subtitles s
+             LEFT JOIN subtitle_viewers v ON lower(s.video_id) = lower(v.video_id)
+             GROUP BY s.video_id, s.filename, s.original_filename, s.updated_at
+             HAVING COUNT(DISTINCT v.user_id) > 0
+             ORDER BY viewers_count DESC, s.updated_at DESC
+             LIMIT ?`,
+            [limit]
+        );
+        const data = [];
+        for (const r of rows) {
+            // 优先取最近的 viewer page_url，其次取最近的 like page_url
+            const pv = await getAsync('SELECT page_url FROM subtitle_viewers WHERE lower(video_id)=lower(?) AND page_url IS NOT NULL ORDER BY created_at DESC LIMIT 1', [r.video_id]);
+            let pageUrl = pv && pv.page_url ? pv.page_url : null;
+            if (!pageUrl) {
+                const pl = await getAsync('SELECT page_url FROM subtitle_likes WHERE lower(video_id)=lower(?) AND page_url IS NOT NULL ORDER BY created_at DESC LIMIT 1', [r.video_id]);
+                pageUrl = pl && pl.page_url ? pl.page_url : null;
+            }
+            data.push({
+                video_id: r.video_id,
+                title: r.filename || r.original_filename || null,
+                viewers_count: r.viewers_count || 0,
+                updated_at: r.updated_at || null,
+                page_url: pageUrl
+            });
+        }
+        res.json({ data });
+    } catch (err) {
+        console.error('获取观看排行榜失败:', err);
+        res.status(500).json({ error: '获取排行榜失败' });
+    }
+});
+
 app.post('/api/subtitles/viewers/report/:video_id', authenticateUserToken, async (req, res) => {
     const videoId = (req.params.video_id || '').toLowerCase().trim();
     if (!videoId) {
@@ -2563,9 +2633,19 @@ app.post('/api/subtitles/viewers/report/:video_id', authenticateUserToken, async
         }
 
         // 使用 INSERT OR IGNORE 确保每个用户对每个视频只能上报一次
+        // 读取并校验 page_url（可选）
+        let pageUrl = (req.body && req.body.page_url) ? String(req.body.page_url) : null;
+        if (pageUrl) {
+            pageUrl = pageUrl.trim();
+            // 基本校验：必须以 http(s) 开头，长度限制避免存储异常
+            if (!/^https?:\/\//i.test(pageUrl) || pageUrl.length > 2048) {
+                pageUrl = null;
+            }
+        }
+
         const result = await runAsync(
-            'INSERT OR IGNORE INTO subtitle_viewers (video_id, user_id, created_at) VALUES (?, ?, datetime("now"))',
-            [videoId, userId]
+            'INSERT OR IGNORE INTO subtitle_viewers (video_id, user_id, page_url, created_at) VALUES (?, ?, ?, datetime("now"))',
+            [videoId, userId, pageUrl]
         );
 
         // 检查是否成功插入（即用户首次观看）
