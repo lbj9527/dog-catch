@@ -36,6 +36,13 @@
         />
       </div>
       
+      <!-- 扫描进度 -->
+      <div v-if="scanning" class="scan-progress">
+        <h4><el-icon class="loading-icon"><Loading /></el-icon>扫描进度</h4>
+        <el-progress :percentage="scanProgress" :status="scanProgress >= 100 ? 'success' : 'active'" :stroke-width="8" />
+        <p class="progress-text">{{ scanStatusText }}</p>
+      </div>
+      
       <!-- 扫描结果统计 -->
       <div v-if="parsedFiles.length > 0" class="scan-results">
         <div class="scan-summary">
@@ -156,7 +163,7 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-import { UploadFilled, Check, Close } from '@element-plus/icons-vue'
+import { UploadFilled, Check, Close, Loading } from '@element-plus/icons-vue'
 import { subtitleAPI } from '../utils/api'
 
 // Props
@@ -183,6 +190,76 @@ const uploadStatusText = ref('')
 const dirInput = ref()
 // 新增：无效文件名集合
 const invalidFileNames = ref(new Set())
+
+// 新增：扫描与 Worker 管理状态
+const scanning = ref(false)
+const scanProgress = ref(0)
+const scanStatusText = ref('')
+
+const workerRef = ref(null)
+let timeoutTimer = null
+const TIMEOUT_MS = 30000
+
+const progressMetrics = ref({
+  processedCount: 0,
+  totalCount: 0,
+  invalidCount: 0,
+  batchCount: 0,
+  etaText: '',
+  lastHeartbeatTs: 0,
+  folderCount: 0
+})
+
+function terminateWorker() {
+  try {
+    if (workerRef.value) {
+      // 尝试通知取消，随后终止 Worker
+      workerRef.value.postMessage({ type: 'cancel' })
+      workerRef.value.terminate()
+      workerRef.value = null
+    }
+  } catch (e) {
+    // 忽略终止异常
+  }
+  if (timeoutTimer) {
+    clearTimeout(timeoutTimer)
+    timeoutTimer = null
+  }
+}
+
+function resetTimeout() {
+  // 重置 30s 超时保护
+  if (timeoutTimer) {
+    clearTimeout(timeoutTimer)
+  }
+  timeoutTimer = setTimeout(() => {
+    const last = progressMetrics.value.lastHeartbeatTs || 0
+    const elapsed = Date.now() - last
+    if (elapsed >= TIMEOUT_MS) {
+      scanStatusText.value = '扫描超时，已停止'
+      scanning.value = false
+      scanProgress.value = 0
+      terminateWorker()
+      ElMessage.error('扫描超时，已停止')
+    } else {
+      // 若仍有心跳但触发了检查，继续监控
+      scanStatusText.value = '扫描响应延迟...'
+      resetTimeout()
+    }
+  }, TIMEOUT_MS)
+}
+
+function updateETA(startTs, processedCount, totalCount) {
+  if (!startTs || processedCount <= 0 || totalCount <= 0) return ''
+  const elapsed = (Date.now() - startTs) / 1000
+  const rate = processedCount / elapsed // 每秒处理数
+  const remaining = Math.max(totalCount - processedCount, 0)
+  const secs = rate > 0 ? Math.round(remaining / rate) : 0
+  if (secs <= 0) return ''
+  const minutes = Math.floor(secs / 60)
+  const seconds = secs % 60
+  return `预计剩余 ${minutes > 0 ? minutes + '分' : ''}${seconds}秒`
+}
 
 // 计算属性
 const visible = computed({
@@ -228,6 +305,7 @@ watch(() => props.modelValue, (newVal) => {
 
 // 生命周期钩子 - 组件卸载前清理
 onBeforeUnmount(() => {
+  terminateWorker()
   resetData()
 })
 
@@ -255,59 +333,110 @@ const triggerSelectFolder = () => {
   if (dirInput.value) dirInput.value.click()
 }
 
-// 新增：处理目录选择结果（递归文件由浏览器提供 files 列表）
-const handleDirectoryChange = (e) => {
+// 新增：处理目录选择结果（使用Web Worker执行扫描）
+const handleDirectoryChange = async (e) => {
   const files = Array.from(e.target.files || [])
   if (files.length === 0) {
     parsedFiles.value = []
     return
   }
-  const allowedTypes = ['.srt', '.vtt', '.ass', '.ssa']
-  const filtered = []
+
+  // 允许选择同一目录再次触发
+  e.target.value = ''
+
+  // 统计文件夹数量（基于 webkitRelativePath）
+  const folderSet = new Set()
   for (const f of files) {
-    const ext = '.' + f.name.split('.').pop().toLowerCase()
-    if (!allowedTypes.includes(ext)) continue
-    if (f.size > 1024 * 1024) continue
-    filtered.push(f)
+    const rel = (f.webkitRelativePath || '')
+    if (rel) {
+      const folder = rel.split('/').slice(0, -1).join('/')
+      if (folder) folderSet.add(folder)
+    }
   }
-  // 重置无效文件名集合
-  invalidFileNames.value.clear()
-  
-  parsedFiles.value = filtered.map((file, idx) => {
-    const videoId = extractVideoId(file.name)
-    // 记录无效文件名
-    if (!videoId) {
-      invalidFileNames.value.add(file.name)
-    }
-    return {
-      uid: `${Date.now()}_${idx}`,
-      fileName: file.name,
-      videoId: videoId,
-      size: file.size,
-      file: file,
-      status: videoId ? 'valid' : 'invalid'
-    }
-  })
-  // 对相同视频编号的文件，按扩展名优先级排序：.srt → .vtt → .ass/.ssa
-  parsedFiles.value.sort((a, b) => {
-    const byId = (a.videoId || '').localeCompare(b.videoId || '')
-    if (byId !== 0) return byId
-    const prio = (name) => {
-      const ext = (name.split('.').pop() || '').toLowerCase()
-      if (ext === 'srt') return 0
-      if (ext === 'vtt') return 1
-      if (ext === 'ass' || ext === 'ssa') return 2
-      return 9
-    }
-    const byExt = prio(a.fileName) - prio(b.fileName)
-    if (byExt !== 0) return byExt
-    return (a.fileName || '').localeCompare(b.fileName || '')
-  })
-  // 重置进度/结果
+  progressMetrics.value.folderCount = folderSet.size
+
+  // 初始化扫描状态
+  scanning.value = true
+  scanProgress.value = 1
+  scanStatusText.value = `发现 ${files.length} 个文件，文件夹 ${progressMetrics.value.folderCount}，准备扫描...`
   uploadResults.value = []
   uploadedCount.value = 0
   totalCount.value = 0
   uploadStatusText.value = ''
+  invalidFileNames.value.clear()
+
+  // 建立文件轻量元数据与索引映射
+  const filesMeta = files.map((f, idx) => ({ index: idx, name: f.name, size: f.size }))
+  const startTs = Date.now()
+
+  // 创建Worker
+  terminateWorker()
+  workerRef.value = new Worker(new URL('../workers/scanWorker.js', import.meta.url), { type: 'module' })
+
+  // 监听消息
+  workerRef.value.onmessage = (evt) => {
+    const { type, payload, ts } = evt.data || {}
+    if (type === 'heartbeat') {
+      progressMetrics.value.lastHeartbeatTs = ts || Date.now()
+      resetTimeout()
+      return
+    }
+    if (type === 'progress') {
+      const { stage, processedCount, totalCount, percentage, invalidCount, batchCount } = payload || {}
+      progressMetrics.value.processedCount = processedCount
+      progressMetrics.value.totalCount = totalCount
+      progressMetrics.value.invalidCount = invalidCount
+      progressMetrics.value.batchCount = batchCount
+      progressMetrics.value.etaText = updateETA(startTs, processedCount, totalCount)
+
+      scanProgress.value = Math.max(1, Math.min(percentage ?? 10, 95))
+      if (stage === 'processing') {
+        scanStatusText.value = `正在扫描文件... (${processedCount}/${totalCount})，文件夹 ${progressMetrics.value.folderCount}，无效 ${invalidCount}，批次 ${batchCount} ${progressMetrics.value.etaText ? '，' + progressMetrics.value.etaText : ''}`
+      } else if (stage === 'sort') {
+        scanStatusText.value = '正在排序文件...'
+      }
+      resetTimeout()
+      return
+    }
+    if (type === 'done') {
+      const { processed = [], invalidFileNames: invalidArr = [] } = payload || {}
+      // 重建parsedFiles，恢复原始File引用
+      const processedFiles = processed.map(p => ({
+        uid: `${Date.now()}_${p.index}`,
+        fileName: p.fileName,
+        videoId: p.videoId,
+        size: p.size,
+        file: files[p.index],
+        status: p.status
+      }))
+      parsedFiles.value = processedFiles
+      invalidArr.forEach(name => invalidFileNames.value.add(name))
+
+      scanProgress.value = 100
+      scanStatusText.value = `扫描完成！共找到 ${processedFiles.length} 个文件`
+      setTimeout(() => {
+        scanning.value = false
+        scanProgress.value = 0
+        scanStatusText.value = ''
+      }, 500)
+
+      terminateWorker()
+      return
+    }
+    if (type === 'error') {
+      const msg = payload?.message || '扫描失败'
+      ElMessage.error(msg)
+      scanning.value = false
+      scanProgress.value = 0
+      scanStatusText.value = msg
+      terminateWorker()
+      return
+    }
+  }
+
+  // 启动超时监控与Worker
+  resetTimeout()
+  workerRef.value.postMessage({ type: 'start', payload: { filesMeta, batchSize: 100, heartbeatInterval: 500 } })
 }
 
 const validateFile = (file) => {
@@ -444,6 +573,7 @@ const handleBatchUpload = async () => {
 
 const handleClose = () => {
   if (!uploading.value) {
+    terminateWorker()
     visible.value = false
     resetData()
   }
@@ -459,6 +589,14 @@ const resetData = () => {
   uploading.value = false
   // 重置无效文件名集合
   invalidFileNames.value.clear()
+  // 新增：清理扫描状态与超时定时器
+  scanning.value = false
+  scanProgress.value = 0
+  scanStatusText.value = ''
+  if (timeoutTimer) {
+    clearTimeout(timeoutTimer)
+    timeoutTimer = null
+  }
 }
 
 // 新增：下载无效文件清单
@@ -626,5 +764,27 @@ const getStatusText = (status) => {
 :deep(.el-alert__content p) {
   margin: 2px 0;
   font-size: 13px;
+}
+
+/* 新增：扫描进度样式 */
+.scan-progress {
+  margin-top: 15px;
+  padding: 12px;
+  background-color: #fffbe6;
+  border: 1px solid #ffe58f;
+  border-radius: 4px;
+}
+.scan-progress h4 {
+  margin: 0 0 10px 0;
+  color: #333;
+}
+.loading-icon {
+  margin-right: 6px;
+  vertical-align: middle;
+  animation: rotate 1s linear infinite;
+}
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 </style>

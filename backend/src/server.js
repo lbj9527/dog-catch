@@ -1733,13 +1733,57 @@ function rewriteM3U8(content, baseUrl, proxyOrigin) {
 
 async function convertAssToVttString(assText) {
     return new Promise((resolve, reject) => {
-        const input = Readable.from([assText]);
-        const transformer = assToVtt();
-        const chunks = [];
-        transformer.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-        transformer.on('error', reject);
-        transformer.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-        input.pipe(transformer);
+        try {
+            // 输入校验与标准化
+            const text = typeof assText === 'string' ? assText : String(assText || '');
+            const normalized = text.replace(/\r\n?/g, '\n');
+            const trimmed = normalized.trim();
+            
+            if (!trimmed) {
+                return reject(new Error('ASS 内容为空'));
+            }
+            
+            // 基本格式探测：包含 Script Info/Styles/Dialogue 之一即可视为 ASS/SSA
+            const looksAss = /\[Script Info\]/i.test(trimmed) || 
+                            /\[V4\+?\s*Styles\]/i.test(trimmed) || 
+                            /\bDialogue\s*:/i.test(trimmed);
+            
+            if (!looksAss) {
+                return reject(new Error('非 ASS/SSA 格式或缺少必要段落'));
+            }
+
+            const input = Readable.from([trimmed]);
+            const transformer = assToVtt();
+            const chunks = [];
+
+            transformer.on('data', (c) => {
+                try {
+                    chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+                } catch (e) {
+                    transformer.emit('error', e);
+                }
+            });
+            
+            transformer.on('error', (err) => reject(err));
+            
+            transformer.on('end', () => {
+                try {
+                    const out = Buffer.concat(chunks).toString('utf8');
+                    resolve(out);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+
+            // 保护：ass-to-vtt 在某些输入下可能在 pipe 同步阶段抛错
+            try {
+                input.pipe(transformer);
+            } catch (e) {
+                reject(e);
+            }
+        } catch (err) {
+            reject(err);
+        }
     });
 }
 
