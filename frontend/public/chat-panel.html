@@ -141,8 +141,14 @@
             border-bottom: 1px solid rgba(255, 255, 255, 0.06);
         }
 
+        .search-container {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
         .search-input {
-            width: 100%;
+            flex: 1;
             height: 36px;
             padding: 0 12px;
             background: rgba(255, 255, 255, 0.05);
@@ -161,6 +167,505 @@
 
         .search-input::placeholder {
             color: #9ca3af;
+        }
+
+        .add-friend-btn {
+            height: 36px;
+            padding: 0 12px;
+            background: linear-gradient(135deg, #7C3AED 0%, #00C2FF 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .add-friend-btn:hover {
+            transform: translateY(-1px) scale(1.02);
+            box-shadow: 0 8px 22px rgba(124, 58, 237, 0.4);
+        }
+
+        /* 好友请求通知横幅 */
+        .friend-request-banner {
+            background: linear-gradient(135deg, rgba(251, 146, 60, 0.15) 0%, rgba(249, 115, 22, 0.15) 100%);
+            border: 1px solid rgba(251, 146, 60, 0.3);
+            border-radius: 8px;
+            margin: 12px 16px;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .friend-request-banner:hover {
+            background: linear-gradient(135deg, rgba(251, 146, 60, 0.25) 0%, rgba(249, 115, 22, 0.25) 100%);
+            transform: translateY(-1px);
+        }
+
+        .friend-request-banner.hidden {
+            display: none;
+        }
+
+        .banner-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            background: linear-gradient(135deg, #fb923c 0%, #f97316 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            flex-shrink: 0;
+        }
+
+        .banner-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .banner-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #f1f5f9;
+            margin-bottom: 2px;
+        }
+
+        .banner-desc {
+            font-size: 12px;
+            color: #fb923c;
+        }
+
+        .banner-badge {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            min-width: 18px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        /* 分组标题 */
+        .group-header {
+            padding: 16px 16px 8px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            margin-bottom: 8px;
+        }
+
+        .group-header:first-child {
+            padding-top: 8px;
+        }
+
+        /* 好友请求项 */
+        .friend-request-item {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            margin: 0 8px 8px 8px;
+            padding: 12px;
+            transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .friend-request-item::before {
+            content: "";
+            position: absolute;
+            inset: -1px;
+            border-radius: 12px;
+            pointer-events: none;
+            background: linear-gradient(135deg, rgba(251, 146, 60, 0.15) 0%, rgba(249, 115, 22, 0.15) 100%);
+            opacity: 0;
+            transition: opacity 0.18s ease;
+        }
+
+        .friend-request-item:hover {
+            transform: translateY(-2px) scale3d(1.02, 1.02, 1);
+            box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32);
+        }
+
+        .friend-request-item:hover::before {
+            opacity: 1;
+        }
+
+        .request-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .request-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .request-message {
+            font-size: 12px;
+            color: #fb923c;
+            margin-top: 2px;
+        }
+
+        .request-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .accept-btn, .reject-btn {
+            padding: 4px 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .accept-btn {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+        }
+
+        .accept-btn:hover {
+            transform: translateY(-1px) scale(1.05);
+            box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);
+        }
+
+        .reject-btn {
+            background: rgba(255, 255, 255, 0.08);
+            color: #e5e7eb;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .reject-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+        }
+
+        /* 好友列表项增强 */
+        .friend-item {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            margin: 0 8px 8px 8px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .friend-item::before {
+            content: "";
+            position: absolute;
+            inset: -1px;
+            border-radius: 12px;
+            pointer-events: none;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.15) 0%, rgba(0, 194, 255, 0.15) 100%);
+            opacity: 0;
+            transition: opacity 0.18s ease;
+        }
+
+        .friend-item:hover {
+            transform: translateY(-2px) scale3d(1.02, 1.02, 1);
+            box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32);
+        }
+
+        .friend-item:hover::before {
+            opacity: 1;
+        }
+
+        .friend-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .friend-actions {
+            display: flex;
+            gap: 8px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .friend-item:hover .friend-actions {
+            opacity: 1;
+        }
+
+        .chat-btn, .more-btn {
+            padding: 4px 8px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .chat-btn {
+            background: linear-gradient(135deg, #7C3AED 0%, #00C2FF 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
+        }
+
+        .chat-btn:hover {
+            transform: translateY(-1px) scale(1.05);
+            box-shadow: 0 4px 16px rgba(124, 58, 237, 0.4);
+        }
+
+        .more-btn {
+            background: rgba(255, 255, 255, 0.08);
+            color: #e5e7eb;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        /* 添加好友弹窗 */
+        .add-friend-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(8px);
+        }
+
+        .add-friend-modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #111318;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+            width: 400px;
+            max-width: 90vw;
+            max-height: 80vh;
+            overflow: hidden;
+            animation: modalSlideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #f1f5f9;
+        }
+
+        .close-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #e5e7eb;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .close-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+        }
+
+        .modal-body {
+            padding: 24px;
+        }
+
+        .search-form {
+            margin-bottom: 24px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #e5e7eb;
+            margin-bottom: 8px;
+        }
+
+        .form-input {
+            width: 100%;
+            height: 40px;
+            padding: 0 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            color: #e5e7eb;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .form-input:focus {
+            border-color: #7C3AED;
+            box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
+        }
+
+        .form-input::placeholder {
+            color: #9ca3af;
+        }
+
+        .search-btn {
+            width: 100%;
+            height: 40px;
+            background: linear-gradient(135deg, #7C3AED 0%, #00C2FF 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+        }
+
+        .search-btn:hover {
+            transform: translateY(-1px) scale(1.02);
+            box-shadow: 0 8px 22px rgba(124, 58, 237, 0.4);
+        }
+
+        .search-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .search-results {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .search-result-item {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            margin-bottom: 8px;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .search-result-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            transform: translateY(-1px);
+        }
+
+        .result-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .result-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f1f5f9;
+            margin-bottom: 2px;
+        }
+
+        .result-desc {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+
+        .add-btn {
+            padding: 6px 16px;
+            background: linear-gradient(135deg, #7C3AED 0%, #00C2FF 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+            box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
+        }
+
+        .add-btn:hover {
+            transform: translateY(-1px) scale(1.05);
+            box-shadow: 0 4px 16px rgba(124, 58, 237, 0.4);
+        }
+
+        .add-btn:disabled {
+            background: rgba(255, 255, 255, 0.08);
+            color: #9ca3af;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .empty-search {
+            text-align: center;
+            padding: 40px 20px;
+            color: #6b7280;
+        }
+
+        .empty-search-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-search-text {
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+
+        .empty-search-desc {
+            font-size: 14px;
+            opacity: 0.7;
         }
 
         /* 列表容器 */
@@ -680,22 +1185,106 @@
             <!-- 通讯录页面 -->
             <div class="page" id="contactsPage">
                 <div class="search-box">
-                    <input type="text" class="search-input" placeholder="搜索联系人" id="contactSearch">
+                    <div class="search-container">
+                        <input type="text" class="search-input" placeholder="搜索联系人" id="contactSearch">
+                        <button class="add-friend-btn" id="addFriendBtn">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                            </svg>
+                            添加好友
+                        </button>
+                    </div>
                 </div>
+                
+                <!-- 好友请求通知横幅 -->
+                <div class="friend-request-banner" id="friendRequestBanner">
+                    <div class="banner-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M16 4c0-1.11.89-2 2-2s2 .89 2 2-.89 2-2 2-2-.89-2-2zm4 18v-6h2.5l-2.54-7.63A1.5 1.5 0 0 0 18.54 8H16c-.8 0-1.54.37-2 1l-3.72 5.58L8.54 11.5A1.5 1.5 0 0 0 7.46 11H5c-.8 0-1.54.37-2 1L.46 19.63A1.5 1.5 0 0 0 1.88 21H4v1h2v-6H4.5l2.54-7.63c.18-.54.69-.87 1.26-.87h1.74L12 10l2.96-2.5h1.74c.57 0 1.08.33 1.26.87L20.5 16H18v6h2z"/>
+                        </svg>
+                    </div>
+                    <div class="banner-content">
+                        <div class="banner-title">新的好友请求</div>
+                        <div class="banner-desc">点击查看待处理的好友申请</div>
+                    </div>
+                    <div class="banner-badge" id="requestCount">3</div>
+                </div>
+                
                 <div class="list-container" id="contactsList">
-                    <div class="contact-item" data-user-id="1" data-name="张三">
-                        <div class="item-content">
+                    <!-- 好友请求分组 -->
+                    <div class="group-header">好友请求</div>
+                    <div class="friend-request-item">
+                        <div class="request-content">
+                            <div class="avatar">
+                                李
+                                <div class="online-status online"></div>
+                            </div>
+                            <div class="request-info">
+                                <div class="item-name">李明</div>
+                                <div class="request-message">想要添加您为好友</div>
+                            </div>
+                            <div class="request-actions">
+                                <button class="accept-btn">同意</button>
+                                <button class="reject-btn">拒绝</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="friend-request-item">
+                        <div class="request-content">
+                            <div class="avatar">
+                                王
+                                <div class="online-status offline"></div>
+                            </div>
+                            <div class="request-info">
+                                <div class="item-name">王小红</div>
+                                <div class="request-message">通过搜索添加</div>
+                            </div>
+                            <div class="request-actions">
+                                <button class="accept-btn">同意</button>
+                                <button class="reject-btn">拒绝</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 我的好友分组 -->
+                    <div class="group-header">我的好友</div>
+                    <div class="friend-item">
+                        <div class="friend-content">
                             <div class="avatar">
                                 张
                                 <div class="online-status online"></div>
                             </div>
                             <div class="item-info">
                                 <div class="item-name">张三</div>
-                                <div class="item-status">在线</div>
+                                <div class="item-status">在线 - 刚刚活跃</div>
+                            </div>
+                            <div class="friend-actions">
+                                <button class="chat-btn">聊天</button>
+                                <button class="more-btn">更多</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="friend-item">
+                        <div class="friend-content">
+                            <div class="avatar">
+                                赵
+                                <div class="online-status online"></div>
+                            </div>
+                            <div class="item-info">
+                                <div class="item-name">赵六</div>
+                                <div class="item-status">在线 - 5分钟前活跃</div>
+                            </div>
+                            <div class="friend-actions">
+                                <button class="chat-btn">聊天</button>
+                                <button class="more-btn">更多</button>
                             </div>
                         </div>
                     </div>
 
+                    <!-- 最近联系人分组 -->
+                    <div class="group-header">最近联系人</div>
                     <div class="contact-item" data-user-id="2" data-name="李四">
                         <div class="item-content">
                             <div class="avatar">
@@ -709,15 +1298,17 @@
                         </div>
                     </div>
 
-                    <div class="contact-item" data-user-id="3" data-name="王五">
+                    <!-- 其他联系人分组 -->
+                    <div class="group-header">其他联系人</div>
+                    <div class="contact-item" data-user-id="5" data-name="陈七">
                         <div class="item-content">
                             <div class="avatar">
-                                王
+                                陈
                                 <div class="online-status offline"></div>
                             </div>
                             <div class="item-info">
-                                <div class="item-name">王五</div>
-                                <div class="item-status">2小时前在线</div>
+                                <div class="item-name">陈七</div>
+                                <div class="item-status">离线 - 2小时前</div>
                             </div>
                         </div>
                     </div>
@@ -785,6 +1376,37 @@
         </div>
     </div>
 
+    <!-- 添加好友弹窗 -->
+    <div class="add-friend-modal" id="addFriendModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">添加好友</h3>
+                <button class="close-btn" id="closeModalBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form class="search-form" id="searchForm">
+                    <div class="form-group">
+                        <label class="form-label" for="searchInput">搜索用户</label>
+                        <input type="text" class="form-input" id="searchInput" placeholder="输入用户名或ID">
+                    </div>
+                    <button type="submit" class="search-btn" id="searchBtn">搜索</button>
+                </form>
+                
+                <div class="search-results" id="searchResults">
+                    <div class="empty-search">
+                        <div class="empty-search-icon">🔍</div>
+                        <div class="empty-search-text">搜索用户</div>
+                        <div class="empty-search-desc">输入用户名或ID来查找好友</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         class ChatPanel {
             constructor() {
@@ -831,6 +1453,15 @@
                     });
                 });
 
+                // 好友项点击
+                document.querySelectorAll('.friend-item').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        const userId = e.currentTarget.dataset.userId;
+                        const name = e.currentTarget.dataset.name;
+                        this.openProfile(userId, name);
+                    });
+                });
+
                 // 打招呼按钮
                 document.getElementById('greetBtn').addEventListener('click', () => {
                     this.greetUser();
@@ -862,6 +1493,46 @@
 
                 document.getElementById('contactSearch').addEventListener('input', (e) => {
                     this.searchContacts(e.target.value);
+                });
+
+                // 添加好友按钮
+                document.getElementById('addFriendBtn').addEventListener('click', () => {
+                    this.showAddFriendModal();
+                });
+
+                // 好友请求横幅点击
+                document.querySelector('.friend-request-banner').addEventListener('click', () => {
+                    this.showFriendRequests();
+                });
+
+                // 添加好友弹窗相关事件
+                document.getElementById('closeModalBtn').addEventListener('click', () => {
+                    this.hideAddFriendModal();
+                });
+
+                document.getElementById('addFriendModal').addEventListener('click', (e) => {
+                    if (e.target.id === 'addFriendModal') {
+                        this.hideAddFriendModal();
+                    }
+                });
+
+                document.getElementById('searchForm').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    this.searchUsers();
+                });
+
+                // 好友请求操作按钮
+                document.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('accept-btn')) {
+                        const requestId = e.target.closest('.friend-request-item').dataset.requestId;
+                        this.acceptFriendRequest(requestId);
+                    } else if (e.target.classList.contains('reject-btn')) {
+                        const requestId = e.target.closest('.friend-request-item').dataset.requestId;
+                        this.rejectFriendRequest(requestId);
+                    } else if (e.target.classList.contains('add-btn')) {
+                        const userId = e.target.closest('.result-item').dataset.userId;
+                        this.sendFriendRequest(userId);
+                    }
                 });
             }
 
@@ -1023,12 +1694,149 @@
             }
 
             searchContacts(query) {
-                const items = document.querySelectorAll('.contact-item');
+                const items = document.querySelectorAll('.contact-item, .friend-item');
                 items.forEach(item => {
                     const name = item.dataset.name.toLowerCase();
                     const visible = name.includes(query.toLowerCase());
                     item.style.display = visible ? 'block' : 'none';
                 });
+            }
+
+            // 添加好友相关方法
+            showAddFriendModal() {
+                document.getElementById('addFriendModal').style.display = 'flex';
+                document.getElementById('searchInput').focus();
+            }
+
+            hideAddFriendModal() {
+                document.getElementById('addFriendModal').style.display = 'none';
+                document.getElementById('searchInput').value = '';
+                this.clearSearchResults();
+            }
+
+            searchUsers() {
+                const query = document.getElementById('searchInput').value.trim();
+                if (!query) return;
+
+                // 模拟搜索结果
+                const mockResults = [
+                    { id: '101', name: '张三', avatar: '张', status: 'online' },
+                    { id: '102', name: '李四', avatar: '李', status: 'offline' },
+                    { id: '103', name: '王五', avatar: '王', status: 'online' }
+                ].filter(user => user.name.includes(query));
+
+                this.displaySearchResults(mockResults);
+            }
+
+            displaySearchResults(results) {
+                const container = document.getElementById('searchResults');
+                
+                if (results.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-search">
+                            <div class="empty-search-icon">😔</div>
+                            <div class="empty-search-text">未找到用户</div>
+                            <div class="empty-search-desc">请尝试其他关键词</div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = results.map(user => `
+                    <div class="result-item" data-user-id="${user.id}">
+                        <div class="result-avatar">${user.avatar}</div>
+                        <div class="result-info">
+                            <div class="result-name">${user.name}</div>
+                            <div class="result-status ${user.status}">${user.status === 'online' ? '在线' : '离线'}</div>
+                        </div>
+                        <button class="add-btn">添加</button>
+                    </div>
+                `).join('');
+            }
+
+            clearSearchResults() {
+                document.getElementById('searchResults').innerHTML = `
+                    <div class="empty-search">
+                        <div class="empty-search-icon">🔍</div>
+                        <div class="empty-search-text">搜索用户</div>
+                        <div class="empty-search-desc">输入用户名或ID来查找好友</div>
+                    </div>
+                `;
+            }
+
+            sendFriendRequest(userId) {
+                // 模拟发送好友请求
+                const button = document.querySelector(`[data-user-id="${userId}"] .add-btn`);
+                button.textContent = '已发送';
+                button.disabled = true;
+                button.style.background = '#ccc';
+                
+                // 显示成功提示
+                this.showToast('好友请求已发送');
+            }
+
+            acceptFriendRequest(requestId) {
+                const requestItem = document.querySelector(`[data-request-id="${requestId}"]`);
+                if (requestItem) {
+                    requestItem.remove();
+                    this.updateFriendRequestBadge();
+                    this.showToast('已接受好友请求');
+                }
+            }
+
+            rejectFriendRequest(requestId) {
+                const requestItem = document.querySelector(`[data-request-id="${requestId}"]`);
+                if (requestItem) {
+                    requestItem.remove();
+                    this.updateFriendRequestBadge();
+                    this.showToast('已拒绝好友请求');
+                }
+            }
+
+            showFriendRequests() {
+                // 滚动到好友请求区域
+                const requestsSection = document.querySelector('.group-header');
+                if (requestsSection) {
+                    requestsSection.scrollIntoView({ behavior: 'smooth' });
+                }
+            }
+
+            updateFriendRequestBadge() {
+                const badge = document.querySelector('.banner-badge');
+                const requests = document.querySelectorAll('.friend-request-item');
+                const count = requests.length;
+                
+                if (count > 0) {
+                    badge.textContent = count;
+                    badge.style.display = 'block';
+                } else {
+                    badge.style.display = 'none';
+                    // 隐藏整个横幅
+                    document.querySelector('.friend-request-banner').style.display = 'none';
+                }
+            }
+
+            showToast(message) {
+                // 创建简单的提示框
+                const toast = document.createElement('div');
+                toast.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: #333;
+                    color: white;
+                    padding: 10px 20px;
+                    border-radius: 4px;
+                    z-index: 10000;
+                    font-size: 14px;
+                `;
+                toast.textContent = message;
+                document.body.appendChild(toast);
+                
+                setTimeout(() => {
+                    document.body.removeChild(toast);
+                }, 2000);
             }
         }
 
