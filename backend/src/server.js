@@ -12,7 +12,7 @@ const http = require('http');
 const { URL } = require('url');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const assToVtt = require('ass-to-vtt');
-const { Readable } = require('stream');
+const { Readable, pipeline } = require('stream');
 const chardet = require('chardet');
 const iconv = require('iconv-lite');
 const helmet = require('helmet');
@@ -1731,6 +1731,83 @@ function rewriteM3U8(content, baseUrl, proxyOrigin) {
     return out.join('\n');
 }
 
+// ASS 文本清理函数：移除可能导致 ass-to-vtt 崩溃的内容
+function sanitizeAssOverrides(assText) {
+    return assText
+        // 移除可能包含 null 或非字母字符的样式覆盖
+        .replace(/\\[a-zA-Z]+\([^)]*\)/g, (match) => {
+            // 保留基本的样式标签，移除可能有问题的参数
+            const tag = match.match(/\\([a-zA-Z]+)/);
+            return tag ? `\\${tag[1]}()` : '';
+        })
+        // 移除可能导致解析错误的特殊字符序列
+        .replace(/\\[^a-zA-Z\s]/g, '')
+        // 清理可能的空值引用
+        .replace(/\{\}/g, '')
+        // 标准化换行符
+        .replace(/\r\n?/g, '\n');
+}
+
+// 基本的 ASS 对白解析 fallback，生成简单的 VTT
+function parseAssDialogueToVtt(assText) {
+    const lines = assText.split('\n');
+    const vttLines = ['WEBVTT', ''];
+    
+    let cueIndex = 1;
+    
+    for (const line of lines) {
+        // 匹配 Dialogue 行
+        const dialogueMatch = line.match(/^Dialogue:\s*\d+,([^,]+),([^,]+),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),(.*)$/i);
+        
+        if (dialogueMatch) {
+            const [, start, end, , , , , , , text] = dialogueMatch;
+            
+            try {
+                // 转换时间格式：从 ASS (H:MM:SS.CC) 到 VTT (HH:MM:SS.mmm)
+                const startTime = convertAssTimeToVtt(start);
+                const endTime = convertAssTimeToVtt(end);
+                
+                // 清理文本：移除 ASS 样式标签
+                const cleanText = text
+                    .replace(/\{[^}]*\}/g, '') // 移除 {} 样式标签
+                    .replace(/\\N/g, '\n')     // 转换换行符
+                    .replace(/\\n/g, '\n')     // 转换换行符
+                    .trim();
+                
+                if (cleanText && startTime && endTime) {
+                    vttLines.push(`${cueIndex}`);
+                    vttLines.push(`${startTime} --> ${endTime}`);
+                    vttLines.push(cleanText);
+                    vttLines.push('');
+                    cueIndex++;
+                }
+            } catch (e) {
+                // 跳过无法解析的行
+                continue;
+            }
+        }
+    }
+    
+    return vttLines.join('\n');
+}
+
+// 转换 ASS 时间格式到 VTT 格式
+function convertAssTimeToVtt(assTime) {
+    try {
+        // ASS 格式: H:MM:SS.CC (小时:分钟:秒.厘秒)
+        const match = assTime.match(/^(\d+):(\d{2}):(\d{2})\.(\d{2})$/);
+        if (!match) return null;
+        
+        const [, hours, minutes, seconds, centiseconds] = match;
+        const milliseconds = parseInt(centiseconds) * 10; // 厘秒转毫秒
+        
+        // VTT 格式: HH:MM:SS.mmm
+        return `${hours.padStart(2, '0')}:${minutes}:${seconds}.${milliseconds.toString().padStart(3, '0')}`;
+    } catch (e) {
+        return null;
+    }
+}
+
 async function convertAssToVttString(assText) {
     return new Promise((resolve, reject) => {
         try {
@@ -1752,9 +1829,43 @@ async function convertAssToVttString(assText) {
                 return reject(new Error('非 ASS/SSA 格式或缺少必要段落'));
             }
 
-            const input = Readable.from([trimmed]);
+            // 清理可能导致 ass-to-vtt 崩溃的内容
+            const sanitizedText = sanitizeAssOverrides(trimmed);
+            
+            const input = Readable.from([sanitizedText]);
             const transformer = assToVtt();
             const chunks = [];
+
+            // 使用 pipeline 进行更强的错误处理
+            pipeline(
+                input,
+                transformer,
+                (err) => {
+                    if (err) {
+                        console.warn('ass-to-vtt 转换失败，尝试 fallback 解析:', err.message);
+                        
+                        // 使用 fallback 解析
+                        try {
+                            const fallbackResult = parseAssDialogueToVtt(trimmed);
+                            if (fallbackResult && fallbackResult.includes('-->')) {
+                                resolve(fallbackResult);
+                            } else {
+                                reject(new Error('ASS 解析失败：无有效对白内容'));
+                            }
+                        } catch (fallbackErr) {
+                            reject(new Error(`ASS 转换失败: ${err.message}; Fallback 也失败: ${fallbackErr.message}`));
+                        }
+                    } else {
+                        // 成功情况下，chunks 已经通过 data 事件收集
+                        try {
+                            const out = Buffer.concat(chunks).toString('utf8');
+                            resolve(out);
+                        } catch (e) {
+                            reject(e);
+                        }
+                    }
+                }
+            );
 
             transformer.on('data', (c) => {
                 try {
@@ -1764,25 +1875,19 @@ async function convertAssToVttString(assText) {
                 }
             });
             
-            transformer.on('error', (err) => reject(err));
-            
-            transformer.on('end', () => {
-                try {
-                    const out = Buffer.concat(chunks).toString('utf8');
-                    resolve(out);
-                } catch (e) {
-                    reject(e);
-                }
-            });
-
-            // 保护：ass-to-vtt 在某些输入下可能在 pipe 同步阶段抛错
-            try {
-                input.pipe(transformer);
-            } catch (e) {
-                reject(e);
-            }
         } catch (err) {
-            reject(err);
+            // 同步错误也尝试 fallback
+            console.warn('convertAssToVttString 同步错误，尝试 fallback:', err.message);
+            try {
+                const fallbackResult = parseAssDialogueToVtt(assText);
+                if (fallbackResult && fallbackResult.includes('-->')) {
+                    resolve(fallbackResult);
+                } else {
+                    reject(new Error('ASS 解析失败：无有效对白内容'));
+                }
+            } catch (fallbackErr) {
+                reject(new Error(`ASS 转换失败: ${err.message}; Fallback 也失败: ${fallbackErr.message}`));
+            }
         }
     });
 }
