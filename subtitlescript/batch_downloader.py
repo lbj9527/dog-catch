@@ -83,6 +83,11 @@ class BatchDownloader:
                     self.download_stats['success'] += 1
                     print(f"✅ [{i}/{len(video_codes)}] 完成: {code}")
                     
+                except SystemExit:
+                    # 捕获sys.exit()调用，在批量下载模式下不应该退出整个程序
+                    print(f"ℹ️ [{i}/{len(video_codes)}] 跳过: {code} (附件已购买或其他原因)")
+                    self.download_stats['skipped'] += 1
+                    
                 except Exception as e:
                     self.download_stats['failed'] += 1
                     print(f"❌ [{i}/{len(video_codes)}] 失败: {code} - {str(e)}")
@@ -141,6 +146,11 @@ class BatchDownloader:
                 
                 self.download_stats['success'] += 1
                 print(f"✅ [{i}/{len(video_codes)}] 完成: {code}")
+                
+            except SystemExit:
+                # 捕获sys.exit()调用，在批量下载模式下不应该退出整个程序
+                print(f"ℹ️ [{i}/{len(video_codes)}] 跳过: {code} (附件已购买或其他原因)")
+                self.download_stats['skipped'] += 1
                 
             except Exception as e:
                 self.download_stats['failed'] += 1

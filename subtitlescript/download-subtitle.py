@@ -1423,12 +1423,18 @@ def find_and_print_priority_element(root, section=None, do_purchase=False, searc
                         print(f"❌ 购买流程失败: {e}")
                 return
             else:
-              # 兜底：未找到任何匹配元素
+              # 兜底：未找到任何匹配元素，说明附件已购买
               print("此附件已购买")
-              try:
-                  sys.exit(0)
-              except SystemExit:
-                  raise
+              # 在批量下载模式下，不应该退出整个程序，而是继续处理下一个
+              # 只有在单次下载模式下才退出
+              if search_keyword == SEARCH_KEYWORD:  # 单次下载模式
+                  try:
+                      sys.exit(0)
+                  except SystemExit:
+                      raise
+              else:  # 批量下载模式
+                  print("ℹ️ 批量下载模式：跳过已购买的附件，继续处理下一个")
+                  return
 
         return
 
@@ -2260,10 +2266,18 @@ def try_download_after_purchase(hit_frame, parent_context, search_keyword, save_
     if candidate_selectors is None:
         candidates = []
         for domain in candidate_domains:
-            candidates.append(f"a[href*='{domain}'][href*='{search_keyword}'][href$='.rar']")
-            candidates.append(f"a[href*='{domain}'][href*='{search_keyword}'][href*='.rar?']")
-            candidates.append(f"a[href*='{domain}'][href$='.rar']")
-            candidates.append(f"a[href*='{domain}'][href*='.rar?']")
+            # 支持多种压缩文件格式
+            for ext in ['.rar', '.zip', '.7z']:
+                candidates.append(f"a[href*='{domain}'][href*='{search_keyword}'][href$='{ext}']")
+                candidates.append(f"a[href*='{domain}'][href*='{search_keyword}'][href*='{ext}?']")
+                candidates.append(f"a[href*='{domain}'][href$='{ext}']")
+                candidates.append(f"a[href*='{domain}'][href*='{ext}?']")
+        
+        # 添加通用的dl.tattl结构选择器（针对新作区的特殊结构）
+        candidates.append("dl.tattl dd p.attnm a")
+        candidates.append("dl.tattl a[target='_blank']")
+        
+        # 原有的attachment选择器
         candidates.append("a[href*='mod=attachment'][href*='aid=']")
     else:
         candidates = candidate_selectors
