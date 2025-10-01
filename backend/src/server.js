@@ -2370,6 +2370,38 @@ app.get('/api/subtitles/stats', authenticateAdminToken, async (req, res) => {
     }
 });
 
+// 检查字幕是否存在（无需认证，用于爬虫脚本）
+app.get('/api/subtitles/exists/:video_id', async (req, res) => {
+    const videoId = (req.params.video_id || '').toLowerCase().trim();
+    
+    if (!videoId) {
+        return res.status(400).json({ error: '视频ID不能为空' });
+    }
+    
+    try {
+        // 查询数据库中是否存在该视频ID的字幕记录
+        const subtitle = await getAsync(
+            'SELECT video_id, filename, file_size, updated_at FROM subtitles WHERE lower(video_id) = lower(?)',
+            [videoId]
+        );
+        
+        const exists = !!subtitle;
+        
+        res.json({
+            video_id: videoId,
+            exists: exists,
+            subtitle_info: exists ? {
+                filename: subtitle.filename,
+                file_size: subtitle.file_size,
+                updated_at: subtitle.updated_at
+            } : null
+        });
+    } catch (err) {
+        console.error('检查字幕存在性失败:', err);
+        res.status(500).json({ error: '检查字幕存在性失败' });
+    }
+});
+
 // 获取某基础视频编号下的所有字幕变体（登录可见：用户或管理员）
 app.get('/api/subtitles/variants/:base_video_id', authenticateAnyToken, async (req, res) => {
     setNoStore(res);

@@ -540,7 +540,8 @@ class DatabaseManager:
                 'maker': 'TEXT',
                 'director': 'TEXT',
                 'detail_scraped': 'BOOLEAN DEFAULT 0',
-                'detail_scraped_at': 'TIMESTAMP'
+                'detail_scraped_at': 'TIMESTAMP',
+                'subtitle_downloaded': 'INTEGER DEFAULT -1'  # 字幕下载状态：-1=未更新，0=无字幕，1=有字幕
             }
             
             # 添加缺失的列
@@ -559,14 +560,27 @@ class DatabaseManager:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("""
-                    SELECT id, actress_name, video_title, video_url, video_id, 
-                           detail_scraped, detail_scraped_at
+                    SELECT id, actress_name, video_title, video_url, video_id
                     FROM videos 
                     WHERE video_id = ?
                 """, (video_id,))
                 
-                columns = ['id', 'actress_name', 'video_title', 'video_url', 
-                          'video_id', 'detail_scraped', 'detail_scraped_at']
+                columns = ['id', 'actress_name', 'video_title', 'video_url', 'video_id']
+                return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        except sqlite3.OperationalError:
+            return []
+
+    def find_videos_by_url(self, video_url: str) -> List[Dict[str, Any]]:
+        """根据video_url查找视频记录"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("""
+                    SELECT id, actress_name, video_title, video_url, video_id
+                    FROM videos 
+                    WHERE video_url = ?
+                """, (video_url,))
+                
+                columns = ['id', 'actress_name', 'video_title', 'video_url', 'video_id']
                 return [dict(zip(columns, row)) for row in cursor.fetchall()]
         except sqlite3.OperationalError:
             return []
@@ -586,7 +600,7 @@ class DatabaseManager:
                 UPDATE videos 
                 SET release_date = ?, cover_url = ?, description = ?, 
                     actresses = ?, actors = ?, genres = ?, series = ?, maker = ?, director = ?,
-                    detail_scraped = 1, detail_scraped_at = ?
+                    subtitle_downloaded = ?, detail_scraped = 1, detail_scraped_at = ?
                 WHERE id = ?
             """, (
                 details.get('release_date', ''),
@@ -598,6 +612,7 @@ class DatabaseManager:
                 details.get('series', ''),
                 details.get('maker', ''),
                 details.get('director', ''),
+                1 if details.get('subtitle_downloaded', False) else 0,
                 now,
                 record_id
             ))
@@ -644,6 +659,86 @@ class DatabaseManager:
                 }
         except sqlite3.OperationalError:
             return {'total': 0, 'scraped': 0, 'unscraped': 0}
+    
+    def get_all_videos(self) -> List[Dict[str, Any]]:
+        """获取所有视频记录"""
+        try:
+            # 确保详情字段存在
+            self.ensure_video_details_columns()
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("""
+                    SELECT id, actress_name, video_title, video_url, video_id, subtitle_downloaded
+                    FROM videos 
+                    ORDER BY id
+                """)
+                
+                columns = ['id', 'actress_name', 'video_title', 'video_url', 'video_id', 'subtitle_downloaded']
+                return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        except sqlite3.OperationalError:
+            return []
+    
+    def update_subtitle_status(self, video_id: str, subtitle_status: int) -> bool:
+        """更新单个视频的字幕存在状态
+        Args:
+            video_id: 视频ID
+            subtitle_status: 字幕状态 (-1=未更新, 0=无字幕, 1=有字幕)
+        """
+        try:
+            # 确保详情字段存在
+            self.ensure_video_details_columns()
+            
+            # 使用更长的超时时间和重试机制来处理数据库锁定问题
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                        # 设置WAL模式以提高并发性能
+                        conn.execute("PRAGMA journal_mode=WAL")
+                        conn.execute("PRAGMA synchronous=NORMAL")
+                        conn.execute("PRAGMA cache_size=10000")
+                        conn.execute("PRAGMA temp_store=memory")
+                        
+                        cursor = conn.execute("""
+                            UPDATE videos 
+                            SET subtitle_downloaded = ?
+                            WHERE video_id = ?
+                        """, (subtitle_status, video_id))
+                        
+                        affected_rows = cursor.rowcount
+                        
+                        # 如果没有更新任何行，记录详细信息用于调试
+                        if affected_rows == 0:
+                            # 检查是否存在该video_id的记录
+                            cursor = conn.execute("SELECT COUNT(*) FROM videos WHERE video_id = ?", (video_id,))
+                            count = cursor.fetchone()[0]
+                            if count == 0:
+                                print(f"⚠️ 警告：video_id '{video_id}' 在数据库中不存在")
+                            else:
+                                print(f"⚠️ 警告：video_id '{video_id}' 存在但更新失败")
+                        
+                        return affected_rows > 0
+                        
+                except sqlite3.OperationalError as e:
+                    if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                        # 数据库锁定，等待后重试
+                        import time
+                        wait_time = 0.1 * (2 ** attempt)  # 指数退避
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        # 其他操作错误或最后一次重试失败
+                        print(f"❌ 数据库操作错误 (video_id: {video_id}, 尝试 {attempt+1}/{max_retries}): {e}")
+                        if attempt == max_retries - 1:
+                            return False
+                        
+        except Exception as e:
+            print(f"❌ 更新字幕状态时发生未知错误 (video_id: {video_id}): {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+            
+        return False
     
     # ==================== 统计和查询方法 ====================
     
