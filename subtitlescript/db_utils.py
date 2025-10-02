@@ -67,12 +67,18 @@ class DatabaseUtils:
                 conditions.append("actress_name LIKE ?")
                 params.append(f"%{actress_name.strip()}%")
             
-            # 字幕状态筛选
+            # 字幕状态筛选 - 修正逻辑
             if has_subtitle is not None:
                 if has_subtitle:
+                    # 只选择有字幕的video_id
                     conditions.append("subtitle_downloaded = 1")
                 else:
-                    conditions.append("(subtitle_downloaded = 0 OR subtitle_downloaded IS NULL)")
+                    # 排除任何有字幕记录的video_id - 使用子查询
+                    conditions.append("""video_id NOT IN (
+                        SELECT DISTINCT video_id 
+                        FROM videos 
+                        WHERE subtitle_downloaded = 1
+                    )""")
             
             # 构建SQL查询
             base_query = "SELECT DISTINCT video_id FROM videos"
@@ -145,9 +151,15 @@ class DatabaseUtils:
             
             if has_subtitle is not None:
                 if has_subtitle:
+                    # 只选择有字幕的video_id
                     conditions.append("subtitle_downloaded = 1")
                 else:
-                    conditions.append("(subtitle_downloaded = 0 OR subtitle_downloaded IS NULL)")
+                    # 排除任何有字幕记录的video_id - 使用子查询
+                    conditions.append("""video_id NOT IN (
+                        SELECT DISTINCT video_id 
+                        FROM videos 
+                        WHERE subtitle_downloaded = 1
+                    )""")
             
             # 构建SQL查询
             base_query = """

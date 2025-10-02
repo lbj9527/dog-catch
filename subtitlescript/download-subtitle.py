@@ -7,6 +7,7 @@ import argparse
 from playwright.sync_api import Playwright, sync_playwright, expect
 from playwright_stealth.stealth import stealth_sync
 from urllib.parse import urljoin, urlparse, quote_plus
+from database_manager import DatabaseManager
 
 # 全局搜索关键字配置：直接修改此处值即可
 #特殊番号FC2PPV-4620098
@@ -1047,8 +1048,11 @@ def _zone_b_handle_purchase(current_frame, current_page):
 def download_zone_c(page_or_frame, keyword, save_root=None, options=None):
     # 复用现有新作区逻辑（包含购买+下载）
     try:
-        find_and_print_priority_element(page_or_frame, section="新作区", do_purchase=True)
-        return {"success": True, "zone": "C", "message": "zone_c_flow_completed", "payload": None}
+        file_path = find_and_print_priority_element(page_or_frame, section="新作区", do_purchase=True)
+        if file_path:
+            return {"success": True, "zone": "C", "message": "download_completed", "payload": {"file_path": file_path}}
+        else:
+            return {"success": False, "zone": "C", "message": "download_failed", "payload": None}
     except Exception as e:
         print(f"❌ Zone C 执行失败: {e}")
         return {"success": False, "zone": "C", "message": str(e), "payload": None}
@@ -1271,22 +1275,82 @@ def download_zone_d(page_or_frame, keyword, save_root=None, options=None, verbos
         return {"success": False, "zone": "D", "message": f"download_failed: {e}", "payload": None}
 
 
+def update_subtitle_downloaded_if_file_ok(video_id, file_path):
+    """
+    检查文件是否存在且有效，如果是则更新数据库中该video_id的subtitle_downloaded状态为1
+    
+    Args:
+        video_id: 视频ID（大小写不敏感）
+        file_path: 下载的字幕文件路径
+        
+    Returns:
+        bool: 是否成功更新数据库
+    """
+    try:
+        # 检查文件是否存在且大小大于0
+        if not os.path.exists(file_path):
+            print(f"⚠️ 文件不存在，跳过数据库更新: {file_path}")
+            return False
+            
+        if os.path.getsize(file_path) <= 0:
+            print(f"⚠️ 文件大小为0，跳过数据库更新: {file_path}")
+            return False
+        
+        # 标准化video_id（去除空格，大小写不敏感处理）
+        normalized_video_id = video_id.strip().upper()
+        
+        # 使用显式数据库路径初始化DatabaseManager
+        db_manager = DatabaseManager("./database/actresses.db")
+        
+        # 更新数据库中所有匹配video_id的记录的subtitle_downloaded状态为1
+        success = db_manager.update_subtitle_status(normalized_video_id, 1)
+        
+        if success:
+            print(f"✅ 数据库更新成功: video_id={normalized_video_id}, subtitle_downloaded=1")
+        else:
+            print(f"⚠️ 数据库更新失败: video_id={normalized_video_id}")
+            
+        return success
+        
+    except Exception as e:
+        print(f"❌ 更新数据库时发生异常: {e}")
+        return False
+
+
 def download_handler(section, page_or_frame, keyword, save_root=None, options=None):
     if page_or_frame is None:
         return {"success": False, "zone": None, "message": "invalid_page_or_frame", "payload": None}
     zone = get_zone_code(section)
     try:
         if zone == "A":
-            return download_zone_a(page_or_frame, keyword, save_root, options)
+            result = download_zone_a(page_or_frame, keyword, save_root, options)
         elif zone == "B":
-            return download_zone_b(page_or_frame, keyword, save_root, options)
+            result = download_zone_b(page_or_frame, keyword, save_root, options)
         elif zone == "C":
-            return download_zone_c(page_or_frame, keyword, save_root, options)
+            result = download_zone_c(page_or_frame, keyword, save_root, options)
         elif zone == "D":
-            return download_zone_d(page_or_frame, keyword, save_root, options)
+            result = download_zone_d(page_or_frame, keyword, save_root, options)
         else:
             print(f"ℹ️ 未识别的专区: {section}")
             return {"success": False, "zone": zone, "message": "unknown_section", "payload": None}
+        
+        # 检查是否成功下载字幕文件并更新数据库
+        if (result.get("success") and 
+            result.get("message") == "download_completed" and 
+            result.get("payload")):
+            
+            # 从payload中获取文件路径
+            payload = result.get("payload", {})
+            file_path = payload.get("file_path") or payload.get("save_path")
+            
+            if file_path:
+                # 更新数据库中该video_id的subtitle_downloaded状态
+                update_subtitle_downloaded_if_file_ok(keyword, file_path)
+            else:
+                print(f"⚠️ 成功下载但未找到文件路径，跳过数据库更新")
+        
+        return result
+        
     except Exception as e:
         print(f"⚠️ 下载处理异常: {e}")
         return {"success": False, "zone": zone, "message": str(e), "payload": None}
@@ -1375,29 +1439,58 @@ def find_and_print_priority_element(root, section=None, do_purchase=False, searc
                                 target.click(timeout=5000, force=True)
                             except Exception as e:
                                 print(f"⚠️ 点击命中元素失败: {e}")
-                            modal_sel = "#fctrl_attachpay, em#return_attachpay[fwin='attachpay'], div.f_c >> #fctrl_attachpay"
+                            modal_sel = "#fctrl_attachpay, em#return_attachpay[fwin='attachpay'], div.f_c >> #fctrl_attachpay, div[id*='attachpay'], div[class*='attachpay'], .fwin_dialog, .fwin, [id*='fwin_dialog'], div.tip_4"
                             modal_found = False
                             try:
                                 hit_frame.wait_for_selector(modal_sel, timeout=5000)
                                 modal_found = True
                                 print("🪟 购买窗口已出现")
                             except Exception:
-                                print("ℹ️ 未检测到购买窗口，继续验证是否已购买/刷新")
+                                # 尝试更宽泛的窗口检测
+                                try:
+                                    # 检测是否有任何新出现的对话框或弹窗
+                                    alternative_selectors = [
+                                        "div[style*='display: block']",  # 显示的div
+                                        "div[style*='visibility: visible']",  # 可见的div
+                                        ".tip_4:not([style*='display: none'])",  # 显示的tip
+                                        "div:has-text('购买附件')",  # 包含购买附件文本的div
+                                        "button:has-text('购买附件')",  # 购买附件按钮
+                                    ]
+                                    for alt_sel in alternative_selectors:
+                                        try:
+                                            if hit_frame.locator(alt_sel).count() > 0:
+                                                modal_found = True
+                                                print(f"🪟 通过备用选择器检测到购买窗口: {alt_sel}")
+                                                break
+                                        except Exception:
+                                            continue
+                                except Exception:
+                                    pass
+                                
+                                if not modal_found:
+                                    print("ℹ️ 未检测到购买窗口，继续验证是否已购买/刷新")
                             if modal_found:
                                 btn_selectors = [
                                     "button[name='paysubmit'][value='true']",
                                     ".o.pns button:has-text('购买附件')",
                                     "button.pn.pnc:has-text('购买附件')",
+                                    "button:has-text('购买附件')",  # 通用购买附件按钮
+                                    "input[type='submit'][value*='购买']",  # 购买提交按钮
+                                    "a:has-text('购买附件')",  # 购买附件链接
+                                    "[onclick*='attachpay'] button",  # 包含attachpay的按钮
                                 ]
                                 btn_clicked = False
                                 for bs in btn_selectors:
                                     bl = hit_frame.locator(bs)
                                     if bl.count() > 0:
                                         try:
+                                            print(f"🔍 尝试点击购买按钮: {bs}")
                                             bl.first.click(timeout=5000, force=True)
                                             btn_clicked = True
+                                            print(f"✅ 成功点击购买按钮: {bs}")
                                             break
-                                        except Exception:
+                                        except Exception as e:
+                                            print(f"⚠️ 点击购买按钮失败 {bs}: {e}")
                                             continue
                                 if btn_clicked:
                                     print("🛒 已点击购买附件，等待页面刷新…")
@@ -1405,6 +1498,8 @@ def find_and_print_priority_element(root, section=None, do_purchase=False, searc
                                         (hit_frame.page if hasattr(hit_frame, 'page') else fr.page).wait_for_load_state('networkidle', timeout=10000)
                                     except Exception:
                                         hit_frame.wait_for_timeout(1500)
+                                else:
+                                    print("⚠️ 未找到可点击的购买按钮")
                             exists = still_exists_check(hit_frame, sel, kind, exts2)
                             if not exists:
                                 print("✅ 已执行购买，并成功")
@@ -1413,15 +1508,20 @@ def find_and_print_priority_element(root, section=None, do_purchase=False, searc
                                     success, save_path, msg = try_download_after_purchase(hit_frame, fr, keyword, skip_password_extraction=False)
                                     if success and save_path:
                                         print(f"✅ 新作区下载完成: {save_path}")
+                                        return save_path  # 返回下载成功的文件路径
                                     else:
                                         print(f"⚠️ 新作区下载失败: {msg}")
+                                        return None
                                 except Exception as e:
                                     print(f"⚠️ 下载处理异常: {e}")
+                                    return None
                             else:
                                 print("⚠️ 购买未完成或页面未刷新")
+                                return None
                     except Exception as e:
                         print(f"❌ 购买流程失败: {e}")
-                return
+                        return None
+                return None
             else:
               # 兜底：未找到任何匹配元素，说明附件已购买
               print("此附件已购买")
@@ -1434,9 +1534,9 @@ def find_and_print_priority_element(root, section=None, do_purchase=False, searc
                       raise
               else:  # 批量下载模式
                   print("ℹ️ 批量下载模式：跳过已购买的附件，继续处理下一个")
-                  return
+                  return None
 
-        return
+        return None
 
 
 def open_result_link(target_page, result, official_section, keyword=None):
