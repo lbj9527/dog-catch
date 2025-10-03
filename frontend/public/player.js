@@ -3781,6 +3781,14 @@ class VideoPlayer {
                     <div class="chat-search-container">
                         <input type="text" class="chat-search-input" placeholder="搜索聊天记录" id="chatSearch">
                         <input type="text" class="chat-search-input" placeholder="搜索联系人" id="contactSearch" style="display: none;">
+                        <button class="add-user-btn" id="addUserBtn" title="添加好友" aria-label="添加好友">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2"/>
+                                <line x1="19" y1="8" x2="19" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                <line x1="22" y1="11" x2="16" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                        </button>
                     </div>
                 </div>
 
@@ -5059,9 +5067,273 @@ class VideoPlayer {
     
     // ===== 表情、@用户、图片上传功能 =====
     
-
+    // 显示聊天添加好友弹窗
+    showChatAddUserModal() {
+        // 移除已存在的搜索弹窗
+        const existingModal = document.querySelector('.chat-add-user-modal');
+        if (existingModal) {
+            existingModal.remove();
+            return;
+        }
+        
+        const modal = document.createElement('div');
+        modal.className = 'chat-add-user-modal';
+        modal.innerHTML = `
+            <div class="chat-add-user-content">
+                <div class="chat-add-user-header">
+                    <h3>添加好友</h3>
+                    <button class="close-btn" aria-label="关闭">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="chat-add-user-body">
+                    <input type="text" class="chat-add-user-input" placeholder="搜索用户名或邮箱..." autocomplete="off">
+                    <div class="chat-add-user-results">
+                        <div class="loading-indicator">加载用户列表中...</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // 优先挂载到社交面板内，如果不可用则挂载到document.body
+        const socialPanelElement = this.socialPanel && this.socialPanel.getElement ? this.socialPanel.getElement() : null;
+        const parentElement = socialPanelElement || document.body;
+        parentElement.appendChild(modal);
+        
+        const searchInput = modal.querySelector('.chat-add-user-input');
+        const resultsContainer = modal.querySelector('.chat-add-user-results');
+        const closeBtn = modal.querySelector('.close-btn');
+        
+        // 用户列表状态管理
+        let currentPage = 1;
+        let isLoading = false;
+        let hasMore = true;
+        let isSearchMode = false;
+        let searchTimeout;
+        let selectedIndex = -1;
+        
+        // 关闭弹窗
+        const closeModal = () => {
+            modal.remove();
+        };
+        
+        closeBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+        
+        // 加载用户列表
+        const loadUsers = async (page = 1, search = '', append = false) => {
+            if (isLoading) return;
+            isLoading = true;
+            
+            try {
+                const url = search 
+                    ? `${API_BASE_URL}/api/users/search?q=${encodeURIComponent(search)}&limit=10`
+                    : `${API_BASE_URL}/api/users/list?page=${page}&limit=10`;
+                    
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${this.userToken}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const users = Array.isArray(data.users) ? data.users : [];
+                
+                if (search) {
+                    // 搜索模式
+                    if (users.length === 0) {
+                        resultsContainer.innerHTML = '<div class="no-users">未找到匹配的用户</div>';
+                    } else {
+                        resultsContainer.innerHTML = this.renderChatUserList(users);
+                    }
+                    hasMore = false;
+                } else {
+                    // 列表模式
+                    if (users.length === 0 && page === 1) {
+                        resultsContainer.innerHTML = '<div class="no-users">暂无用户</div>';
+                        hasMore = false;
+                    } else {
+                        const userListHtml = this.renderChatUserList(users);
+                        if (append) {
+                            const loadingIndicator = resultsContainer.querySelector('.loading-more');
+                            if (loadingIndicator) {
+                                loadingIndicator.remove();
+                            }
+                            resultsContainer.insertAdjacentHTML('beforeend', userListHtml);
+                        } else {
+                            resultsContainer.innerHTML = userListHtml;
+                        }
+                        
+                        hasMore = data.pagination ? data.pagination.hasMore : (users.length === 10);
+                        if (hasMore) {
+                            resultsContainer.insertAdjacentHTML('beforeend', '<div class="load-more-trigger"></div>');
+                        }
+                    }
+                }
+                
+                // 绑定用户选择事件
+                this.bindChatUserSelectionEvents(resultsContainer, closeModal);
+                
+            } catch (error) {
+                console.error('加载用户失败:', error);
+                const errorMsg = '<div class="search-error">加载失败，请稍后重试</div>';
+                if (append) {
+                    const loadingIndicator = resultsContainer.querySelector('.loading-more');
+                    if (loadingIndicator) {
+                        loadingIndicator.outerHTML = errorMsg;
+                    }
+                } else {
+                    resultsContainer.innerHTML = errorMsg;
+                }
+            } finally {
+                isLoading = false;
+            }
+        };
+        
+        // 搜索用户
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            selectedIndex = -1;
+            
+            clearTimeout(searchTimeout);
+            
+            if (query.length === 0) {
+                // 返回默认列表模式
+                isSearchMode = false;
+                currentPage = 1;
+                hasMore = true;
+                loadUsers(1);
+                return;
+            }
+            
+            if (query.length < 2) {
+                resultsContainer.innerHTML = '<div class="search-hint">请输入至少2个字符</div>';
+                return;
+            }
+            
+            isSearchMode = true;
+            searchTimeout = setTimeout(() => {
+                loadUsers(1, query);
+            }, 300);
+        });
+        
+        // 滚动加载更多
+        resultsContainer.addEventListener('scroll', () => {
+            if (isSearchMode || !hasMore || isLoading) return;
+            
+            const { scrollTop, scrollHeight, clientHeight } = resultsContainer;
+            if (scrollTop + clientHeight >= scrollHeight - 50) {
+                currentPage++;
+                resultsContainer.insertAdjacentHTML('beforeend', '<div class="loading-more">加载更多...</div>');
+                loadUsers(currentPage, '', true);
+            }
+        });
+        
+        // 键盘导航支持
+        searchInput.addEventListener('keydown', (e) => {
+            const userItems = resultsContainer.querySelectorAll('.chat-user-item');
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, userItems.length - 1);
+                this.updateChatUserSelection(userItems, selectedIndex);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, -1);
+                this.updateChatUserSelection(userItems, selectedIndex);
+            } else if (e.key === 'Enter' && selectedIndex >= 0) {
+                e.preventDefault();
+                const selectedUser = userItems[selectedIndex];
+                if (selectedUser) {
+                    selectedUser.click();
+                }
+            } else if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+        
+        // 初始加载默认用户列表
+        loadUsers(1);
+        
+        // 聚焦搜索框
+        searchInput.focus();
+    }
     
-    // 显示用户搜索弹窗
+    // 渲染聊天用户列表HTML
+    renderChatUserList(users) {
+        return users.map(user => `
+            <div class="chat-user-item" data-username="${user.username || user.email}" data-user-id="${user.id}">
+                <div class="user-avatar">${this.generateUserAvatar(user.username || user.email)}</div>
+                <div class="user-info">
+                    <div class="username">${this.escapeHtml(user.username || user.email)}</div>
+                    ${user.email && user.username ? `<div class="user-email">${this.escapeHtml(user.email)}</div>` : ''}
+                </div>
+                <div class="user-actions">
+                    <button class="add-chat-btn" title="开始聊天">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    // 绑定聊天用户选择事件
+    bindChatUserSelectionEvents(container, closeModal) {
+        const userItems = container.querySelectorAll('.chat-user-item');
+        
+        userItems.forEach(item => {
+            const addChatBtn = item.querySelector('.add-chat-btn');
+            const username = item.dataset.username;
+            const userId = item.dataset.userId;
+            
+            // 点击用户项或添加聊天按钮
+            const handleAddChat = (e) => {
+                e.stopPropagation();
+                this.addUserToChat(username, userId);
+                closeModal();
+            };
+            
+            item.addEventListener('click', handleAddChat);
+            addChatBtn.addEventListener('click', handleAddChat);
+        });
+    }
+    
+    // 更新聊天用户选择状态
+    updateChatUserSelection(userItems, selectedIndex) {
+        userItems.forEach((item, index) => {
+            if (index === selectedIndex) {
+                item.classList.add('selected');
+                item.scrollIntoView({ block: 'nearest' });
+            } else {
+                item.classList.remove('selected');
+            }
+        });
+    }
+    
+    // 添加好友到聊天
+    addUserToChat(username, userId) {
+        // 这里可以实现添加好友到聊天的逻辑
+        // 例如：创建新的聊天会话、添加到联系人列表等
+        console.log('添加好友到聊天:', { username, userId });
+        
+        // 显示成功提示
+        this.showToast(`已添加 ${username} 到聊天列表`, 'success');
+        
+        // 可以在这里触发聊天列表的更新
+        // this.updateChatList();
+    }
+
+    // 显示用户搜索弹窗（原有方法）
     showUserSearchModal() {
         // 移除已存在的搜索弹窗
         const existingModal = document.querySelector('.user-search-modal');
@@ -7537,6 +7809,14 @@ class VideoPlayer {
         if (contactSearch) {
             contactSearch.addEventListener('input', (e) => {
                 this.searchContacts(e.target.value, chatPanel);
+            });
+        }
+        
+        // 添加好友按钮
+        const addUserBtn = chatPanel.querySelector('#addUserBtn');
+        if (addUserBtn) {
+            addUserBtn.addEventListener('click', () => {
+                this.showChatAddUserModal();
             });
         }
     }
