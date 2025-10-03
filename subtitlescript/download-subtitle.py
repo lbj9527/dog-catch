@@ -561,10 +561,11 @@ def download_zone_a(page_or_frame, keyword, save_root=None, options=None):
     """
     Zone A（自译字幕区）下载逻辑：
     1. 检查购买主题按钮是否存在
-    2. 如果存在，执行购买流程（点击按钮→处理弹窗→提交表单）
-    3. 等待页面刷新
-    4. 点击下载链接并接管下载
-    5. 下载成功后提取解压密码并写入txt文件
+    2. 如果不存在，检查附件购买按钮是否存在
+    3. 如果存在任一购买按钮，执行相应购买流程
+    4. 等待页面刷新
+    5. 点击下载链接并接管下载
+    6. 下载成功后提取解压密码并写入txt文件
     """
     import os
     
@@ -587,26 +588,55 @@ def download_zone_a(page_or_frame, keyword, save_root=None, options=None):
         # 3. 检查购买主题按钮是否存在
         purchase_button_selector = "div.locked a.viewpay[title='购买主题']"
         
-        if not still_exists_check(current_frame, purchase_button_selector, "购买按钮", []):
-            print("ℹ️ 购买主题按钮不存在，主题已购买")
-            # 直接进入下载流程
-            return _zone_a_download_file(current_frame, current_page, keyword, save_root)
+        if still_exists_check(current_frame, purchase_button_selector, "购买主题按钮", []):
+            print("🛒 发现购买主题按钮，开始购买流程...")
+            success = _zone_a_handle_purchase(current_frame, current_page)
+            if not success:
+                return {"success": False, "zone": "A", "message": "purchase_failed", "payload": None}
+            
+            # 等待页面刷新
+            print("⏳ 等待页面刷新...")
+            try:
+                current_page.wait_for_load_state('networkidle', timeout=10000)
+            except Exception:
+                current_frame.wait_for_timeout(2000)
+        else:
+            # 4. 检查附件购买按钮是否存在
+            attachment_purchase_selectors = [
+                "a[href*='mod=misc'][href*='action=attachpay']",  # 标准附件购买链接
+                "ignore_js_op a[href*='attachpay']",              # ignore_js_op内的购买链接
+                "span[id^='attach_'] a[href*='attachpay']",       # span包装的附件购买链接
+                "a[href*='attachpay']",                           # 通用attachpay链接
+                "dl.tattl dd p.attnm a[href*='attachpay']"        # dl结构中的attachpay链接
+            ]
+            
+            attachment_purchase_found = False
+            for selector in attachment_purchase_selectors:
+                try:
+                    elements = current_frame.locator(selector)
+                    count = elements.count()
+                    if count > 0:
+                        print(f"🛒 发现 {count} 个附件购买按钮 ({selector})，开始购买流程...")
+                        success = _zone_a_handle_attachment_purchase(current_frame, current_page, selector)
+                        if success:
+                            attachment_purchase_found = True
+                            # 等待页面刷新
+                            print("⏳ 等待页面刷新...")
+                            try:
+                                current_page.wait_for_load_state('networkidle', timeout=10000)
+                            except Exception:
+                                current_frame.wait_for_timeout(2000)
+                            break
+                        else:
+                            return {"success": False, "zone": "A", "message": "attachment_purchase_failed", "payload": None}
+                except Exception as e:
+                    print(f"⚠️ 检查选择器 {selector} 时出错: {e}")
+                    continue
+            
+            if not attachment_purchase_found:
+                print("ℹ️ 未发现任何购买按钮，主题和附件已购买")
         
-        print("🛒 发现购买主题按钮，开始购买流程...")
-        
-        # 4. 执行购买流程
-        success = _zone_a_handle_purchase(current_frame, current_page)
-        if not success:
-            return {"success": False, "zone": "A", "message": "purchase_failed", "payload": None}
-        
-        # 5. 等待页面刷新
-        print("⏳ 等待页面刷新...")
-        try:
-            current_page.wait_for_load_state('networkidle', timeout=10000)
-        except Exception:
-            current_frame.wait_for_timeout(2000)
-        
-        # 6. 执行下载流程
+        # 5. 执行下载流程
         return _zone_a_download_file(current_frame, current_page, keyword, save_root)
         
     except Exception as e:
@@ -634,6 +664,61 @@ def _zone_a_handle_purchase(current_frame, current_page):
         
     except Exception as e:
         print(f"❌ 购买流程失败: {e}")
+        return False
+
+
+def _zone_a_handle_attachment_purchase(current_frame, current_page, selector):
+    """处理A区附件购买流程"""
+    try:
+        # 1. 点击附件购买按钮
+        purchase_button = current_frame.locator(selector)
+        purchase_button.first.click(timeout=5000)
+        print(f"✅ 已点击附件购买按钮 ({selector})")
+        
+        # 2. 等待购买确认弹窗出现
+        current_frame.wait_for_timeout(2000)  # 等待弹窗加载
+        
+        # 3. 查找并点击确认购买按钮
+        # 根据用户提供的HTML结构，确认按钮的准确选择器
+        confirm_selectors = [
+            "button[name='paysubmit'][value='true']:has-text('购买附件')",  # 最准确的选择器
+            "button[name='paysubmit']:has-text('购买附件')",               # 备用选择器1
+            "button.pn.pnc[name='paysubmit']",                           # 备用选择器2
+            "div.o.pns button[name='paysubmit']",                        # 备用选择器3
+            "button:has-text('购买附件')",                               # 通用选择器1
+            "button[name='paysubmit']",                                  # 通用选择器2
+            "form#payform button[name='paysubmit']",                     # 表单内的提交按钮
+            "input[type='submit'][value*='购买']",                       # 提交类型的购买按钮
+            "a:has-text('购买附件')",                                    # 链接形式的购买按钮
+        ]
+        
+        confirm_button = None
+        for confirm_selector in confirm_selectors:
+            try:
+                button = current_frame.locator(confirm_selector)
+                count = button.count()
+                if count > 0:
+                    confirm_button = button.first
+                    print(f"✅ 找到确认购买按钮: {confirm_selector} (共{count}个)")
+                    break
+            except Exception as e:
+                print(f"⚠️ 检查确认按钮选择器 {confirm_selector} 时出错: {e}")
+                continue
+        
+        if confirm_button:
+            confirm_button.click(timeout=5000)
+            print("✅ 已点击确认购买按钮")
+            
+            # 4. 等待购买完成
+            current_frame.wait_for_timeout(3000)  # 等待购买处理完成
+        else:
+            print("❌ 未找到确认购买按钮")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ 附件购买流程失败: {e}")
         return False
 
 
@@ -2135,7 +2220,143 @@ def extract_and_write_password(contexts, downloaded_path, timeout_ms=5000, verbo
                     if verbose:
                         print(f"⚠️ blockcode 方法时出错: {e}")
 
-                # 方法2: 回退到查找【解压密码】标签后的内容
+                # 方法2: 新增专门处理www.98T.la@xxx格式的提取逻辑
+                if not password:
+                    try:
+                        # 专门查找包含www.98T.la@xxx格式的解压密码
+                        td_selector = "xpath=//td[contains(@class,'t_f') and starts-with(@id,'postmessage_')]"
+                        td_elements = ctx.locator(td_selector)
+                        td_count = td_elements.count()
+                        
+                        if verbose:
+                            print(f"🔍 查找td元素: 找到 {td_count} 个postmessage td元素")
+                        
+                        for i in range(td_count):
+                            try:
+                                td_element = td_elements.nth(i)
+                                td_html = td_element.inner_html()
+                                td_text = td_element.inner_text()
+                                
+                                if verbose:
+                                    print(f"📄 检查td[{i}]是否包含解压密码...")
+                                
+                                # 检查是否包含解压密码相关文本
+                                if '解压密码' in td_text:
+                                    if verbose:
+                                        print(f"✅ td[{i}]包含解压密码文本")
+                                    
+                                    # 使用正则表达式提取解压密码
+                                    import re
+                                    
+                                    # 方法2: 处理链接+@+后缀的通用格式（如：<a href="bhsdsdhsh">76878hyg</a>@dekjcn1）
+                                    # 匹配模式：<a href="xxx">yyy</a>@zzz，只使用链接文本yyy和后缀zzz
+                                    # 优先使用此方法，因为它更精确地匹配解压密码格式
+                                    link_at_pattern = r'<a[^>]+href=["\']([^"\']*)["\'][^>]*>([^<]*)</a>@([a-zA-Z0-9]+)'
+                                    link_at_match = re.search(link_at_pattern, td_html)
+                                    if link_at_match:
+                                        href_value = link_at_match.group(1)
+                                        link_text = link_at_match.group(2)
+                                        suffix = link_at_match.group(3)
+                                        password = f"{link_text}@{suffix}"  # 只使用链接文本和后缀，不包含href值
+                                        if verbose:
+                                            print(f"✅ 从链接+@格式中提取到密码: {password}")
+                                            print(f"   - href: {href_value} (忽略), text: {link_text}, suffix: {suffix}")
+                                        break
+                                    
+                                    # 方法1: 匹配www.98T.la@xxx格式（改进版，避免匹配文件名）
+                                    # 只在没有找到更精确匹配时使用，并添加上下文检查
+                                    www_pattern = r'www\.98T\.la@([a-zA-Z0-9]+)'
+                                    
+                                    # 先从HTML中查找（处理链接格式），但排除下载链接
+                                    html_matches = re.finditer(www_pattern, td_html)
+                                    for match in html_matches:
+                                        full_match = match.group(0)
+                                        # 检查是否在下载链接的href属性中（如果是则跳过）
+                                        if not re.search(r'href=["\'][^"\']*' + re.escape(full_match), td_html):
+                                            password = full_match
+                                            if verbose:
+                                                print(f"✅ 从HTML中提取到www.98T.la格式密码: {password}")
+                                            break
+                                    else:
+                                        # 再从纯文本中查找（处理纯文本格式），但排除可能的文件名
+                                        text_matches = re.finditer(www_pattern, td_text)
+                                        for match in text_matches:
+                                            full_match = match.group(0)
+                                            # 检查前后文本，如果前面有文件扩展名相关字符则跳过
+                                            match_start = match.start()
+                                            context_before = td_text[max(0, match_start-10):match_start]
+                                            if not re.search(r'\.(rar|zip|7z)', context_before, re.IGNORECASE):
+                                                password = full_match
+                                                if verbose:
+                                                    print(f"✅ 从文本中提取到www.98T.la格式密码: {password}")
+                                                break
+                                        else:
+                                            continue  # 没有找到合适的匹配，继续下一个方法
+                                        break  # 找到了密码，跳出外层循环
+                                    
+                                    # 方法2.1: 处理链接+直接后缀格式（如：<a href="http://www.98T.la">GWHHTH</a>3DFF3G43）
+                                    # 匹配模式：<a href="xxx">yyy</a>zzz（没有@符号）
+                                    link_direct_pattern = r'<a[^>]+href=["\']([^"\']*)["\'][^>]*>([^<]*)</a>([a-zA-Z0-9]+)'
+                                    link_direct_match = re.search(link_direct_pattern, td_html)
+                                    if link_direct_match:
+                                        href_value = link_direct_match.group(1)
+                                        link_text = link_direct_match.group(2)
+                                        suffix = link_direct_match.group(3)
+                                        password = f"{link_text}{suffix}"
+                                        if verbose:
+                                            print(f"✅ 从链接+直接后缀格式中提取到密码: {password}")
+                                            print(f"   - href: {href_value}, text: {link_text}, suffix: {suffix}")
+                                        break
+                                    
+                                    # 方法2.2: 处理纯链接格式（如：<a href="http://www.98T.la">www.98T.la</a>）
+                                    # 匹配模式：<a href="xxx">yyy</a>，只使用链接文本yyy作为密码
+                                    pure_link_pattern = r'<a[^>]+href=["\']([^"\']*)["\'][^>]*>([^<]*)</a>'
+                                    pure_link_match = re.search(pure_link_pattern, td_html)
+                                    if pure_link_match:
+                                        href_value = pure_link_match.group(1)
+                                        link_text = pure_link_match.group(2)
+                                        # 只有当链接文本看起来像密码时才使用
+                                        if link_text and (link_text.startswith('www.98T.la') or len(link_text) > 5):
+                                            password = link_text
+                                            if verbose:
+                                                print(f"✅ 从纯链接格式中提取到密码: {password}")
+                                                print(f"   - href: {href_value} (忽略), text: {link_text}")
+                                            break
+                                    
+                                    # 方法3: 处理www.98T.la分离格式
+                                    if 'www.98T.la' in td_text and '@' in td_text:
+                                        # 查找www.98T.la链接后面的@xxx部分
+                                        link_pattern = r'www\.98T\.la.*?@([a-zA-Z0-9]+)'
+                                        link_match = re.search(link_pattern, td_text, re.DOTALL)
+                                        if link_match:
+                                            password = f"www.98T.la@{link_match.group(1)}"
+                                            if verbose:
+                                                print(f"✅ 从www.98T.la分离格式中提取到密码: {password}")
+                                            break
+                                        
+                                        # 尝试更宽泛的匹配：查找@符号后的内容
+                                        at_pattern = r'@([a-zA-Z0-9]+)'
+                                        at_matches = re.findall(at_pattern, td_text)
+                                        if at_matches and 'www.98T.la' in td_text:
+                                            # 取第一个@后的内容作为密码后缀
+                                            password = f"www.98T.la@{at_matches[0]}"
+                                            if verbose:
+                                                print(f"✅ 从www.98T.la@符号匹配中提取到密码: {password}")
+                                            break
+                                    
+                                    if verbose:
+                                        print(f"⚠️ td[{i}]包含解压密码文本但未找到www.98T.la@xxx格式")
+                                        
+                            except Exception as e:
+                                if verbose:
+                                    print(f"⚠️ 处理td[{i}]时出错: {e}")
+                                continue
+                                
+                    except Exception as e:
+                        if verbose:
+                            print(f"⚠️ www.98T.la格式提取方法出错: {e}")
+
+                # 方法3: 回退到查找【解压密码】标签后的内容（原有逻辑）
                 if not password:
                     # 尝试多种XPath选择器，包括更宽泛的搜索
                     xpath_selectors = [
