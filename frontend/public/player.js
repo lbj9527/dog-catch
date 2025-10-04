@@ -59,6 +59,14 @@ class VideoPlayer {
             hasMore: true,
             loading: false
         };
+        // 好友申请相关状态（初始化阶段建立，避免未定义）
+        this.friendRequestState = {
+            requests: [],
+            unreadCount: 0,
+            loading: false,
+            lastFetchTime: null,
+            pollingInterval: null
+        };
         this.repliesExpanded = new Set(); // 已展开的评论ID集合
         
         // 新增：社交面板实例
@@ -1677,6 +1685,8 @@ class VideoPlayer {
                 } else if (typeof this.fetchLikeStatus === 'function') {
                     this.fetchLikeStatus(true);
                 }
+                // 启动好友申请轮询
+                this.startFriendRequestPolling();
                 if (this.currentVideoId) this.loadSubtitleVariants();
             } catch (e) {
                 const msg = e && e.message ? e.message : '登录失败';
@@ -2050,6 +2060,18 @@ class VideoPlayer {
             limit: 10,
             loading: false,
             hasMore: true
+        };
+        
+        // 停止好友申请轮询
+        this.stopFriendRequestPolling();
+        
+        // 重置好友申请状态
+        this.friendRequestState = {
+            requests: [],
+            unreadCount: 0,
+            loading: false,
+            lastFetchTime: 0,
+            pollingInterval: null
         };
         
         // 关闭社交面板（如果已打开）
@@ -3776,6 +3798,7 @@ class VideoPlayer {
                 <div class="chat-tab-nav">
                     <div class="chat-tab-buttons">
                         <button class="chat-tab-btn active" data-tab="chats">聊天</button>
+                        <button class="chat-tab-btn" data-tab="groups">群组</button>
                         <button class="chat-tab-btn" data-tab="contacts">通讯录</button>
                     </div>
                     <div class="chat-search-container">
@@ -3811,23 +3834,6 @@ class VideoPlayer {
                                 </div>
                             </div>
 
-                            <div class="chat-item" data-chat-id="2" data-name="前端开发群" data-type="group">
-                                <div class="chat-item-content">
-                                    <div class="chat-avatar">前</div>
-                                    <div class="chat-item-info">
-                                        <div class="chat-item-name">
-                                            前端开发群
-                                            <span class="group-tag">群</span>
-                                        </div>
-                                        <div class="chat-item-message">李四: 今天的需求改动有点大</div>
-                                    </div>
-                                    <div class="chat-item-meta">
-                                        <div class="chat-item-time">13:45</div>
-                                        <div class="unread-badge">5</div>
-                                    </div>
-                                </div>
-                            </div>
-
                             <div class="chat-item" data-chat-id="3" data-name="王五" data-type="private">
                                 <div class="chat-item-content">
                                     <div class="chat-avatar">王</div>
@@ -3855,6 +3861,70 @@ class VideoPlayer {
                                 </div>
                             </div>
 
+                            <div class="chat-item" data-chat-id="6" data-name="孙七" data-type="private">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">孙</div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">孙七</div>
+                                        <div class="chat-item-message">周末一起看电影吗？</div>
+                                    </div>
+                                    <div class="chat-item-meta">
+                                        <div class="chat-item-time">10:45</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="chat-item" data-chat-id="8" data-name="周八" data-type="private">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">周</div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">周八</div>
+                                        <div class="chat-item-message">项目进度如何了？</div>
+                                    </div>
+                                    <div class="chat-item-meta">
+                                        <div class="chat-item-time">昨天</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 群组列表页面 -->
+                    <div class="chat-page" id="groupsPage">
+                        <div class="chat-list-container" id="groupsList">
+                            <!-- 空状态占位 -->
+                            <div class="empty-state" id="groupsEmptyState">
+                                <div class="empty-state-icon">
+                                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2"/>
+                                        <path d="m22 11-3-3m0 0-3 3m3-3v8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </div>
+                                <div class="empty-state-text">暂无群聊</div>
+                                <div class="empty-state-action">
+                                    <button class="empty-state-btn" disabled>创建群聊</button>
+                                </div>
+                            </div>
+                            
+                            <!-- 群聊项将在这里显示 -->
+                            <div class="chat-item" data-chat-id="2" data-name="前端开发群" data-type="group">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar">前</div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">
+                                            前端开发群
+                                            <span class="group-tag">群</span>
+                                        </div>
+                                        <div class="chat-item-message">李四: 今天的需求改动有点大</div>
+                                    </div>
+                                    <div class="chat-item-meta">
+                                        <div class="chat-item-time">13:45</div>
+                                        <div class="unread-badge">5</div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="chat-item" data-chat-id="5" data-name="产品讨论组" data-type="group">
                                 <div class="chat-item-content">
                                     <div class="chat-avatar">产</div>
@@ -3868,19 +3938,6 @@ class VideoPlayer {
                                     <div class="chat-item-meta">
                                         <div class="chat-item-time">11:30</div>
                                         <div class="unread-badge">3</div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="chat-item" data-chat-id="6" data-name="孙七" data-type="private">
-                                <div class="chat-item-content">
-                                    <div class="chat-avatar">孙</div>
-                                    <div class="chat-item-info">
-                                        <div class="chat-item-name">孙七</div>
-                                        <div class="chat-item-message">周末一起看电影吗？</div>
-                                    </div>
-                                    <div class="chat-item-meta">
-                                        <div class="chat-item-time">10:45</div>
                                     </div>
                                 </div>
                             </div>
@@ -3901,25 +3958,35 @@ class VideoPlayer {
                                     </div>
                                 </div>
                             </div>
-
-                            <div class="chat-item" data-chat-id="8" data-name="周八" data-type="private">
-                                <div class="chat-item-content">
-                                    <div class="chat-avatar">周</div>
-                                    <div class="chat-item-info">
-                                        <div class="chat-item-name">周八</div>
-                                        <div class="chat-item-message">项目进度如何了？</div>
-                                    </div>
-                                    <div class="chat-item-meta">
-                                        <div class="chat-item-time">昨天</div>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                     </div>
 
                     <!-- 通讯录页面 -->
                     <div class="chat-page" id="contactsPage">
                         <div class="chat-list-container" id="contactsList">
+                            <!-- 新的朋友入口 -->
+                            <div class="contact-item friend-requests-entry" id="friendRequestsEntry">
+                                <div class="chat-item-content">
+                                    <div class="chat-avatar friend-requests-avatar">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2"/>
+                                            <path d="m22 11-3-3m0 0-3 3m3-3v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </div>
+                                    <div class="chat-item-info">
+                                        <div class="chat-item-name">新的朋友</div>
+                                        <div class="chat-item-status" id="friendRequestsStatus">暂无新申请</div>
+                                    </div>
+                                    <!-- 固定图标 -->
+                                    <div class="pin-icon">
+                                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M12 4l-8 8h5v8h6v-8h5l-8-8z" fill="currentColor"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="contact-item" data-user-id="1" data-name="张三">
                                 <div class="chat-item-content">
                                     <div class="chat-avatar">
@@ -4092,6 +4159,24 @@ class VideoPlayer {
                                 </div>
                             </div>
                             <button class="greet-btn" id="greetBtn">打招呼</button>
+                        </div>
+                    </div>
+
+                    <!-- 好友申请列表页面 -->
+                    <div class="chat-page" id="friendRequestsPage">
+                        <div class="chat-header">
+                            <button class="chat-back-btn" id="friendRequestsBackBtn">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <h3>新的朋友</h3>
+                        </div>
+                        <div class="friend-requests-list" id="friendRequestsList">
+                            <!-- 好友申请条目将动态生成 -->
+                            <div class="friend-requests-empty" id="friendRequestsEmpty">
+                                <div class="empty-message">暂无好友申请</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -5277,6 +5362,14 @@ class VideoPlayer {
                     ${user.email && user.username ? `<div class="user-email">${this.escapeHtml(user.email)}</div>` : ''}
                 </div>
                 <div class="user-actions">
+                    <button class="add-friend-btn" title="加为好友">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <circle cx="8.5" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <line x1="20" y1="8" x2="20" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <line x1="23" y1="11" x2="17" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
                     <button class="add-chat-btn" title="开始聊天">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -5293,6 +5386,7 @@ class VideoPlayer {
         
         userItems.forEach(item => {
             const addChatBtn = item.querySelector('.add-chat-btn');
+            const addFriendBtn = item.querySelector('.add-friend-btn');
             const username = item.dataset.username;
             const userId = item.dataset.userId;
             
@@ -5303,8 +5397,15 @@ class VideoPlayer {
                 closeModal();
             };
             
+            // 点击添加好友按钮
+            const handleAddFriend = (e) => {
+                e.stopPropagation();
+                this.addFriend(username, userId);
+            };
+            
             item.addEventListener('click', handleAddChat);
             addChatBtn.addEventListener('click', handleAddChat);
+            addFriendBtn.addEventListener('click', handleAddFriend);
         });
     }
     
@@ -5331,6 +5432,32 @@ class VideoPlayer {
         
         // 可以在这里触发聊天列表的更新
         // this.updateChatList();
+    }
+
+    // 添加好友
+    addFriend(username, userId) {
+        // 检查是否已登录
+        if (!this.isLoggedIn()) {
+            this.showToast('请先登录后再添加好友', 'error');
+            return;
+        }
+
+        // 检查是否是自己
+        const currentUserId = this.getCurrentUserId();
+        if (userId === currentUserId) {
+            this.showToast('不能添加自己为好友', 'error');
+            return;
+        }
+
+        // 这里可以实现添加好友的逻辑
+        // 例如：发送好友请求、添加到好友列表等
+        console.log('添加好友:', { username, userId });
+        
+        // 显示成功提示
+        this.showToast(`已向 ${username} 发送好友请求`, 'success');
+        
+        // 可以在这里调用API发送好友请求
+        // this.sendFriendRequest(userId);
     }
 
     // 显示用户搜索弹窗（原有方法）
@@ -7712,7 +7839,17 @@ class VideoPlayer {
         this.chatState = {
             currentPage: 'chats',
             currentChat: null,
-            currentProfile: null
+            currentProfile: null,
+            previousPage: null
+        };
+
+        // 初始化好友申请状态
+        this.friendRequestState = {
+            requests: [],
+            unreadCount: 0,
+            loading: false,
+            lastFetchTime: null,
+            pollingInterval: null
         };
         
         // 绑定事件监听器
@@ -7759,9 +7896,18 @@ class VideoPlayer {
         const contactItems = chatPanel.querySelectorAll('.contact-item');
         contactItems.forEach(item => {
             item.addEventListener('click', (e) => {
+                // 跳过"新的朋友"入口，它有自己的事件处理
+                if (item.id === 'friendRequestsEntry') {
+                    return;
+                }
+                
                 const userId = e.currentTarget.dataset.userId;
                 const name = e.currentTarget.dataset.name;
-                this.openProfile(userId, name, chatPanel);
+                
+                // 确保userId和name都存在才调用openProfile
+                if (userId && name) {
+                    this.openProfile(userId, name, chatPanel);
+                }
             });
         });
 
@@ -7819,6 +7965,22 @@ class VideoPlayer {
                 this.showChatAddUserModal();
             });
         }
+
+        // 新的朋友入口点击
+        const newFriendsEntry = chatPanel.querySelector('#friendRequestsEntry');
+        if (newFriendsEntry) {
+            newFriendsEntry.addEventListener('click', () => {
+                this.showFriendRequestsPage(chatPanel);
+            });
+        }
+
+        // 好友申请页面返回按钮
+        const friendRequestsBackBtn = chatPanel.querySelector('#friendRequestsBackBtn');
+        if (friendRequestsBackBtn) {
+            friendRequestsBackBtn.addEventListener('click', () => {
+                this.goBackFromFriendRequests(chatPanel);
+            });
+        }
     }
     
     // 切换聊天标签页
@@ -7836,6 +7998,9 @@ class VideoPlayer {
         if (tab === 'chats') {
             if (chatSearch) chatSearch.style.display = 'block';
             if (contactSearch) contactSearch.style.display = 'none';
+        } else if (tab === 'groups') {
+            if (chatSearch) chatSearch.style.display = 'block';
+            if (contactSearch) contactSearch.style.display = 'none';
         } else if (tab === 'contacts') {
             if (chatSearch) chatSearch.style.display = 'none';
             if (contactSearch) contactSearch.style.display = 'block';
@@ -7850,9 +8015,17 @@ class VideoPlayer {
         if (tab === 'chats') {
             const chatsPage = chatPanel.querySelector('#chatsPage');
             if (chatsPage) chatsPage.classList.add('active');
+        } else if (tab === 'groups') {
+            const groupsPage = chatPanel.querySelector('#groupsPage');
+            if (groupsPage) groupsPage.classList.add('active');
         } else if (tab === 'contacts') {
             const contactsPage = chatPanel.querySelector('#contactsPage');
             if (contactsPage) contactsPage.classList.add('active');
+            
+            // 当切换到通讯录页面时，更新好友申请数量
+            if (this.isLoggedIn()) {
+                this.fetchFriendRequestsCount();
+            }
         }
 
         this.chatState.currentPage = tab;
@@ -7861,6 +8034,11 @@ class VideoPlayer {
     // 打开聊天界面
     openChat(chatId, name, type, chatPanel) {
         this.chatState.currentChat = { id: chatId, name, type };
+        
+        // 如果是群聊，自动切换到群组Tab
+        if (type === 'group') {
+            this.switchChatTab('groups', chatPanel);
+        }
         
         // 更新聊天界面信息
         const chatName = chatPanel.querySelector('#chatName');
@@ -7918,7 +8096,489 @@ class VideoPlayer {
             }, 300);
         }, 100);
     }
+
+    // 确保聊天项存在于聊天列表中
+    ensureChatItemExists(chatId, name, type, chatPanel) {
+        try {
+            const chatsList = chatPanel.querySelector('#chatsList');
+            if (!chatsList) {
+                console.error('找不到聊天列表容器');
+                return;
+            }
+
+            // 检查是否已存在该聊天项
+            const existingItem = chatsList.querySelector(`[data-chat-id="${chatId}"]`);
+            if (existingItem) {
+                // 如果已存在，更新名称并移到顶部
+                const nameElement = existingItem.querySelector('.chat-item-name');
+                if (nameElement) {
+                    nameElement.textContent = name;
+                }
+                // 移到列表顶部
+                chatsList.prepend(existingItem);
+                return existingItem;
+            }
+
+            // 创建新的聊天项
+            const chatItem = document.createElement('div');
+            chatItem.className = 'chat-item';
+            chatItem.setAttribute('data-chat-id', chatId);
+            chatItem.setAttribute('data-name', name);
+            chatItem.setAttribute('data-type', type);
+
+            // 设置聊天项的HTML结构
+            chatItem.innerHTML = `
+                <div class="chat-item-content">
+                    <div class="chat-avatar">
+                        <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMjAiIGZpbGw9IiNmMGYwZjAiLz4KPHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4PSI4IiB5PSI4Ij4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSIjOTk5Ii8+CjxwYXRoIGQ9Ik0xMiAxNEM5LjMzIDEzLjk5IDcuMDEgMTUuNjIgNiAxOEMxMC4wMSAyMCAxMy45OSAyMCAxOCAxOEMxNi45OSAxNS42MiAxNC42NyAxMy45OSAxMiAxNFoiIGZpbGw9IiM5OTkiLz4KPC9zdmc+Cjwvc3ZnPgo=" alt="${name}" style="width: 40px; height: 40px; border-radius: 50%;">
+                    </div>
+                    <div class="chat-item-info">
+                        <div class="chat-item-name">${name}</div>
+                        <div class="chat-item-message">开始聊天吧...</div>
+                    </div>
+                    <div class="chat-item-meta">
+                        <div class="chat-item-time">刚刚</div>
+                    </div>
+                </div>
+            `;
+
+            // 为新创建的聊天项绑定点击事件
+            chatItem.addEventListener('click', () => {
+                this.openChat(chatId, name, type, chatPanel);
+            });
+
+            // 插入到列表顶部
+            chatsList.prepend(chatItem);
+            
+            return chatItem;
+
+        } catch (error) {
+            console.error('创建聊天项失败:', error);
+        }
+    }
+
+    // 与好友开始聊天
+    openChatWithFriend(userId, username) {
+        if (!userId || !username) {
+            console.error('缺少用户信息，无法打开聊天界面');
+            this.showToast('用户信息不完整，无法打开聊天', 'error');
+            return;
+        }
+
+        try {
+            // 获取聊天面板
+            const chatPanel = this.socialPanel.getElement();
+            if (!chatPanel) {
+                console.error('找不到聊天面板');
+                this.showToast('聊天界面加载失败', 'error');
+                return;
+            }
+
+            // 确保聊天项存在于列表中
+            this.ensureChatItemExists(userId, username, 'private', chatPanel);
+
+            // 切换到聊天标签页
+            this.switchChatTab('chats', chatPanel);
+
+            // 延迟一下再打开聊天界面，让tab切换动画完成
+            setTimeout(() => {
+                this.openChat(userId, username, 'private', chatPanel);
+            }, 100);
+
+        } catch (error) {
+            console.error('打开聊天界面失败:', error);
+            this.showToast('打开聊天失败，请稍后重试', 'error');
+        }
+    }
     
+    // 显示好友申请页面
+    showFriendRequestsPage(chatPanel) {
+        this.chatState.previousPage = this.chatState.currentPage;
+        this.showChatPage('friendRequestsPage', chatPanel);
+        this.loadFriendRequests(chatPanel);
+    }
+
+    // 从好友申请页面返回
+    goBackFromFriendRequests(chatPanel) {
+        if (this.chatState.previousPage === 'contacts') {
+            this.showChatPage('contactsPage', chatPanel);
+        } else {
+            this.showChatPage('contactsPage', chatPanel); // 默认返回通讯录
+        }
+        this.chatState.previousPage = null;
+    }
+
+    // 加载好友申请列表
+    async loadFriendRequests(chatPanel) {
+        const friendRequestsList = chatPanel.querySelector('#friendRequestsList');
+        const friendRequestsEmpty = chatPanel.querySelector('#friendRequestsEmpty');
+        
+        if (!friendRequestsList || !friendRequestsEmpty) return;
+
+        // 显示加载状态
+        friendRequestsList.innerHTML = '<div class="loading-spinner"></div>';
+        friendRequestsEmpty.style.display = 'none';
+
+        try {
+            // 模拟加载好友申请数据
+            const friendRequests = await this.fetchFriendRequests();
+            
+            if (friendRequests.length === 0) {
+                friendRequestsList.innerHTML = '';
+                friendRequestsEmpty.style.display = 'flex';
+            } else {
+                friendRequestsEmpty.style.display = 'none';
+                this.renderFriendRequests(friendRequestsList, friendRequests);
+            }
+
+            // 更新入口状态显示 - 计算待处理的申请数量
+            const pendingRequests = friendRequests.filter(req => req.status === 'pending');
+            this.friendRequestState.unreadCount = pendingRequests.length;
+            this.updateNewFriendsBadge();
+            
+        } catch (error) {
+            console.error('加载好友申请失败:', error);
+            friendRequestsList.innerHTML = '<div class="error-message">加载失败，请稍后重试</div>';
+            friendRequestsEmpty.style.display = 'none';
+        }
+    }
+
+    // 获取好友申请数据（模拟）
+    async fetchFriendRequests() {
+        // 模拟API延迟
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // 模拟好友申请数据
+        const mockRequests = [
+            {
+                id: 'req_001',
+                userId: 'user_123',
+                username: '小明同学',
+                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=xiaoming',
+                message: '我们一起学习前端开发吧！',
+                timestamp: Date.now() - 2 * 60 * 60 * 1000, // 2小时前
+                status: 'pending'
+            },
+            {
+                id: 'req_002',
+                userId: 'user_456',
+                username: '前端小白',
+                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=frontend',
+                message: '看到你的字幕作品很棒，想和你交流学习',
+                timestamp: Date.now() - 5 * 60 * 60 * 1000, // 5小时前
+                status: 'pending'
+            },
+            {
+                id: 'req_003',
+                userId: 'user_789',
+                username: '代码爱好者',
+                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=coder',
+                message: '希望能成为朋友，一起进步！',
+                timestamp: Date.now() - 24 * 60 * 60 * 1000, // 1天前
+                status: 'pending'
+            }
+        ];
+        
+        // 更新本地状态
+        this.friendRequestState.requests = mockRequests;
+        this.friendRequestState.unreadCount = mockRequests.length;
+        this.friendRequestState.lastFetchTime = Date.now();
+        
+        return this.friendRequestState.requests;
+    }
+
+    // 渲染好友申请列表
+    renderFriendRequests(container, requests) {
+        const html = requests.map(request => {
+            const timeStr = this.formatFriendRequestTime(request.timestamp);
+            
+            let actionHtml = '';
+            let itemClass = 'friend-request-item';
+            let dataAttributes = `data-request-id="${request.id}"`;
+            
+            if (request.status === 'pending') {
+                actionHtml = `
+                    <div class="friend-request-actions">
+                        <button class="accept-btn" data-request-id="${request.id}">接受</button>
+                        <button class="reject-btn" data-request-id="${request.id}">拒绝</button>
+                    </div>
+                `;
+            } else {
+                const statusClass = `status-${request.status}`;
+                const statusText = request.status === 'accepted' ? '已接受' : '已拒绝';
+                actionHtml = `<div class="friend-request-status ${statusClass}">${statusText}</div>`;
+                
+                // 如果是已接受状态，添加clickable类和用户数据属性
+                if (request.status === 'accepted') {
+                    itemClass += ' clickable';
+                    dataAttributes += ` data-user-id="${request.userId || request.id}" data-username="${request.username}"`;
+                }
+            }
+
+            return `
+                <div class="${itemClass}" ${dataAttributes}>
+                    <div class="friend-request-content">
+                        <div class="friend-request-avatar">
+                            <img src="${request.avatar}" alt="${request.username}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMjAiIGZpbGw9IiNmM2Y0ZjYiLz4KPHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4PSI4IiB5PSI4Ij4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSIjOWNhM2FmIi8+CjxwYXRoIGQ9Ik0xMiAxNEM5LjMzIDEzLjk5IDcuMDEgMTUuNjIgNiAxOEMxMC4wMSAyMCAxMy45OSAyMCAxOCAxOEMxNi45OSAxNS42MiAxNC42NyAxMy45OSAxMiAxNFoiIGZpbGw9IiM5Y2EzYWYiLz4KPC9zdmc+Cjwvc3ZnPgo='">
+                        </div>
+                        <div class="friend-request-info">
+                            <div class="friend-request-name">${request.username}</div>
+                            <div class="friend-request-message">${request.message}</div>
+                            <div class="friend-request-time">${timeStr}</div>
+                        </div>
+                        ${actionHtml}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = html;
+
+        // 绑定操作按钮事件
+        this.bindFriendRequestActions(container);
+    }
+
+    // 绑定好友申请操作事件
+    bindFriendRequestActions(container) {
+        const acceptBtns = container.querySelectorAll('.accept-btn');
+        const rejectBtns = container.querySelectorAll('.reject-btn');
+
+        acceptBtns.forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const requestId = btn.dataset.requestId;
+                await this.handleFriendRequestAction(requestId, 'accept', btn);
+            });
+        });
+
+        rejectBtns.forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const requestId = btn.dataset.requestId;
+                await this.handleFriendRequestAction(requestId, 'reject', btn);
+            });
+        });
+
+        // 为已接受的好友申请卡片绑定点击事件
+        const clickableItems = container.querySelectorAll('.friend-request-item.clickable');
+        clickableItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                // 确保不是点击按钮或状态区域
+                if (e.target.closest('.friend-request-actions') || e.target.closest('.friend-request-status')) {
+                    return;
+                }
+                
+                const userId = item.getAttribute('data-user-id');
+                const username = item.getAttribute('data-username');
+                
+                if (userId && username) {
+                    this.openChatWithFriend(userId, username);
+                } else {
+                    console.warn('缺少用户信息，无法打开聊天界面');
+                }
+            });
+        });
+    }
+
+    // 处理好友申请操作
+    async handleFriendRequestAction(requestId, action, buttonElement) {
+        try {
+            // 禁用按钮防止重复点击
+            buttonElement.disabled = true;
+            buttonElement.textContent = action === 'accept' ? '处理中...' : '处理中...';
+
+            // 这里应该是实际的API调用
+            await this.processFriendRequest(requestId, action);
+
+            // 更新UI
+            const requestItem = buttonElement.closest('.friend-request-item');
+            const actionsContainer = requestItem.querySelector('.friend-request-actions');
+            
+            const statusClass = `status-${action === 'accept' ? 'accepted' : 'rejected'}`;
+            const statusText = action === 'accept' ? '已接受' : '已拒绝';
+            
+            actionsContainer.outerHTML = `<div class="friend-request-status ${statusClass}">${statusText}</div>`;
+
+            // 如果是接受操作，添加clickable类和数据属性，并绑定点击事件
+            if (action === 'accept') {
+                requestItem.classList.add('clickable');
+                
+                // 从好友申请数据中获取用户信息
+                const request = this.friendRequestState.requests.find(req => req.id === requestId);
+                if (request) {
+                    requestItem.setAttribute('data-user-id', request.userId || request.id);
+                    requestItem.setAttribute('data-username', request.username);
+                    
+                    // 为新的clickable卡片绑定点击事件
+                    requestItem.addEventListener('click', (e) => {
+                        const userId = requestItem.getAttribute('data-user-id');
+                        const username = requestItem.getAttribute('data-username');
+                        this.openChatWithFriend(userId, username);
+                    });
+                }
+            }
+
+            // 显示成功提示
+            this.showToast(action === 'accept' ? '已接受好友申请' : '已拒绝好友申请', 'success');
+
+            // 更新新朋友入口的未读数量
+            this.updateNewFriendsBadge();
+
+        } catch (error) {
+            console.error('处理好友申请失败:', error);
+            this.showToast('操作失败，请稍后重试', 'error');
+            
+            // 恢复按钮状态
+            buttonElement.disabled = false;
+            buttonElement.textContent = action === 'accept' ? '接受' : '拒绝';
+        }
+    }
+
+    // 处理好友申请（模拟数据）
+    async processFriendRequest(requestId, action) {
+        // 模拟API延迟
+        await new Promise(resolve => setTimeout(resolve, 800));
+        
+        // 模拟成功响应
+        const result = {
+            success: true,
+            message: action === 'accept' ? '已接受好友申请' : '已拒绝好友申请',
+            requestId: requestId,
+            action: action
+        };
+        
+        // 更新本地状态
+        const requestIndex = this.friendRequestState.requests.findIndex(req => req.id === requestId);
+        if (requestIndex !== -1) {
+            this.friendRequestState.requests[requestIndex].status = action === 'accept' ? 'accepted' : 'rejected';
+            
+            // 立即重新计算未读数量
+            const unreadCount = this.friendRequestState.requests.filter(req => req.status === 'pending').length;
+            this.friendRequestState.unreadCount = unreadCount;
+        }
+        
+        return result;
+    }
+
+    // 格式化好友申请时间
+    formatFriendRequestTime(time) {
+        const now = new Date();
+        const diff = now - time;
+        const minutes = Math.floor(diff / (1000 * 60));
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+        if (minutes < 1) return '刚刚';
+        if (minutes < 60) return `${minutes}分钟前`;
+        if (hours < 24) return `${hours}小时前`;
+        if (days < 7) return `${days}天前`;
+        
+        return time.toLocaleDateString('zh-CN', { 
+            month: 'short', 
+            day: 'numeric' 
+        });
+    }
+
+    // 更新新朋友入口的未读数量
+    updateNewFriendsBadge() {
+        const unreadCount = this.friendRequestState.unreadCount;
+        
+        // 更新状态文本为完整格式
+        const statusElement = document.querySelector('#friendRequestsStatus');
+        
+        if (statusElement) {
+            const newText = unreadCount > 0 ? `你有${unreadCount}条好友申请` : '暂无新申请';
+            statusElement.textContent = newText;
+        }
+    }
+
+    // 开始好友申请轮询
+    startFriendRequestPolling() {
+        if (this.friendRequestState.pollingInterval) {
+            return;
+        }
+        
+        // 立即获取一次
+        this.fetchFriendRequestsCount();
+
+        // 每30秒轮询一次
+        this.friendRequestState.pollingInterval = setInterval(() => {
+            this.fetchFriendRequestsCount();
+        }, 30000);
+    }
+
+    // 停止好友申请轮询
+    stopFriendRequestPolling() {
+        if (this.friendRequestState.pollingInterval) {
+            clearInterval(this.friendRequestState.pollingInterval);
+            this.friendRequestState.pollingInterval = null;
+        }
+    }
+
+    // 获取好友申请未读数量
+    // 获取好友申请数量（基于模拟数据）
+    async fetchFriendRequestsCount() {
+        if (!this.isLoggedIn()) {
+            return;
+        }
+
+        try {
+            // 如果已经有好友申请数据，直接计算未读数量
+            if (this.friendRequestState.requests && this.friendRequestState.requests.length > 0) {
+                const unreadCount = this.friendRequestState.requests.filter(req => req.status === 'pending').length;
+                this.friendRequestState.unreadCount = unreadCount;
+                this.updateNewFriendsBadge();
+                return;
+            }
+
+            // 如果没有数据，生成模拟数据（与 fetchFriendRequests 保持一致）
+            
+            // 模拟API延迟
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+            // 模拟好友申请数据（与 fetchFriendRequests 中的数据保持一致）
+            const mockRequests = [
+                {
+                    id: 'req_001',
+                    userId: 'user_123',
+                    username: '小明同学',
+                    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=xiaoming',
+                    message: '我们一起学习前端开发吧！',
+                    timestamp: Date.now() - 2 * 60 * 60 * 1000, // 2小时前
+                    status: 'pending'
+                },
+                {
+                    id: 'req_002',
+                    userId: 'user_456',
+                    username: '前端小白',
+                    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=frontend',
+                    message: '看到你的字幕作品很棒，想和你交流学习',
+                    timestamp: Date.now() - 5 * 60 * 60 * 1000, // 5小时前
+                    status: 'pending'
+                },
+                {
+                    id: 'req_003',
+                    userId: 'user_789',
+                    username: '代码爱好者',
+                    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=coder',
+                    message: '希望能成为朋友，一起进步！',
+                    timestamp: Date.now() - 24 * 60 * 60 * 1000, // 1天前
+                    status: 'pending'
+                }
+            ];
+
+            // 更新本地状态
+            this.friendRequestState.requests = mockRequests;
+            this.friendRequestState.unreadCount = mockRequests.length;
+            this.friendRequestState.lastFetchTime = Date.now();
+
+            this.updateNewFriendsBadge();
+            
+        } catch (error) {
+            console.error('获取好友申请数量时发生错误:', error);
+        }
+    }
+
     // 显示指定页面
     showChatPage(pageId, chatPanel) {
         const pages = chatPanel.querySelectorAll('.chat-page');
@@ -7934,10 +8594,18 @@ class VideoPlayer {
     
     // 返回功能
     goBackInChat(chatPanel) {
-        if (this.chatState.currentPage === 'chats') {
-            this.showChatPage('chatsPage', chatPanel);
-        } else if (this.chatState.currentPage === 'contacts') {
-            this.showChatPage('contactsPage', chatPanel);
+        switch (this.chatState.currentPage) {
+            case 'chats':
+                this.showChatPage('chatsPage', chatPanel);
+                break;
+            case 'groups':
+                this.showChatPage('groupsPage', chatPanel);
+                break;
+            case 'contacts':
+                this.showChatPage('contactsPage', chatPanel);
+                break;
+            default:
+                this.showChatPage('chatsPage', chatPanel);
         }
         this.chatState.currentChat = null;
         this.chatState.currentProfile = null;
