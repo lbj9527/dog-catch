@@ -2350,7 +2350,8 @@ body.modal-open {
     gap: 12px;
     padding: 8px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    overflow: hidden;
+    /* 移动端会单独处理换行与溢出，避免按钮被裁剪 */
+    overflow: visible;
 }
 
 .chat-tab-buttons {
@@ -2400,6 +2401,29 @@ body.modal-open {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+/* 移动端优化：允许头部换行，确保右侧按钮完整显示 */
+@media (max-width: 480px) {
+  .chat-tab-nav {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .chat-tab-buttons {
+    flex-shrink: 1; /* 允许标签适当收缩 */
+  }
+  .chat-search-container {
+    order: 2; /* 搜索区域换到第二行 */
+    width: 100%;
+    max-width: none;
+    min-width: 0; /* 允许内部元素缩放避免溢出 */
+  }
+  .chat-search-input {
+    min-width: 0; /* 避免固定最小宽度导致按钮被挤压裁剪 */
+  }
+  .add-user-btn {
+    flex-shrink: 0; /* 按钮保持尺寸不被压缩 */
+  }
 }
 
 .chat-search-input {

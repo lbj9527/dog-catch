@@ -5209,27 +5209,15 @@ class VideoPlayer {
             if (e.target === modal) closeModal();
         });
         
-        // 加载用户列表
+        // 加载用户列表（统一使用 ChatService）
         const loadUsers = async (page = 1, search = '', append = false) => {
             if (isLoading) return;
             isLoading = true;
             
             try {
-                const url = search 
-                    ? `${API_BASE_URL}/api/users/search?q=${encodeURIComponent(search)}&limit=10`
-                    : `${API_BASE_URL}/api/users/list?page=${page}&limit=10`;
-                    
-                const response = await fetch(url, {
-                    headers: {
-                        'Authorization': `Bearer ${this.userToken}`
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                
-                const data = await response.json();
+                const data = search
+                    ? await (window.ChatService && window.ChatService.searchUsers ? window.ChatService.searchUsers(search, 10) : { users: [] })
+                    : await (window.ChatService && window.ChatService.listUsers ? window.ChatService.listUsers(page, 10) : { users: [], pagination: { hasMore: false } });
                 const users = Array.isArray(data.users) ? data.users : [];
                 
                 if (search) {
@@ -5453,11 +5441,12 @@ class VideoPlayer {
         // 例如：发送好友请求、添加到好友列表等
         console.log('添加好友:', { username, userId });
         
+        // 通过统一服务发送好友请求（Mock/占位）
+        if (window.ChatService && window.ChatService.addFriend) {
+            window.ChatService.addFriend(userId).catch(() => {});
+        }
         // 显示成功提示
         this.showToast(`已向 ${username} 发送好友请求`, 'success');
-        
-        // 可以在这里调用API发送好友请求
-        // this.sendFriendRequest(userId);
     }
 
     // 显示用户搜索弹窗（原有方法）
@@ -8243,48 +8232,23 @@ class VideoPlayer {
         }
     }
 
-    // 获取好友申请数据（模拟）
+    // 获取好友申请数据（统一服务）
     async fetchFriendRequests() {
-        // 模拟API延迟
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // 模拟好友申请数据
-        const mockRequests = [
-            {
-                id: 'req_001',
-                userId: 'user_123',
-                username: '小明同学',
-                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=xiaoming',
-                message: '我们一起学习前端开发吧！',
-                timestamp: Date.now() - 2 * 60 * 60 * 1000, // 2小时前
-                status: 'pending'
-            },
-            {
-                id: 'req_002',
-                userId: 'user_456',
-                username: '前端小白',
-                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=frontend',
-                message: '看到你的字幕作品很棒，想和你交流学习',
-                timestamp: Date.now() - 5 * 60 * 60 * 1000, // 5小时前
-                status: 'pending'
-            },
-            {
-                id: 'req_003',
-                userId: 'user_789',
-                username: '代码爱好者',
-                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=coder',
-                message: '希望能成为朋友，一起进步！',
-                timestamp: Date.now() - 24 * 60 * 60 * 1000, // 1天前
-                status: 'pending'
-            }
-        ];
-        
-        // 更新本地状态
-        this.friendRequestState.requests = mockRequests;
-        this.friendRequestState.unreadCount = mockRequests.length;
-        this.friendRequestState.lastFetchTime = Date.now();
-        
-        return this.friendRequestState.requests;
+        try {
+            const res = (window.ChatService && window.ChatService.fetchFriendRequests)
+                ? await window.ChatService.fetchFriendRequests()
+                : [];
+            const requests = Array.isArray(res) ? res : (res && Array.isArray(res.requests) ? res.requests : []);
+            
+            this.friendRequestState.requests = requests;
+            this.friendRequestState.unreadCount = requests.filter(r => r.status === 'pending').length;
+            this.friendRequestState.lastFetchTime = Date.now();
+            
+            return this.friendRequestState.requests;
+        } catch (error) {
+            console.error('获取好友申请失败:', error);
+            return this.friendRequestState.requests || [];
+        }
     }
 
     // 渲染好友申请列表
@@ -8434,30 +8398,25 @@ class VideoPlayer {
         }
     }
 
-    // 处理好友申请（模拟数据）
+    // 处理好友申请（统一服务）
     async processFriendRequest(requestId, action) {
-        // 模拟API延迟
-        await new Promise(resolve => setTimeout(resolve, 800));
-        
-        // 模拟成功响应
-        const result = {
-            success: true,
-            message: action === 'accept' ? '已接受好友申请' : '已拒绝好友申请',
-            requestId: requestId,
-            action: action
-        };
-        
-        // 更新本地状态
-        const requestIndex = this.friendRequestState.requests.findIndex(req => req.id === requestId);
-        if (requestIndex !== -1) {
-            this.friendRequestState.requests[requestIndex].status = action === 'accept' ? 'accepted' : 'rejected';
+        try {
+            const result = (window.ChatService && window.ChatService.processFriendRequest)
+                ? await window.ChatService.processFriendRequest(requestId, action)
+                : { success: true, message: '', requestId, action };
             
-            // 立即重新计算未读数量
-            const unreadCount = this.friendRequestState.requests.filter(req => req.status === 'pending').length;
-            this.friendRequestState.unreadCount = unreadCount;
+            const requestIndex = this.friendRequestState.requests.findIndex(req => req.id === requestId);
+            if (requestIndex !== -1) {
+                this.friendRequestState.requests[requestIndex].status = action === 'accept' ? 'accepted' : 'rejected';
+                const unreadCount = this.friendRequestState.requests.filter(req => req.status === 'pending').length;
+                this.friendRequestState.unreadCount = unreadCount;
+            }
+            
+            return result;
+        } catch (error) {
+            console.error('处理好友申请失败:', error);
+            throw error;
         }
-        
-        return result;
     }
 
     // 格式化好友申请时间
@@ -8515,65 +8474,29 @@ class VideoPlayer {
         }
     }
 
-    // 获取好友申请未读数量
-    // 获取好友申请数量（基于模拟数据）
+    // 获取好友申请未读数量（统一服务）
     async fetchFriendRequestsCount() {
         if (!this.isLoggedIn()) {
             return;
         }
 
         try {
-            // 如果已经有好友申请数据，直接计算未读数量
+            const res = (window.ChatService && window.ChatService.fetchFriendRequestsCount)
+                ? await window.ChatService.fetchFriendRequestsCount()
+                : null;
+            
+            if (res && typeof res.unreadCount === 'number') {
+                this.friendRequestState.unreadCount = res.unreadCount;
+                this.updateNewFriendsBadge();
+                return;
+            }
+            
             if (this.friendRequestState.requests && this.friendRequestState.requests.length > 0) {
                 const unreadCount = this.friendRequestState.requests.filter(req => req.status === 'pending').length;
                 this.friendRequestState.unreadCount = unreadCount;
                 this.updateNewFriendsBadge();
                 return;
             }
-
-            // 如果没有数据，生成模拟数据（与 fetchFriendRequests 保持一致）
-            
-            // 模拟API延迟
-            await new Promise(resolve => setTimeout(resolve, 200));
-            
-            // 模拟好友申请数据（与 fetchFriendRequests 中的数据保持一致）
-            const mockRequests = [
-                {
-                    id: 'req_001',
-                    userId: 'user_123',
-                    username: '小明同学',
-                    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=xiaoming',
-                    message: '我们一起学习前端开发吧！',
-                    timestamp: Date.now() - 2 * 60 * 60 * 1000, // 2小时前
-                    status: 'pending'
-                },
-                {
-                    id: 'req_002',
-                    userId: 'user_456',
-                    username: '前端小白',
-                    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=frontend',
-                    message: '看到你的字幕作品很棒，想和你交流学习',
-                    timestamp: Date.now() - 5 * 60 * 60 * 1000, // 5小时前
-                    status: 'pending'
-                },
-                {
-                    id: 'req_003',
-                    userId: 'user_789',
-                    username: '代码爱好者',
-                    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=coder',
-                    message: '希望能成为朋友，一起进步！',
-                    timestamp: Date.now() - 24 * 60 * 60 * 1000, // 1天前
-                    status: 'pending'
-                }
-            ];
-
-            // 更新本地状态
-            this.friendRequestState.requests = mockRequests;
-            this.friendRequestState.unreadCount = mockRequests.length;
-            this.friendRequestState.lastFetchTime = Date.now();
-
-            this.updateNewFriendsBadge();
-            
         } catch (error) {
             console.error('获取好友申请数量时发生错误:', error);
         }
