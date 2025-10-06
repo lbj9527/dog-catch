@@ -127,7 +127,14 @@ export const subtitleAPI = {
 
   // 全部删除字幕
   deleteAll() {
-    return api.delete('/api/subtitles/all')
+    return api.delete('/api/subtitles/all', {
+      timeout: 120000 // 增加超时时间到120秒
+    })
+  },
+
+  // 获取删除状态
+  getDeleteStatus() {
+    return api.get('/api/subtitles/delete-status')
   },
 
   // 批量上传字幕（心愿单）

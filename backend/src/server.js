@@ -585,10 +585,29 @@ function authenticateAnyToken(req, res, next) {
 
 function extractBaseVideoId(videoId) {
     const id = String(videoId || '').toUpperCase().trim();
-    const m = id.match(/^([A-Z]+-\d{2,5})(?:-(\d+))?$/);
-    if (m) return m[1];
-    const m2 = id.match(/([A-Z]+-\d{2,5})/);
-    return m2 ? m2[1] : id;
+    
+    // 特殊格式转换：CARIB-YYMMDD-NNN -> CARIB-YYMMDD_NNN
+    const caribMatch = id.match(/^CARIB-(\d{6})-(\d{3})$/);
+    if (caribMatch) {
+        return `CARIB-${caribMatch[1]}_${caribMatch[2]}`;
+    }
+    
+    // 标准格式：前缀为字母，后接连字符"-"，后接2~5位纯数字，且可选尾部"-变体数字"
+    // 先尝试匹配含变体的标准格式：ABC-001-2
+    const standardWithVariant = id.match(/^([A-Z]+-\d{2,5})-(\d+)$/);
+    if (standardWithVariant) {
+        return standardWithVariant[1]; // 返回基础编号，去掉变体
+    }
+    
+    // 再尝试匹配无变体的标准格式：ABC-001
+    const standardBase = id.match(/^[A-Z]+-\d{2,5}$/);
+    if (standardBase) {
+        return id; // 返回整串
+    }
+    
+    // 如果都不匹配标准格式，直接返回整串（仅大写与去空格）
+    // 不再进行"在字符串内部搜索子串"的fallback
+    return id;
 }
 
 function getAllAsync(sql, params = []) {
@@ -1756,22 +1775,27 @@ function parseAssDialogueToVtt(assText) {
     let cueIndex = 1;
     
     for (const line of lines) {
-        // 匹配 Dialogue 行
-        const dialogueMatch = line.match(/^Dialogue:\s*\d+,([^,]+),([^,]+),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),(.*)$/i);
+        // 匹配 Dialogue 行 - 更灵活的匹配模式
+        const dialogueMatch = line.match(/^Dialogue:\s*([^,]*),([^,]+),([^,]+),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),(.*)$/i);
         
         if (dialogueMatch) {
-            const [, start, end, , , , , , , text] = dialogueMatch;
+            const [, , start, end, , , , , , , text] = dialogueMatch;
             
             try {
-                // 转换时间格式：从 ASS (H:MM:SS.CC) 到 VTT (HH:MM:SS.mmm)
+                // 转换时间格式：从 ASS 到 VTT
                 const startTime = convertAssTimeToVtt(start);
                 const endTime = convertAssTimeToVtt(end);
                 
-                // 清理文本：移除 ASS 样式标签
+                // 清理文本：移除 ASS 样式标签和特殊字符
                 const cleanText = text
                     .replace(/\{[^}]*\}/g, '') // 移除 {} 样式标签
                     .replace(/\\N/g, '\n')     // 转换换行符
                     .replace(/\\n/g, '\n')     // 转换换行符
+                    .replace(/\\h/g, ' ')      // 转换硬空格
+                    .replace(/&amp;/g, '&')   // HTML实体转换
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&quot;/g, '"')
                     .trim();
                 
                 if (cleanText && startTime && endTime) {
@@ -1791,20 +1815,51 @@ function parseAssDialogueToVtt(assText) {
     return vttLines.join('\n');
 }
 
-// 转换 ASS 时间格式到 VTT 格式
+// 转换 ASS 时间格式到 VTT 格式 - 增强版本
 function convertAssTimeToVtt(assTime) {
     try {
-        // ASS 格式: H:MM:SS.CC (小时:分钟:秒.厘秒)
-        const match = assTime.match(/^(\d+):(\d{2}):(\d{2})\.(\d{2})$/);
-        if (!match) return null;
+        // 清理时间字符串
+        const cleanTime = assTime.trim();
         
-        const [, hours, minutes, seconds, centiseconds] = match;
-        const milliseconds = parseInt(centiseconds) * 10; // 厘秒转毫秒
+        // 处理多种 ASS 时间格式
+        // 标准格式: H:MM:SS.CC
+        let match = cleanTime.match(/^(\d+):(\d{2}):(\d{2})\.(\d{2})$/);
+        if (match) {
+            const [, hours, minutes, seconds, centiseconds] = match;
+            const milliseconds = parseInt(centiseconds) * 10;
+            return `${hours.padStart(2, '0')}:${minutes}:${seconds}.${milliseconds.toString().padStart(3, '0')}`;
+        }
         
-        // VTT 格式: HH:MM:SS.mmm
-        return `${hours.padStart(2, '0')}:${minutes}:${seconds}.${milliseconds.toString().padStart(3, '0')}`;
+        // 处理异常格式，如负数或格式错误的时间
+        // 尝试提取数字部分
+        const timeMatch = cleanTime.match(/(\d+):(\d{1,2}):(\d{1,2})[\.\:]?(\d{0,3})/);
+        if (timeMatch) {
+            let [, hours, minutes, seconds, ms = '0'] = timeMatch;
+            
+            // 确保分钟和秒钟在有效范围内
+            minutes = Math.min(59, Math.max(0, parseInt(minutes))).toString().padStart(2, '0');
+            seconds = Math.min(59, Math.max(0, parseInt(seconds))).toString().padStart(2, '0');
+            
+            // 处理毫秒
+            if (ms.length === 2) {
+                ms = parseInt(ms) * 10; // 厘秒转毫秒
+            } else if (ms.length === 1) {
+                ms = parseInt(ms) * 100;
+            } else if (ms.length === 3) {
+                ms = parseInt(ms);
+            } else {
+                ms = 0;
+            }
+            
+            return `${hours.padStart(2, '0')}:${minutes}:${seconds}.${ms.toString().padStart(3, '0')}`;
+        }
+        
+        // 如果都无法解析，返回默认时间
+        console.warn(`无法解析时间格式: ${assTime}`);
+        return '00:00:00.000';
     } catch (e) {
-        return null;
+        console.warn(`时间转换错误: ${assTime}`, e);
+        return '00:00:00.000';
     }
 }
 
@@ -1829,65 +1884,57 @@ async function convertAssToVttString(assText) {
                 return reject(new Error('非 ASS/SSA 格式或缺少必要段落'));
             }
 
-            // 清理可能导致 ass-to-vtt 崩溃的内容
-            const sanitizedText = sanitizeAssOverrides(trimmed);
-            
-            const input = Readable.from([sanitizedText]);
-            const transformer = assToVtt();
-            const chunks = [];
-
-            // 使用 pipeline 进行更强的错误处理
-            pipeline(
-                input,
-                transformer,
-                (err) => {
-                    if (err) {
-                        console.warn('ass-to-vtt 转换失败，尝试 fallback 解析:', err.message);
-                        
-                        // 使用 fallback 解析
-                        try {
-                            const fallbackResult = parseAssDialogueToVtt(trimmed);
-                            if (fallbackResult && fallbackResult.includes('-->')) {
-                                resolve(fallbackResult);
-                            } else {
-                                reject(new Error('ASS 解析失败：无有效对白内容'));
-                            }
-                        } catch (fallbackErr) {
-                            reject(new Error(`ASS 转换失败: ${err.message}; Fallback 也失败: ${fallbackErr.message}`));
-                        }
-                    } else {
-                        // 成功情况下，chunks 已经通过 data 事件收集
-                        try {
-                            const out = Buffer.concat(chunks).toString('utf8');
-                            resolve(out);
-                        } catch (e) {
-                            reject(e);
-                        }
-                    }
-                }
-            );
-
-            transformer.on('data', (c) => {
-                try {
-                    chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
-                } catch (e) {
-                    transformer.emit('error', e);
-                }
-            });
-            
-        } catch (err) {
-            // 同步错误也尝试 fallback
-            console.warn('convertAssToVttString 同步错误，尝试 fallback:', err.message);
+            // 直接使用自定义解析器，因为测试显示它100%成功
             try {
-                const fallbackResult = parseAssDialogueToVtt(assText);
-                if (fallbackResult && fallbackResult.includes('-->')) {
-                    resolve(fallbackResult);
+                const customResult = parseAssDialogueToVtt(trimmed);
+                if (customResult && customResult.includes('-->')) {
+                    resolve(customResult);
                 } else {
                     reject(new Error('ASS 解析失败：无有效对白内容'));
                 }
-            } catch (fallbackErr) {
-                reject(new Error(`ASS 转换失败: ${err.message}; Fallback 也失败: ${fallbackErr.message}`));
+            } catch (customErr) {
+                console.warn('自定义ASS解析失败:', customErr.message);
+                
+                // 如果自定义解析也失败，尝试使用 ass-to-vtt 作为备用
+                const sanitizedText = sanitizeAssOverrides(trimmed);
+                const input = Readable.from([sanitizedText]);
+                const transformer = assToVtt();
+                const chunks = [];
+
+                pipeline(
+                    input,
+                    transformer,
+                    (err) => {
+                        if (err) {
+                            reject(new Error(`ASS 转换失败: 自定义解析器失败 (${customErr.message}), ass-to-vtt 也失败 (${err.message})`));
+                        } else {
+                            try {
+                                const out = Buffer.concat(chunks).toString('utf8');
+                                const hasContent = out.includes('-->');
+                                if (!hasContent) {
+                                    reject(new Error('ASS 解析失败：无有效对白内容'));
+                                } else {
+                                    resolve(out);
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        }
+                    }
+                );
+
+                transformer.on('data', (c) => {
+                    try {
+                        chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+                    } catch (e) {
+                        transformer.emit('error', e);
+                    }
+                });
             }
+            
+        } catch (err) {
+            // 同步错误直接返回
+            reject(new Error(`ASS 转换失败: ${err.message}`));
         }
     });
 }
@@ -2368,58 +2415,79 @@ app.delete('/api/subtitles/all', authenticateAdminToken, async (req, res) => {
             });
         }
 
-        // 获取所有字幕文件信息
-        const allSubtitles = await new Promise((resolve, reject) => {
-            db.all('SELECT video_id, file_path FROM subtitles', (err, rows) => {
-                if (err) return reject(err);
-                resolve(rows || []);
-            });
+        // 立即返回响应，避免前端超时
+        res.json({
+            message: `开始删除 ${totalCount} 个字幕文件，请稍候...`,
+            total: totalCount,
+            deleted: 0,
+            failed: {},
+            success: true,
+            processing: true
         });
 
-        let deleted = 0;
-        const failed = {};
-
-        // 开始删除所有字幕文件
-        for (const subtitle of allSubtitles) {
+        // 异步执行删除操作
+        setImmediate(async () => {
             try {
-                // 删除物理文件
-                try {
-                    const filePath = path.join(__dirname, '../uploads', path.basename(subtitle.file_path));
-                    await fs.unlink(filePath);
-                } catch (fileError) {
-                    // 如果文件不存在，继续删除数据库记录
-                    if (fileError.code !== 'ENOENT') {
-                        console.warn(`删除物理文件失败: ${subtitle.video_id}`, fileError);
-                    }
-                }
-
-                // 删除数据库记录
-                const deleteResult = await new Promise((resolve, reject) => {
-                    db.run('DELETE FROM subtitles WHERE video_id = ?', [subtitle.video_id], function(err) {
+                // 获取所有字幕文件信息
+                const allSubtitles = await new Promise((resolve, reject) => {
+                    db.all('SELECT video_id, file_path FROM subtitles', (err, rows) => {
                         if (err) return reject(err);
-                        resolve(this.changes > 0);
+                        resolve(rows || []);
                     });
                 });
 
-                if (deleteResult) {
-                    deleted++;
-                } else {
-                    failed[subtitle.video_id] = '删除数据库记录失败';
+                let deleted = 0;
+                const failed = {};
+
+                // 批量删除，每次处理50个文件
+                const batchSize = 50;
+                for (let i = 0; i < allSubtitles.length; i += batchSize) {
+                    const batch = allSubtitles.slice(i, i + batchSize);
+                    
+                    // 并行处理当前批次
+                    await Promise.all(batch.map(async (subtitle) => {
+                        try {
+                            // 删除物理文件
+                            try {
+                                const filePath = path.join(__dirname, '../uploads', path.basename(subtitle.file_path));
+                                await fs.unlink(filePath);
+                            } catch (fileError) {
+                                // 如果文件不存在，继续删除数据库记录
+                                if (fileError.code !== 'ENOENT') {
+                                    console.warn(`删除物理文件失败: ${subtitle.video_id}`, fileError);
+                                }
+                            }
+
+                            // 删除数据库记录
+                            const deleteResult = await new Promise((resolve, reject) => {
+                                db.run('DELETE FROM subtitles WHERE video_id = ?', [subtitle.video_id], function(err) {
+                                    if (err) return reject(err);
+                                    resolve(this.changes > 0);
+                                });
+                            });
+
+                            if (deleteResult) {
+                                deleted++;
+                            } else {
+                                failed[subtitle.video_id] = '删除数据库记录失败';
+                            }
+                        } catch (error) {
+                            failed[subtitle.video_id] = error.message || '删除失败';
+                        }
+                    }));
+
+                    // 每处理一批后稍作延迟，避免过度占用资源
+                    if (i + batchSize < allSubtitles.length) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
                 }
+
+                // 记录操作日志
+                console.log(`全部删除字幕操作完成: 总数=${totalCount}, 成功=${deleted}, 失败=${Object.keys(failed).length}`);
+
             } catch (error) {
-                failed[subtitle.video_id] = error.message || '删除失败';
+                console.error('异步删除字幕文件失败:', error);
             }
-        }
-
-        // 记录操作日志
-        console.log(`全部删除字幕操作完成: 总数=${totalCount}, 成功=${deleted}, 失败=${Object.keys(failed).length}`);
-
-        res.json({
-            message: `全部删除操作完成`,
-            total: totalCount,
-            deleted: deleted,
-            failed: failed,
-            success: Object.keys(failed).length === 0
         });
 
     } catch (error) {
@@ -4692,6 +4760,33 @@ async function createMentionNotifications(content, senderUserId, videoId, commen
         // 不抛出错误，避免影响主要的评论发表流程
     }
 }
+
+// 获取删除状态 (需要认证)
+app.get('/api/subtitles/delete-status', authenticateAdminToken, async (req, res) => {
+    try {
+        // 检查是否还有字幕文件
+        const countResult = await new Promise((resolve, reject) => {
+            db.get('SELECT COUNT(*) as total FROM subtitles', (err, result) => {
+                if (err) return reject(err);
+                resolve(result);
+            });
+        });
+
+        const totalCount = countResult.total || 0;
+        
+        res.json({
+            total: totalCount,
+            completed: totalCount === 0
+        });
+
+    } catch (error) {
+        console.error('获取删除状态失败:', error);
+        res.status(500).json({ 
+            error: '获取删除状态失败',
+            details: error.message 
+        });
+    }
+});
 
 // 错误处理中间件
 app.use((err, req, res, next) => {

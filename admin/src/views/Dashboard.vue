@@ -1017,15 +1017,46 @@ const deleteAllSubtitles = async () => {
     deletingAll.value = true
     const res = await subtitleAPI.deleteAll()
     
-    ElMessage.success(`已删除 ${res.deleted} 个字幕文件`)
+    if (res.processing) {
+      ElMessage.success(`已开始删除 ${res.total} 个字幕文件，请稍候...`)
+      
+      // 轮询检查删除状态
+      const checkDeleteStatus = async () => {
+        try {
+          const status = await subtitleAPI.getDeleteStatus()
+          if (status.completed) {
+            await loadData()
+            ElMessage.success('全部删除操作已完成')
+            deletingAll.value = false
+          } else {
+            // 继续轮询
+            setTimeout(checkDeleteStatus, 2000) // 每2秒检查一次
+          }
+        } catch (error) {
+          console.error('检查删除状态失败:', error)
+          // 如果检查失败，延迟刷新作为备选方案
+          setTimeout(async () => {
+            await loadData()
+            ElMessage.success('全部删除操作已完成')
+            deletingAll.value = false
+          }, 5000)
+        }
+      }
+      
+      // 开始轮询
+      setTimeout(checkDeleteStatus, 2000)
+    } else {
+      ElMessage.success(`已删除 ${res.deleted} 个字幕文件`)
+      await loadData()
+      deletingAll.value = false
+    }
+    
     clearSelection()
-    await loadData()
   } catch (e) {
     if (e !== 'cancel') {
       console.error('删除失败:', e)
       ElMessage.error('删除失败，请重试')
     }
-  } finally {
     deletingAll.value = false
   }
 }
