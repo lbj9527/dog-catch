@@ -2347,6 +2347,90 @@ app.delete('/api/subtitles', authenticateAdminToken, async (req, res) => {
     return res.json({ deleted, failed });
 });
 
+// 全部删除字幕文件 (需要认证)
+app.delete('/api/subtitles/all', authenticateAdminToken, async (req, res) => {
+    try {
+        // 首先获取所有字幕文件的统计信息
+        const countResult = await new Promise((resolve, reject) => {
+            db.get('SELECT COUNT(*) as total FROM subtitles', (err, result) => {
+                if (err) return reject(err);
+                resolve(result);
+            });
+        });
+
+        const totalCount = countResult.total || 0;
+        if (totalCount === 0) {
+            return res.json({ 
+                message: '没有字幕文件需要删除',
+                deleted: 0, 
+                failed: {},
+                total: 0
+            });
+        }
+
+        // 获取所有字幕文件信息
+        const allSubtitles = await new Promise((resolve, reject) => {
+            db.all('SELECT video_id, file_path FROM subtitles', (err, rows) => {
+                if (err) return reject(err);
+                resolve(rows || []);
+            });
+        });
+
+        let deleted = 0;
+        const failed = {};
+
+        // 开始删除所有字幕文件
+        for (const subtitle of allSubtitles) {
+            try {
+                // 删除物理文件
+                try {
+                    const filePath = path.join(__dirname, '../uploads', path.basename(subtitle.file_path));
+                    await fs.unlink(filePath);
+                } catch (fileError) {
+                    // 如果文件不存在，继续删除数据库记录
+                    if (fileError.code !== 'ENOENT') {
+                        console.warn(`删除物理文件失败: ${subtitle.video_id}`, fileError);
+                    }
+                }
+
+                // 删除数据库记录
+                const deleteResult = await new Promise((resolve, reject) => {
+                    db.run('DELETE FROM subtitles WHERE video_id = ?', [subtitle.video_id], function(err) {
+                        if (err) return reject(err);
+                        resolve(this.changes > 0);
+                    });
+                });
+
+                if (deleteResult) {
+                    deleted++;
+                } else {
+                    failed[subtitle.video_id] = '删除数据库记录失败';
+                }
+            } catch (error) {
+                failed[subtitle.video_id] = error.message || '删除失败';
+            }
+        }
+
+        // 记录操作日志
+        console.log(`全部删除字幕操作完成: 总数=${totalCount}, 成功=${deleted}, 失败=${Object.keys(failed).length}`);
+
+        res.json({
+            message: `全部删除操作完成`,
+            total: totalCount,
+            deleted: deleted,
+            failed: failed,
+            success: Object.keys(failed).length === 0
+        });
+
+    } catch (error) {
+        console.error('全部删除字幕文件失败:', error);
+        res.status(500).json({ 
+            error: '全部删除字幕文件失败',
+            details: error.message 
+        });
+    }
+});
+
 // 批量上传字幕文件 (管理员权限)
 app.post('/api/admin/subtitles/batch-upload', authenticateAdminToken, upload.array('files', 50), async (req, res) => {
     try {

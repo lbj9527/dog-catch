@@ -48,6 +48,10 @@
               <el-icon><Delete /></el-icon>
               批量删除
             </el-button>
+            <el-button type="danger" @click="deleteAllSubtitles" :loading="deletingAll" plain>
+              <el-icon><Delete /></el-icon>
+              全部删除
+            </el-button>
           </div>
           <div class="toolbar-right">
             <el-input
@@ -615,6 +619,7 @@ watch(activeTab, async (name) => {
 const loading = ref(false)
 const exporting = ref(false)
 const deleting = ref(false)
+const deletingAll = ref(false)
 const searchQuery = ref('')
 const tableData = ref([])
 const tableRef = ref()
@@ -972,6 +977,56 @@ const bulkDelete = async () => {
     }
   } finally {
     deleting.value = false
+  }
+}
+
+const deleteAllSubtitles = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '此操作将删除所有字幕文件和数据库记录，且无法恢复！',
+      '危险操作：全部删除',
+      {
+        confirmButtonText: '我确认删除全部',
+        cancelButtonText: '取消',
+        type: 'error',
+        dangerouslyUseHTMLString: true,
+        message: `
+          <div style="color: #f56c6c; font-weight: bold; margin-bottom: 10px;">
+            ⚠️ 警告：此操作不可逆！
+          </div>
+          <div>
+            • 将删除所有字幕文件<br>
+            • 将清空字幕数据库记录<br>
+            • 操作完成后无法恢复
+          </div>
+        `
+      }
+    )
+
+    // 二次确认
+    await ElMessageBox.confirm(
+      '请再次确认：您真的要删除所有字幕吗？',
+      '最终确认',
+      {
+        confirmButtonText: '确认删除全部',
+        cancelButtonText: '取消',
+        type: 'error'
+      }
+    )
+
+    deletingAll.value = true
+    const res = await subtitleAPI.deleteAll()
+    
+    ElMessage.success(`已删除 ${res.deleted} 个字幕文件`)
+    clearSelection()
+    await loadData()
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('删除失败:', e)
+      ElMessage.error('删除失败，请重试')
+    }
+  } finally {
+    deletingAll.value = false
   }
 }
 

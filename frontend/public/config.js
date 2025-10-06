@@ -2,8 +2,6 @@
 window.PLAYER_CONFIG = {
   // 本地开发默认为本地后端；线上可通过替换该文件或 URL 参数 ?api= 覆盖
   API_BASE_URL: 'http://localhost:8000',
-  // 是否启用聊天相关的 Mock 数据，亦可通过 URL 参数 ?mock=true/false 控制
-  USE_MOCK: true,
   SUBTITLE_NEED_LOGIN: true,
   ALLOW_PLAY_WITHOUT_LOGIN: true,
   CAPTCHA_ENABLED: false,  // 禁用图形验证码

@@ -3903,61 +3903,11 @@ class VideoPlayer {
                                 </div>
                                 <div class="empty-state-text">暂无群聊</div>
                                 <div class="empty-state-action">
-                                    <button class="empty-state-btn" disabled>创建群聊</button>
+                                    <button class="empty-state-btn" id="createGroupBtn">创建群聊</button>
                                 </div>
                             </div>
                             
-                            <!-- 群聊项将在这里显示 -->
-                            <div class="chat-item" data-chat-id="2" data-name="前端开发群" data-type="group">
-                                <div class="chat-item-content">
-                                    <div class="chat-avatar">前</div>
-                                    <div class="chat-item-info">
-                                        <div class="chat-item-name">
-                                            前端开发群
-                                            <span class="group-tag">群</span>
-                                        </div>
-                                        <div class="chat-item-message">李四: 今天的需求改动有点大</div>
-                                    </div>
-                                    <div class="chat-item-meta">
-                                        <div class="chat-item-time">13:45</div>
-                                        <div class="unread-badge">5</div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="chat-item" data-chat-id="5" data-name="产品讨论组" data-type="group">
-                                <div class="chat-item-content">
-                                    <div class="chat-avatar">产</div>
-                                    <div class="chat-item-info">
-                                        <div class="chat-item-name">
-                                            产品讨论组
-                                            <span class="group-tag">群</span>
-                                        </div>
-                                        <div class="chat-item-message">小明: 新版本的原型图已经完成</div>
-                                    </div>
-                                    <div class="chat-item-meta">
-                                        <div class="chat-item-time">11:30</div>
-                                        <div class="unread-badge">3</div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="chat-item" data-chat-id="7" data-name="技术交流群" data-type="group">
-                                <div class="chat-item-content">
-                                    <div class="chat-avatar">技</div>
-                                    <div class="chat-item-info">
-                                        <div class="chat-item-name">
-                                            技术交流群
-                                            <span class="group-tag">群</span>
-                                        </div>
-                                        <div class="chat-item-message">老王: 分享一个很棒的开源项目</div>
-                                    </div>
-                                    <div class="chat-item-meta">
-                                        <div class="chat-item-time">09:20</div>
-                                        <div class="unread-badge">8</div>
-                                    </div>
-                                </div>
-                            </div>
+                            <!-- 群聊项将在这里动态显示 -->
                         </div>
                     </div>
 
@@ -7970,6 +7920,22 @@ class VideoPlayer {
                 this.goBackFromFriendRequests(chatPanel);
             });
         }
+
+        // 创建群聊按钮
+        const createGroupBtn = chatPanel.querySelector('#createGroupBtn');
+        if (createGroupBtn) {
+            createGroupBtn.addEventListener('click', () => {
+                this.showCreateGroupModal(chatPanel);
+            });
+        }
+
+        // 整个空状态区域点击
+        const groupsEmptyState = chatPanel.querySelector('#groupsEmptyState');
+        if (groupsEmptyState) {
+            groupsEmptyState.addEventListener('click', () => {
+                this.showCreateGroupModal(chatPanel);
+            });
+        }
     }
     
     // 切换聊天标签页
@@ -8005,8 +7971,13 @@ class VideoPlayer {
             const chatsPage = chatPanel.querySelector('#chatsPage');
             if (chatsPage) chatsPage.classList.add('active');
         } else if (tab === 'groups') {
+            // 关闭通知面板遮罩（如果存在）
+            this.hideNotificationPanel();
+            
             const groupsPage = chatPanel.querySelector('#groupsPage');
             if (groupsPage) groupsPage.classList.add('active');
+            // 更新群组空状态显示
+            this.updateGroupsEmptyState(chatPanel);
         } else if (tab === 'contacts') {
             const contactsPage = chatPanel.querySelector('#contactsPage');
             if (contactsPage) contactsPage.classList.add('active');
@@ -9486,6 +9457,31 @@ class VideoSourceLoader {
             if (commentContent) commentContent.style.display = 'block';
             
             this.loadLikedComments();
+        }
+    }
+    
+    // 显示创建群聊模态框
+    showCreateGroupModal(chatPanel) {
+        // 临时提示功能，后续可以实现完整的创建群聊功能
+        alert('创建群聊功能正在开发中，敬请期待！');
+    }
+    
+    // 更新群组空状态显示
+    updateGroupsEmptyState(chatPanel) {
+        const groupsList = chatPanel.querySelector('#groupsList');
+        const groupsEmptyState = chatPanel.querySelector('#groupsEmptyState');
+        
+        if (!groupsList || !groupsEmptyState) return;
+        
+        // 检查是否有群聊项（排除空状态元素）
+        const groupItems = groupsList.querySelectorAll('.chat-item[data-type="group"]');
+        const hasGroups = groupItems.length > 0;
+        
+        // 根据是否有群聊来显示/隐藏空状态
+        if (hasGroups) {
+            groupsEmptyState.style.display = 'none';
+        } else {
+            groupsEmptyState.style.display = 'flex';
         }
     }
 }

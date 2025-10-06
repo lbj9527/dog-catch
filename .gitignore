@@ -256,6 +256,8 @@ subtitlescript/output/_html_debug
 subtitlescript/session.json
 subtitlescript/session_videoID.json
 subtitlescript/__pycache__
+subtitlescript/**/*.pyc
+subtitlescript/**/*.pyo
 subtitlescript/progress.json
 subtitlescript/output/actor_*.csv
 subtitlescript/database/actresses.db-shm

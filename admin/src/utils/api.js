@@ -125,6 +125,11 @@ export const subtitleAPI = {
     })
   },
 
+  // 全部删除字幕
+  deleteAll() {
+    return api.delete('/api/subtitles/all')
+  },
+
   // 批量上传字幕（心愿单）
   batchUpload(formData) {
     return api.post('/api/admin/subtitles/batch-upload', formData, {
