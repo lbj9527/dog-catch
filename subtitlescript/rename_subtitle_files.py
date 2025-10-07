@@ -1,0 +1,335 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+字幕文件重命名脚本
+将原始文件名按照解析规则转换为规范化的视频ID格式
+
+使用方法:
+python rename_subtitle_files.py <目录路径> [--dry-run]
+
+参数:
+- 目录路径: 要处理的目录，会递归处理所有子目录
+- --dry-run: 仅显示重命名预览，不实际执行重命名操作
+"""
+
+import os
+import re
+import sys
+import argparse
+from pathlib import Path
+
+
+def extract_video_id(filename):
+    """
+    从文件名中提取并规范化视频ID
+    基于前端BatchUploadDialog.vue中的extractVideoId函数逻辑
+    """
+    # 去除扩展名
+    base = re.sub(r'\.[^/.]+$', '', filename)
+    
+    # 特殊格式处理 - 按照前端逻辑顺序
+    
+    # 1. (1pondo)(061016_314)コスプレイヤーをお貸しします 川越ゆい -> PONDO-061016_314
+    m = re.search(r'\(1pondo\)\((\d{6}_\d{3})\)', base, re.IGNORECASE)
+    if m:
+        return f"PONDO-{m.group(1)}"
+    
+    # 2. 1Pondo-030615_039 秋野千尋 -> PONDO-030615_039
+    m = re.search(r'1Pondo-(\d{6}_\d{3})', base, re.IGNORECASE)
+    if m:
+        return f"PONDO-{m.group(1)}"
+    
+    # 3. 022720_979-1pon -> PON-022720_979
+    m = re.search(r'(\d{6}_\d{3})-1pon', base, re.IGNORECASE)
+    if m:
+        return f"PON-{m.group(1)}"
+    
+    # 4. 040816_276-1pon-1080p -> PON-040816_276 (与规则3相同，保留以确保完整性)
+    # 已在规则3中处理
+    
+    # 5. 050420_01-10mu-1080p -> MU-050420_01
+    m = re.search(r'(\d{6}_\d{2})-10mu', base, re.IGNORECASE)
+    if m:
+        return f"MU-{m.group(1)}"
+    
+    # 6. 051620_01-10mu -> MU-051620_01 (与规则5相同，保留以确保完整性)
+    # 已在规则5中处理
+    
+    # 7. 080616-225-carib-1080p -> CARIB-080616_225
+    m = re.search(r'(\d{6})-(\d{3})-carib', base, re.IGNORECASE)
+    if m:
+        return f"CARIB-{m.group(1)}_{m.group(2)}"
+    
+    # 8. 081520_344-paco-1080p -> PACO-081520_344
+    m = re.search(r'(\d{6}_\d{3})-paco', base, re.IGNORECASE)
+    if m:
+        return f"PACO-{m.group(1)}"
+    
+    # 9. 112615_431-caribpr-high -> CARIBPR-112615_431
+    m = re.search(r'(\d{6}_\d{3})-caribpr', base, re.IGNORECASE)
+    if m:
+        return f"CARIBPR-{m.group(1)}"
+    
+    # 10. n0310 -> N0310
+    m = re.match(r'^n(\d{4})$', base, re.IGNORECASE)
+    if m:
+        return f"N{m.group(1)}"
+    
+    # 11. N0417 -> N0417 (已经是正确格式)
+    m = re.match(r'^N(\d{4})$', base, re.IGNORECASE)
+    if m:
+        return f"N{m.group(1)}"
+    
+    # 12. Tokyo-Hot-n1004 -> N1004
+    m = re.search(r'Tokyo-Hot-n(\d{4})', base, re.IGNORECASE)
+    if m:
+        return f"N{m.group(1)}"
+    
+    # 13. Tokyo-Hot_k1179餌食牝_美咲結衣 -> K1179
+    m = re.search(r'Tokyo-Hot[_-]k(\d{4})', base, re.IGNORECASE)
+    if m:
+        return f"K{m.group(1)}"
+    
+    # 14. 010210-259 -> 010210-259 (保持原格式)
+    m = re.match(r'^(\d{6}-\d{3})', base)
+    if m:
+        return m.group(1)
+    
+    # 15. 012415_01 -> 012415-01 (下划线转连字符)
+    m = re.match(r'^(\d{6})_(\d{2})$', base)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    
+    # 16. 080416_353 -> 080416-353 (下划线转连字符，3位数字)
+    m = re.match(r'^(\d{6})_(\d{3})$', base)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    
+    # 17. 050717_524 - chs -> 050717-524 (带语言后缀)
+    m = re.match(r'^(\d{6})_(\d{2,3})\s*-?\s*(chs|cht)$', base, re.IGNORECASE)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    
+    # 18. 050717_524cht -> 050717-524 (直接连接语言后缀)
+    m = re.match(r'^(\d{6})_(\d{2,3})(chs|cht)$', base, re.IGNORECASE)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    
+    # 19. 072415_928-carib-CHS -> CARIB-072415_928 (carib格式带语言后缀)
+    m = re.match(r'^(\d{6})_(\d{3})-carib-(chs|cht)$', base, re.IGNORECASE)
+    if m:
+        return f"CARIB-{m.group(1)}_{m.group(2)}"
+    
+    # 20. 080416_353 今夏來海灘超嗨亂交！ 真琴涼 希咲彩 蒼井櫻 -> 080416-353 (带中文描述)
+    m = re.match(r'^(\d{6})_(\d{2,3})\s+[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]+', base)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    
+    # 21. 100516_398  -> 100516-398 (带空格)
+    m = re.match(r'^(\d{6})_(\d{2,3})\s*$', base)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    
+    # 22. 1pondo – 061014_824 – Nami Itoshino -> PONDO-061014_824 (带破折号和描述)
+    m = re.search(r'1pondo\s*[–-]\s*(\d{6}_\d{3})', base, re.IGNORECASE)
+    if m:
+        return f"PONDO-{m.group(1)}"
+    
+    # 23. 1Pondo_081418_728 -> PONDO-081418_728 (下划线连接)
+    m = re.match(r'^1Pondo_(\d{6}_\d{3})', base, re.IGNORECASE)
+    if m:
+        return f"PONDO-{m.group(1)}"
+    
+    # 新增规则：处理Carib格式
+    # 24. Carib-070417-455 朝桐光 -> CARIB-070417_455
+    m = re.search(r'Carib-(\d{6})-(\d{3})', base, re.IGNORECASE)
+    if m:
+        return f"CARIB-{m.group(1)}_{m.group(2)}"
+    
+    # 25. Caribbean 120614-753 -> CARIB-120614_753
+    m = re.search(r'Caribbean\s+(\d{6})-(\d{3})', base, re.IGNORECASE)
+    if m:
+        return f"CARIB-{m.group(1)}_{m.group(2)}"
+    
+    # 26. 处理下划线格式，如 NIMA_027 -> NIMA-027
+    m = re.search(r'([a-z]+)_(\d{2,5})', base, re.IGNORECASE)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}".upper()
+    
+    # 27. MKD特例处理：MKD-S238 來海灘超嗨 -> MKD-S238
+    m = re.search(r'(MKD-S\d+)', base, re.IGNORECASE)
+    if m:
+        return m.group(1).upper()
+    
+    # 通用格式处理 (原有逻辑保持不变)
+    
+    # 28. 优先：已有连字符，如 JUL-721
+    m = re.search(r'([a-z]+)-(\d{2,5})', base, re.IGNORECASE)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}".upper()
+    
+    # 29. 其次：无连字符的字母+数字，如 NAKA008 -> NAKA-008
+    m = re.search(r'([a-z]+)(\d{2,5})', base, re.IGNORECASE)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}".upper()
+    
+    # 30. 新增：字母+空格+数字，如 ABP 744 -> ABP-744
+    m = re.search(r'([a-z]+)\s+(\d{2,5})', base, re.IGNORECASE)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}".upper()
+    
+    return None
+
+
+def is_subtitle_file(filename):
+    """检查是否为字幕文件"""
+    subtitle_extensions = {'.srt', '.vtt', '.ass', '.ssa'}
+    return Path(filename).suffix.lower() in subtitle_extensions
+
+
+def rename_files_in_directory(directory, dry_run=False):
+    """
+    递归处理目录中的所有字幕文件
+    
+    Args:
+        directory: 要处理的目录路径
+        dry_run: 是否为预览模式（不实际重命名）
+    
+    Returns:
+        tuple: (成功数量, 失败数量, 跳过数量)
+    """
+    directory = Path(directory)
+    if not directory.exists():
+        print(f"错误: 目录不存在: {directory}")
+        return 0, 0, 0
+    
+    success_count = 0
+    failed_count = 0
+    skipped_count = 0
+    
+    print(f"{'[预览模式] ' if dry_run else ''}开始处理目录: {directory}")
+    print("-" * 80)
+    
+    # 递归遍历所有文件
+    for file_path in directory.rglob('*'):
+        if not file_path.is_file():
+            continue
+            
+        if not is_subtitle_file(file_path.name):
+            continue
+        
+        # 提取视频ID
+        video_id = extract_video_id(file_path.name)
+        
+        if video_id is None:
+            print(f"跳过 (无法解析): {file_path.relative_to(directory)}")
+            skipped_count += 1
+            continue
+        
+        # 构建新文件名
+        new_filename = f"{video_id}{file_path.suffix}"
+        new_file_path = file_path.parent / new_filename
+        
+        # 检查是否需要重命名
+        if file_path.name == new_filename:
+            print(f"跳过 (已是正确格式): {file_path.relative_to(directory)}")
+            skipped_count += 1
+            continue
+        
+        # 检查目标文件是否已存在，如果存在则添加序号
+        if new_file_path.exists() and new_file_path != file_path:
+            # 生成带序号的文件名
+            counter = 2
+            base_name = video_id
+            extension = file_path.suffix
+            found_unique = False
+            
+            while counter <= 100:
+                numbered_filename = f"{base_name}({counter}){extension}"
+                numbered_file_path = file_path.parent / numbered_filename
+                
+                if not numbered_file_path.exists():
+                    new_filename = numbered_filename
+                    new_file_path = numbered_file_path
+                    found_unique = True
+                    break
+                    
+                counter += 1
+            
+            # 如果无法生成唯一文件名，跳过此文件
+            if not found_unique:
+                print(f"失败 (无法生成唯一文件名): {file_path.relative_to(directory)} -> {video_id}(N){extension}")
+                failed_count += 1
+                continue
+        
+        print(f"{'预览' if dry_run else '重命名'}: {file_path.relative_to(directory)} -> {new_filename}")
+        
+        if not dry_run:
+            try:
+                file_path.rename(new_file_path)
+                success_count += 1
+            except Exception as e:
+                print(f"失败 (重命名错误): {file_path.relative_to(directory)} -> {new_filename}")
+                print(f"  错误信息: {e}")
+                failed_count += 1
+        else:
+            success_count += 1
+    
+    print("-" * 80)
+    print(f"处理完成: 成功 {success_count}, 失败 {failed_count}, 跳过 {skipped_count}")
+    
+    return success_count, failed_count, skipped_count
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='字幕文件重命名脚本 - 将文件名规范化为标准视频ID格式',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例用法:
+  python rename_subtitle_files.py /path/to/subtitles
+  python rename_subtitle_files.py /path/to/subtitles --dry-run
+  
+支持的文件格式: .srt, .vtt, .ass, .ssa
+
+解析规则示例:
+  121616-326-carib-1080p.srt -> CARIB-121616_326.srt
+  1Pondo-030615_039.srt -> PONDO-030615_039.srt
+  JUL-721.srt -> JUL-721.srt (保持不变)
+  NAKA008.srt -> NAKA-008.srt
+        """
+    )
+    
+    parser.add_argument('directory', help='要处理的目录路径')
+    parser.add_argument('--dry-run', action='store_true', 
+                       help='预览模式，只显示重命名计划而不实际执行')
+    
+    args = parser.parse_args()
+    
+    # 验证目录
+    directory = Path(args.directory)
+    if not directory.exists():
+        print(f"错误: 目录不存在: {directory}")
+        sys.exit(1)
+    
+    if not directory.is_dir():
+        print(f"错误: 路径不是目录: {directory}")
+        sys.exit(1)
+    
+    # 执行重命名
+    success, failed, skipped = rename_files_in_directory(directory, args.dry_run)
+    
+    if args.dry_run:
+        print(f"\n预览完成。如需实际执行，请去掉 --dry-run 参数重新运行。")
+    else:
+        print(f"\n重命名操作完成。")
+    
+    # 根据结果设置退出码
+    if failed > 0:
+        sys.exit(1)
+    else:
+        sys.exit(0)
+
+
+if __name__ == '__main__':
+    main()

@@ -610,6 +610,50 @@ function extractBaseVideoId(videoId) {
     return id;
 }
 
+// 新增：模糊匹配函数，提取视频ID的核心部分用于包含匹配
+function extractVideoIdParts(videoId) {
+    if (!videoId) return [];
+    
+    const cleanId = videoId.toString().trim().toLowerCase();
+    const parts = [];
+    
+    // 使用正则表达式提取所有的字母和数字部分
+    const matches = cleanId.match(/([a-z]+|\d+)/g);
+    
+    if (matches) {
+        // 过滤掉过短的部分（长度小于2的字母或长度小于3的数字）
+        for (const match of matches) {
+            if (/^[a-z]+$/.test(match) && match.length >= 2) {
+                parts.push(match);
+            } else if (/^\d+$/.test(match) && match.length >= 3) {
+                parts.push(match);
+            }
+        }
+    }
+    
+    return parts;
+}
+
+// 新增：检查两个视频ID是否模糊匹配
+function isFuzzyMatch(inputVideoId, dbVideoId) {
+    if (!inputVideoId || !dbVideoId) return false;
+    
+    // 先尝试精确匹配（忽略大小写）
+    if (inputVideoId.toLowerCase() === dbVideoId.toLowerCase()) {
+        return true;
+    }
+    
+    // 提取输入视频ID的核心部分
+    const inputParts = extractVideoIdParts(inputVideoId);
+    if (inputParts.length === 0) return false;
+    
+    // 将数据库中的视频ID转换为小写，用于包含匹配
+    const dbVideoIdLower = dbVideoId.toLowerCase();
+    
+    // 检查所有核心部分是否都包含在数据库视频ID中
+    return inputParts.every(part => dbVideoIdLower.includes(part));
+}
+
 function getAllAsync(sql, params = []) {
     return new Promise((resolve, reject) => {
         db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows || [])));
@@ -1992,14 +2036,28 @@ app.get('/api/subtitle/:video_id', authenticateAnyToken, async (req, res) => {
     const videoId = req.params.video_id;
     setNoStore(res);
     
+    // 参数验证
+    if (!videoId || videoId.trim() === '') {
+        return res.status(400).json({ error: '视频ID不能为空' });
+    }
+    
+    // 只进行精确匹配
     db.get('SELECT * FROM subtitles WHERE lower(video_id) = lower(?)', [videoId], async (err, subtitle) => {
         if (err) {
+            console.error('Database error in /api/subtitle/:video_id:', err);
             return res.status(500).json({ error: '数据库错误' });
         }
         
+        // 如果没有找到字幕，直接返回404
         if (!subtitle) {
             return res.status(404).json({ error: '字幕文件不存在' });
         }
+        
+        await processSubtitleResponse(subtitle, req, res, videoId);
+    });
+    
+    // 提取字幕处理逻辑为独立函数
+    async function processSubtitleResponse(subtitle, req, res, videoId) {
         
         // 限流与扫描（用户+IP）
         const userId = req.user && req.user.id ? String(req.user.id) : '';
@@ -2037,7 +2095,7 @@ app.get('/api/subtitle/:video_id', authenticateAnyToken, async (req, res) => {
         } catch (error) {
             return res.status(500).json({ error: '读取字幕文件失败' });
         }
-    });
+    }
 });
 
 // 上传字幕文件 (需要认证)
@@ -2707,6 +2765,12 @@ app.get('/api/subtitles/exists/:video_id', async (req, res) => {
 app.get('/api/subtitles/variants/:base_video_id', authenticateAnyToken, async (req, res) => {
     setNoStore(res);
     const baseId = (req.params.base_video_id || '').toUpperCase();
+    
+    // 参数验证
+    if (!baseId) {
+        return res.status(400).json({ error: '视频ID不能为空' });
+    }
+    
     try {
         // 限流与扫描（用户+IP）
         const userId = req.user && req.user.id ? String(req.user.id) : '';
@@ -2718,12 +2782,18 @@ app.get('/api/subtitles/variants/:base_video_id', authenticateAnyToken, async (r
             if (!allowVariantsUser(userId)) { await markCaptchaRequired('user', userId); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
         }
 
-        const rows = await getAllAsync(
-            'SELECT video_id, base_video_id, variant, filename, file_size, updated_at, likes_count FROM subtitles WHERE lower(base_video_id) = lower(?) ORDER BY COALESCE(variant,1) ASC, updated_at DESC',
-            [baseId]
+        // 获取所有字幕并进行模糊匹配
+        const allSubtitles = await getAllAsync(
+            'SELECT video_id, base_video_id, variant, filename, file_size, updated_at, likes_count FROM subtitles ORDER BY COALESCE(variant,1) ASC, updated_at DESC'
         );
+        
+        // 使用模糊匹配查找所有匹配的字幕变体
+        const rows = allSubtitles.filter(sub => isFuzzyMatch(baseId, sub.base_video_id));
+        
+        // 返回结果，即使为空数组也是有效的响应
         res.json({ base: extractBaseVideoId(baseId), variants: rows });
     } catch (e) {
+        console.error('获取字幕变体失败:', e);
         res.status(500).json({ error: '获取字幕变体失败' });
     }
 });
