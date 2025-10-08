@@ -2500,11 +2500,27 @@ class VideoPlayer {
     }
 
     extractBaseId(videoId) {
-        const id = String(videoId || '').toUpperCase().trim();
-        const m = id.match(/^([A-Z]+-\d{2,5})(?:-(\d+))?$/);
+        const raw = String(videoId || '').trim();
+        const id = raw.toLowerCase();
+
+        // 日期+变体类：brand-(六位数字)[-_](变体)，输出为 "日期-变体"
+        const m1 = id.match(/^(caribbeancom|pondo|musume|pacopacomama)-(\d{6})[-_](\d{2,3})$/);
+        if (m1) {
+            return `${m1[2]}-${m1[3]}`.toUpperCase();
+        }
+
+        // xxx-av-数字 → 输出为 "xxx-数字"
+        const m2 = id.match(/^xxx-av-(\d+)$/);
+        if (m2) {
+            return `xxx-${m2[1]}`.toUpperCase();
+        }
+
+        // 兜底：沿用旧逻辑（保持大写输出）
+        const upper = raw.toUpperCase();
+        const m = upper.match(/^([A-Z]+-\d{2,5})(?:-(\d+))?$/);
         if (m) return m[1];
-        const m2 = id.match(/([A-Z]+-\d{2,5})/);
-        return m2 ? m2[1] : id;
+        const m3 = upper.match(/([A-Z]+-\d{2,5})/);
+        return m3 ? m3[1] : upper;
     }
 
     buildSubtitleSelector(activeVideoId) {

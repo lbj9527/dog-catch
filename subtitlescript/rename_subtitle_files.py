@@ -161,22 +161,35 @@ def extract_video_id(filename):
     if m:
         return m.group(1).upper()
     
-    # 通用格式处理 (原有逻辑保持不变)
+    # 通用格式处理 (改进：保留可选的单字母后缀以减少碰撞)
     
-    # 28. 优先：已有连字符，如 JUL-721
-    m = re.search(r'([a-z]+)-(\d{2,5})', base, re.IGNORECASE)
+    # 28. 优先：已有连字符，如 JUL-721，支持紧随其后的单字母后缀，如 BBI-142A
+    m = re.search(r'([a-z]+)-(\d{2,5})([a-z])?', base, re.IGNORECASE)
     if m:
-        return f"{m.group(1)}-{m.group(2)}".upper()
+        prefix, num, suf = m.group(1), m.group(2), m.group(3)
+        # 若未匹配到紧随其后的后缀，尝试从文件名末尾或括号前提取单字母后缀（排除 CHS/CHT）
+        if not suf:
+            base_upper = base.upper()
+            if not (base_upper.endswith('CHS') or base_upper.endswith('CHT')):
+                end_suf = re.search(r'([A-Z])$', base_upper)
+                if end_suf:
+                    suf = end_suf.group(1)
+                else:
+                    # 兼容如 "BBI-142 桜木凛A(副本)" 的后缀形式，提取括号前的单字母
+                    bracket_suf = re.search(r'([A-Z])(?=[\(（])', base_upper)
+                    if bracket_suf:
+                        suf = bracket_suf.group(1)
+        return f"{prefix}-{num}{suf or ''}".upper()
     
-    # 29. 其次：无连字符的字母+数字，如 NAKA008 -> NAKA-008
-    m = re.search(r'([a-z]+)(\d{2,5})', base, re.IGNORECASE)
+    # 29. 其次：无连字符的字母+数字，如 NAKA008 -> NAKA-008，支持紧随其后的单字母后缀，如 NAKA008B
+    m = re.search(r'([a-z]+)(\d{2,5})([a-z])?', base, re.IGNORECASE)
     if m:
-        return f"{m.group(1)}-{m.group(2)}".upper()
+        return f"{m.group(1)}-{m.group(2)}{m.group(3) or ''}".upper()
     
-    # 30. 新增：字母+空格+数字，如 ABP 744 -> ABP-744
-    m = re.search(r'([a-z]+)\s+(\d{2,5})', base, re.IGNORECASE)
+    # 30. 字母+空格+数字，如 ABP 744 -> ABP-744，支持紧随其后的单字母后缀，如 ABP 744B
+    m = re.search(r'([a-z]+)\s+(\d{2,5})([a-z])?', base, re.IGNORECASE)
     if m:
-        return f"{m.group(1)}-{m.group(2)}".upper()
+        return f"{m.group(1)}-{m.group(2)}{m.group(3) or ''}".upper()
     
     return None
 
@@ -210,6 +223,9 @@ def rename_files_in_directory(directory, dry_run=False):
     print(f"{'[预览模式] ' if dry_run else ''}开始处理目录: {directory}")
     print("-" * 80)
     
+    # 新增：按目录维护本批次将要生成的目标文件名集合，确保 dry-run 与真实执行一致的去重效果
+    dir_used_names = {}
+    
     # 递归遍历所有文件
     for file_path in directory.rglob('*'):
         if not file_path.is_file():
@@ -226,6 +242,16 @@ def rename_files_in_directory(directory, dry_run=False):
             skipped_count += 1
             continue
         
+        # 准备当前目录的已占用名称集合（包含磁盘已有文件 + 本批次将要生成的文件名）
+        parent_dir = file_path.parent
+        if parent_dir not in dir_used_names:
+            try:
+                existing_names = {p.name for p in parent_dir.iterdir() if p.is_file()}
+            except Exception:
+                existing_names = set()
+            dir_used_names[parent_dir] = set(existing_names)
+        used_set = dir_used_names[parent_dir]
+        
         # 构建新文件名
         new_filename = f"{video_id}{file_path.suffix}"
         new_file_path = file_path.parent / new_filename
@@ -234,26 +260,26 @@ def rename_files_in_directory(directory, dry_run=False):
         if file_path.name == new_filename:
             print(f"跳过 (已是正确格式): {file_path.relative_to(directory)}")
             skipped_count += 1
+            # 已存在于 existing_names 中，无需再加入 used_set
             continue
         
-        # 检查目标文件是否已存在，如果存在则添加序号
-        if new_file_path.exists() and new_file_path != file_path:
-            # 生成带序号的文件名
+        # 检查目标文件是否已存在，或本批次已占用；若冲突则添加序号
+        if (new_file_path.exists() and new_file_path != file_path) or (new_filename in used_set):
             counter = 2
             base_name = video_id
             extension = file_path.suffix
             found_unique = False
             
-            while counter <= 100:
+            while counter <= 999:
                 numbered_filename = f"{base_name}({counter}){extension}"
                 numbered_file_path = file_path.parent / numbered_filename
                 
-                if not numbered_file_path.exists():
+                if (not numbered_file_path.exists()) and (numbered_filename not in used_set):
                     new_filename = numbered_filename
                     new_file_path = numbered_file_path
                     found_unique = True
                     break
-                    
+                
                 counter += 1
             
             # 如果无法生成唯一文件名，跳过此文件
@@ -261,6 +287,9 @@ def rename_files_in_directory(directory, dry_run=False):
                 print(f"失败 (无法生成唯一文件名): {file_path.relative_to(directory)} -> {video_id}(N){extension}")
                 failed_count += 1
                 continue
+        
+        # 记录占用，确保 dry-run 与真实执行都进行批次内去重
+        used_set.add(new_filename)
         
         print(f"{'预览' if dry_run else '重命名'}: {file_path.relative_to(directory)} -> {new_filename}")
         
