@@ -81,9 +81,33 @@
         },
         extractVideoId(url) {
             // 从 missav.live URL 中提取视频编号
-            // 例如：https://missav.live/cn/hmn-387-uncensored-leak → hmn-387
-            const match = url.match(/\/([a-z0-9]+-[0-9]+)/i);
-            return match ? match[1] : null;
+            // 支持多种格式：
+            // https://missav.live/dm13/mkd-s123 → mkd-s123
+            // https://missav.live/dm218/011209-959 → 011209-959  
+            // https://missav.live/dm720/110910_964 → 110910_964
+            // https://missav.live/dm18/n1388 → n1388
+            // https://missav.live/cn/hmn-387-uncensored-leak → hmn-387
+            
+            // 尝试多种匹配模式
+            const patterns = [
+                // 匹配 /dmXXX/视频ID 格式 (新格式)
+                /\/dm\d+\/([a-z0-9_-]+)/i,
+                // 匹配 /cn/视频ID-其他内容 格式 (原格式)
+                /\/cn\/([a-z0-9]+-[0-9]+)/i,
+                // 匹配路径中的视频ID格式 (通用格式)
+                /\/([a-z0-9]+-[0-9]+)/i,
+                // 匹配纯字母数字组合
+                /\/([a-z]+[0-9]+)/i
+            ];
+            
+            for (const pattern of patterns) {
+                const match = url.match(pattern);
+                if (match) {
+                    return match[1];
+                }
+            }
+            
+            return null;
         },
         download(details) {
  
