@@ -276,6 +276,9 @@ class VideoPlayer {
                 const username = userInfo.username || userInfo.email?.split('@')[0] || '用户';
                 userAvatarLarge.innerHTML = this.generateUserAvatar(username);
             }
+
+            // 更新会员状态
+            this.updateMembershipDisplay(userInfo);
         } else {
             // 默认显示
             if (userNameDisplay) userNameDisplay.textContent = '用户';
@@ -285,6 +288,66 @@ class VideoPlayer {
             if (userGenderDisplay) this.updateGenderDisplay(null);
             if (userBioDisplay) userBioDisplay.textContent = '这个人很懒，什么都没有留下...';
             if (userAvatarLarge) userAvatarLarge.innerHTML = this.generateUserAvatar('用户');
+            
+            // 隐藏会员状态
+            this.updateMembershipDisplay(null);
+        }
+    }
+
+    // 更新会员状态显示
+    updateMembershipDisplay(userInfo) {
+        const membershipSection = document.getElementById('userMembershipSection');
+        const membershipBadge = document.getElementById('membershipBadge');
+        const membershipLevel = document.getElementById('membershipLevel');
+        const membershipExpiry = document.getElementById('membershipExpiry');
+        const expiryDate = document.getElementById('expiryDate');
+
+        if (!membershipSection) return;
+
+        if (userInfo && this.isLoggedIn()) {
+            const membership = userInfo.membership || 'free';
+            const paidUntil = userInfo.paid_until;
+            
+            // 显示会员状态区域
+            membershipSection.style.display = 'block';
+            
+            if (membership === 'paid') {
+                // 付费会员
+                if (membershipBadge) membershipBadge.className = 'membership-badge paid';
+                if (membershipLevel) membershipLevel.textContent = '付费会员';
+                
+                // 处理到期时间
+                if (paidUntil && membershipExpiry && expiryDate) {
+                    const expiry = new Date(paidUntil);
+                    const now = new Date();
+                    const isExpired = expiry <= now;
+                    const isExpiringSoon = !isExpired && (expiry.getTime() - now.getTime()) < 7 * 24 * 60 * 60 * 1000; // 7天内到期
+                    
+                    membershipExpiry.style.display = 'block';
+                    expiryDate.textContent = expiry.toLocaleDateString('zh-CN');
+                    
+                    // 设置到期状态样式
+                    membershipExpiry.className = 'membership-expiry';
+                    if (isExpired) {
+                        membershipExpiry.classList.add('expired');
+                        if (membershipLevel) membershipLevel.textContent = '会员已过期';
+                        if (membershipBadge) membershipBadge.className = 'membership-badge';
+                    } else if (isExpiringSoon) {
+                        membershipExpiry.classList.add('expiring-soon');
+                    }
+                } else {
+                    // 永久会员或无到期时间
+                    if (membershipExpiry) membershipExpiry.style.display = 'none';
+                }
+            } else {
+                // 免费用户
+                if (membershipBadge) membershipBadge.className = 'membership-badge';
+                if (membershipLevel) membershipLevel.textContent = '免费用户';
+                if (membershipExpiry) membershipExpiry.style.display = 'none';
+            }
+        } else {
+            // 未登录或无用户信息，隐藏会员状态
+            membershipSection.style.display = 'none';
         }
     }
 
@@ -1257,6 +1320,18 @@ class VideoPlayer {
             subtitleSelectEl.onchange = (e) => {
                 const videoId = e.target.value;
                 if (videoId) {
+                    // 检查是否为付费字幕且用户无权限
+                    const variant = this.subtitleVariants.find(v => v.video_id === videoId);
+                    const isPaid = variant && Number(variant.is_paid || 0) === 1;
+                    const isPaidMember = this.isPaidMember();
+                    
+                    if (isPaid && !isPaidMember) {
+                        // 阻止选择付费字幕，显示升级提示
+                        e.target.value = this.getActiveVideoId() || ''; // 恢复到当前选中项
+                        this.showUpgradeModal();
+                        return;
+                    }
+                    
                     this.switchSubtitleVariant(videoId);
                 }
             };
@@ -2533,7 +2608,26 @@ class VideoPlayer {
             // 名称：使用后端提供的 video_id（默认版=base；其他=base-n）
             const name = v && v.video_id ? String(v.video_id) : ((Number(v.variant) || 1) === 1 ? this.extractBaseId(this.currentVideoId) : `${this.extractBaseId(this.currentVideoId)}-${v.variant}`);
             const count = Number(v && v.likes_count != null ? v.likes_count : 0);
-            option.textContent = `${name}  ❤ ${this.formatLikeCount(count)}`;
+            
+            // 检查是否为付费字幕
+            const isPaid = Number(v.is_paid || 0) === 1;
+            const isPaidMember = this.isPaidMember();
+            
+            // 构建显示文本
+            let displayText = `${name}  ❤ ${this.formatLikeCount(count)}`;
+            if (isPaid) {
+                displayText += isPaidMember ? ' 👑' : ' 🔒';
+            }
+            
+            option.textContent = displayText;
+            
+            // 设置付费字幕的样式和禁用状态
+            if (isPaid && !isPaidMember) {
+                option.disabled = true;
+                option.style.color = '#888';
+                option.title = '付费会员专享';
+            }
+            
             if (v.video_id === activeVideoId) option.selected = true;
             select.appendChild(option);
         });
@@ -2553,7 +2647,18 @@ class VideoPlayer {
             // 重新生成该项的显示文本
             const name = v && v.video_id ? String(v.video_id) : this.extractBaseId(this.currentVideoId);
             const count = Number(v && v.likes_count != null ? v.likes_count : 0);
-            options[idx].textContent = `${name}  ❤ ${this.formatLikeCount(count)}`;
+            
+            // 检查是否为付费字幕
+            const isPaid = Number(v.is_paid || 0) === 1;
+            const isPaidMember = this.isPaidMember();
+            
+            // 构建显示文本
+            let displayText = `${name}  ❤ ${this.formatLikeCount(count)}`;
+            if (isPaid) {
+                displayText += isPaidMember ? ' 👑' : ' 🔒';
+            }
+            
+            options[idx].textContent = displayText;
         }
     }
 
@@ -2892,7 +2997,9 @@ class VideoPlayer {
                 const data = await response.json();
                 this.currentLikeStatus = {
                     isLiked: !!(data.is_liked ?? data.isLiked ?? false),
-                    likesCount: Number(data.likes_count ?? data.likesCount ?? 0)
+                    likesCount: Number(data.likes_count ?? data.likesCount ?? 0),
+                    canLike: !!(data.can_like ?? true), // 默认可以点赞
+                    isPaid: !!(data.is_paid ?? false)
                 };
                 // 确保展示点赞数
                 const likeCountEl = document.getElementById('likeCount');
@@ -2911,7 +3018,9 @@ class VideoPlayer {
                 console.log('当前视频无点赞记录，设置默认状态');
                 this.currentLikeStatus = {
                     isLiked: false,
-                    likesCount: 0
+                    likesCount: 0,
+                    canLike: true,
+                    isPaid: false
                 };
                 // 确保展示点赞数
                 const likeCountEl = document.getElementById('likeCount');
@@ -2944,6 +3053,12 @@ class VideoPlayer {
             if (loginModal) loginModal.style.display = 'flex';
             return;
         }
+
+        // 检查是否可以点赞付费字幕
+        if (this.currentLikeStatus && !this.currentLikeStatus.canLike) {
+            this.showMessage('付费字幕仅限付费会员点赞', 'error');
+            return;
+        }
         
         const likeBtn = document.getElementById('likeButton');
         if (likeBtn) likeBtn.disabled = true;
@@ -2966,7 +3081,9 @@ class VideoPlayer {
                 const data = await response.json();
                 this.currentLikeStatus = {
                     isLiked: !!(data.is_liked ?? data.liked ?? false),
-                    likesCount: Number(data.likes_count ?? data.likesCount ?? 0)
+                    likesCount: Number(data.likes_count ?? data.likesCount ?? 0),
+                    canLike: this.currentLikeStatus?.canLike ?? true,
+                    isPaid: this.currentLikeStatus?.isPaid ?? false
                 };
                 // 已登录操作成功，确保展示点赞数
                 const likeCountEl = document.getElementById('likeCount');
@@ -2977,6 +3094,14 @@ class VideoPlayer {
                 this.showMessage(this.currentLikeStatus.isLiked ? window.PLAYER_CONFIG.I18N.like.likeSuccess : window.PLAYER_CONFIG.I18N.like.unlikeSuccess, 'success');
             } else if (response.status === 401) {
                 this.showMessage(window.PLAYER_CONFIG.I18N.like.loginExpired, 'error');
+            } else if (response.status === 403) {
+                // 处理付费字幕权限错误
+                const errorData = await response.json().catch(() => ({}));
+                if (errorData.code === 'PAID_SUBTITLE_LIKE_RESTRICTED') {
+                    this.showMessage('付费字幕仅限付费会员点赞', 'error');
+                } else {
+                    this.showMessage(errorData.error || '权限不足', 'error');
+                }
             } else if (response.status === 404) {
                 this.showMessage('当前视频，没有字幕可点赞', 'error');
             } else {
@@ -3004,15 +3129,35 @@ class VideoPlayer {
         // 更新点赞数量（千分位/缩写）
         likeCount.textContent = this.formatLikeCount(this.currentLikeStatus.likesCount);
         
-        // 更新点赞状态样式
-        if (this.currentLikeStatus.isLiked) {
-            likeBtn.classList.add('liked');
-            likeSvg.style.fill = '#ff6b6b';
-            likeSvg.style.stroke = '#ff6b6b';
-        } else {
-            likeBtn.classList.remove('liked');
+        // 检查是否可以点赞
+        const canLike = this.currentLikeStatus?.canLike ?? true;
+        const isPaid = this.currentLikeStatus?.isPaid ?? false;
+        
+        if (!canLike && isPaid) {
+            // 付费字幕且无权限点赞
+            likeBtn.disabled = true;
+            likeBtn.title = '付费字幕仅限付费会员点赞';
+            likeBtn.classList.add('disabled-paid');
             likeSvg.style.fill = 'none';
-            likeSvg.style.stroke = '#666';
+            likeSvg.style.stroke = '#ccc';
+            likeSvg.style.opacity = '0.5';
+        } else {
+            // 可以点赞或非付费字幕
+            likeBtn.disabled = false;
+            likeBtn.title = '点赞字幕';
+            likeBtn.classList.remove('disabled-paid');
+            likeSvg.style.opacity = '1';
+            
+            // 更新点赞状态样式
+            if (this.currentLikeStatus.isLiked) {
+                likeBtn.classList.add('liked');
+                likeSvg.style.fill = '#ff6b6b';
+                likeSvg.style.stroke = '#ff6b6b';
+            } else {
+                likeBtn.classList.remove('liked');
+                likeSvg.style.fill = 'none';
+                likeSvg.style.stroke = '#666';
+            }
         }
     }
     
@@ -4202,6 +4347,81 @@ class VideoPlayer {
             return payload.id || payload.userId || payload.email || null;
         }
         return null;
+    }
+
+    // 获取当前用户会员信息（从JWT）
+    getCurrentMembership() {
+        const payload = this._parseJWTPayload(this.userToken);
+        if (payload) {
+            return {
+                membership: payload.membership || 'free',
+                paid_until: payload.paid_until || null
+            };
+        }
+        return { membership: 'free', paid_until: null };
+    }
+
+    // 检查是否为付费会员（考虑到期时间）
+    isPaidMember() {
+        const memberInfo = this.getCurrentMembership();
+        if (memberInfo.membership !== 'paid') return false;
+        if (!memberInfo.paid_until) return true; // 永久会员
+        return new Date(memberInfo.paid_until) > new Date();
+    }
+
+    // 获取最新用户信息（从API，包含最新会员状态）
+    async fetchLatestUserInfo() {
+        if (!this.isLoggedIn()) return null;
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/user/verify`, {
+                headers: { Authorization: `Bearer ${this.userToken}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                return data.user || null;
+            }
+        } catch (error) {
+            console.error('获取用户信息失败:', error);
+        }
+        return null;
+    }
+
+    // 显示升级会员弹窗
+    showUpgradeModal() {
+        const modal = document.getElementById('upgradeModal');
+        if (!modal) return;
+        
+        modal.style.display = 'flex';
+        
+        // 绑定关闭事件（只绑定一次）
+        if (!modal.dataset.eventsAttached) {
+            const closeBtn = document.getElementById('upgradeModalClose');
+            const laterBtn = document.getElementById('upgradeLater');
+            const upgradeBtn = document.getElementById('upgradeBtn');
+            
+            const closeModal = () => {
+                modal.style.display = 'none';
+            };
+            
+            if (closeBtn) closeBtn.onclick = closeModal;
+            if (laterBtn) laterBtn.onclick = closeModal;
+            
+            // 点击背景关闭
+            modal.onclick = (e) => {
+                if (e.target === modal) closeModal();
+            };
+            
+            // 立即升级按钮
+            if (upgradeBtn) {
+                upgradeBtn.onclick = () => {
+                    closeModal();
+                    // 这里可以跳转到付费页面或显示付费信息
+                    this.showMessage('付费功能开发中，敬请期待！', 'info');
+                };
+            }
+            
+            modal.dataset.eventsAttached = 'true';
+        }
     }
     
     // 获取顶级评论ID（用于多级回复的删除功能）

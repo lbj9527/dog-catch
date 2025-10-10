@@ -9,7 +9,11 @@ export const userAdminAPI = {
 	},
 	deleteUser(userId) {
 		return api.delete(`/api/admin/users/${userId}`)
+	},
+	// 会员管理相关API
+	updateMembership(userId, membershipData) {
+		return api.patch(`/api/admin/users/${userId}/membership`, membershipData)
 	}
 }
 
-export default userAdminAPI 
+export default userAdminAPI

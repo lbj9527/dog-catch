@@ -31,26 +31,46 @@
 
 		<el-card class="table-card">
 			<el-table :data="tableData" v-loading="loading" height="420" stripe>
-				<el-table-column prop="username" label="用户名" width="200" />
-				<el-table-column prop="email" label="邮箱" width="200" />
-			<el-table-column prop="gender" label="性别" width="80">
-				<template #default="scope">
-					{{ scope.row.gender || '未设置' }}
-				</template>
-			</el-table-column>
-			<el-table-column prop="bio" label="个人简介" width="200" show-overflow-tooltip>
-				<template #default="scope">
-					{{ scope.row.bio || '暂无简介' }}
-				</template>
-			</el-table-column>
-			<el-table-column prop="created_at" label="注册时间" width="180">
-				<template #default="scope">{{ formatDate(scope.row.created_at) }}</template>
-			</el-table-column>
-			<el-table-column prop="last_login_at" label="最近登录" width="180">
-				<template #default="scope">{{ scope.row.last_login_at ? formatDate(scope.row.last_login_at) : '从未登录' }}</template>
-			</el-table-column>
-				<el-table-column label="操作" width="120" align="center" fixed="right">
+				<el-table-column prop="username" label="用户名" width="150" />
+				<el-table-column prop="email" label="邮箱" width="180" />
+				<el-table-column prop="gender" label="性别" width="80">
 					<template #default="scope">
+						{{ scope.row.gender || '未设置' }}
+					</template>
+				</el-table-column>
+				<el-table-column prop="membership" label="会员状态" width="120">
+					<template #default="scope">
+						<el-tag :type="getMembershipTagType(scope.row.membership)" size="small">
+							{{ getMembershipText(scope.row.membership) }}
+						</el-tag>
+					</template>
+				</el-table-column>
+				<el-table-column prop="paid_until" label="到期时间" width="120">
+					<template #default="scope">
+						<span v-if="scope.row.membership === 'paid' && scope.row.paid_until" 
+							  :class="getExpiryClass(scope.row.paid_until)">
+							{{ formatDate(scope.row.paid_until, 'date') }}
+						</span>
+						<span v-else class="text-muted">--</span>
+					</template>
+				</el-table-column>
+				<el-table-column prop="bio" label="个人简介" width="150" show-overflow-tooltip>
+					<template #default="scope">
+						{{ scope.row.bio || '暂无简介' }}
+					</template>
+				</el-table-column>
+				<el-table-column prop="created_at" label="注册时间" width="140">
+					<template #default="scope">{{ formatDate(scope.row.created_at, 'date') }}</template>
+				</el-table-column>
+				<el-table-column prop="last_login_at" label="最近登录" width="140">
+					<template #default="scope">{{ scope.row.last_login_at ? formatDate(scope.row.last_login_at, 'date') : '从未登录' }}</template>
+				</el-table-column>
+				<el-table-column label="操作" width="180" align="center" fixed="right">
+					<template #default="scope">
+						<el-button type="primary" size="small" @click="editMembership(scope.row)">
+							👑
+							会员
+						</el-button>
 						<el-button type="danger" size="small" @click="deleteUser(scope.row)">
 							<el-icon><Delete /></el-icon>
 							删除
@@ -122,6 +142,74 @@ const deleteUser = async (row) => {
 	}
 }
 
+// 会员管理相关方法
+const getMembershipText = (membership) => {
+	return membership === 'paid' ? '付费会员' : '免费用户'
+}
+
+const getMembershipTagType = (membership) => {
+	return membership === 'paid' ? 'warning' : 'info'
+}
+
+const getExpiryClass = (paidUntil) => {
+	if (!paidUntil) return ''
+	const expiry = new Date(paidUntil)
+	const now = new Date()
+	const diffDays = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24))
+	
+	if (diffDays < 0) return 'text-danger' // 已过期
+	if (diffDays <= 7) return 'text-warning' // 7天内到期
+	return 'text-success' // 正常
+}
+
+const editMembership = async (row) => {
+	const currentMembership = row.membership || 'free'
+	const currentPaidUntil = row.paid_until || ''
+	
+	try {
+		const { value } = await ElMessageBox.prompt(
+			`当前用户：${row.username}\n当前状态：${getMembershipText(currentMembership)}\n\n请选择新的会员状态：`,
+			'编辑会员状态',
+			{
+				confirmButtonText: '确定',
+				cancelButtonText: '取消',
+				inputType: 'textarea',
+				inputValue: currentMembership === 'paid' ? 
+					`membership=paid\npaid_until=${currentPaidUntil || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}` :
+					'membership=free',
+				inputPlaceholder: '格式：membership=paid 或 membership=free\n如果是付费会员，可添加：paid_until=2024-12-31'
+			}
+		)
+		
+		// 解析输入
+		const lines = value.split('\n').map(line => line.trim()).filter(line => line)
+		const data = {}
+		
+		for (const line of lines) {
+			const [key, val] = line.split('=').map(s => s.trim())
+			if (key === 'membership' && ['free', 'paid'].includes(val)) {
+				data.membership = val
+			} else if (key === 'paid_until' && val) {
+				data.paid_until = val
+			}
+		}
+		
+		if (!data.membership) {
+			throw new Error('请指定有效的会员状态 (free 或 paid)')
+		}
+		
+		await userAdminAPI.updateMembership(row.id, data)
+		ElMessage.success('会员状态更新成功')
+		await loadData()
+		
+	} catch (e) {
+		if (e !== 'cancel') {
+			console.error(e)
+			ElMessage.error(e.message || '更新会员状态失败')
+		}
+	}
+}
+
 const onSizeChange = (size) => {
 	pagination.limit = size
 	pagination.page = 1
@@ -133,9 +221,13 @@ const onPageChange = (page) => {
 	loadData()
 }
 
-const formatDate = (val) => {
+const formatDate = (val, type = 'datetime') => {
 	if (!val) return '-'
-	return new Date(val).toLocaleString('zh-CN')
+	const date = new Date(val)
+	if (type === 'date') {
+		return date.toLocaleDateString('zh-CN')
+	}
+	return date.toLocaleString('zh-CN')
 }
 
 onMounted(async () => {
@@ -156,4 +248,10 @@ onMounted(async () => {
 .stat-icon { font-size: 40px; color: #409EFF; opacity: 0.3; }
 .table-card { box-shadow: 0 2px 4px rgba(0,0,0,.1); }
 .pagination-wrapper { display: flex; justify-content: center; margin-top: 20px; }
+
+/* 会员状态相关样式 */
+.text-success { color: #67c23a; }
+.text-warning { color: #e6a23c; }
+.text-danger { color: #f56c6c; }
+.text-muted { color: #909399; }
 </style>

@@ -65,6 +65,22 @@
         </div>
       </div>
 
+      <!-- 付费字幕开关 -->
+      <div class="paid-switch-container" v-if="fileList.length > 0 && !uploading && !uploadComplete" style="margin: 20px 0;">
+        <el-switch
+          v-model="isPaidForBatch"
+          active-text="本批次设为付费字幕"
+          inactive-text="本批次设为免费字幕"
+          active-color="#f56c6c"
+          inactive-color="#409eff"
+          style="--el-switch-on-color: #f56c6c; --el-switch-off-color: #409eff;"
+        />
+        <div class="paid-switch-tip" style="margin-top: 8px; font-size: 12px; color: #909399;">
+          <el-icon><InfoFilled /></el-icon>
+          启用后，本批次上传的字幕均标记为付费。普通用户不可见。
+        </div>
+      </div>
+
       <!-- 上传进度 -->
       <div class="upload-progress" v-if="uploading">
         <div class="progress-header">
@@ -174,7 +190,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { UploadFilled, Document, Delete, Check, Warning, Close } from '@element-plus/icons-vue'
+import { UploadFilled, Document, Delete, Check, Warning, Close, InfoFilled } from '@element-plus/icons-vue'
 import { subtitleAPI } from '../utils/api'
 
 const props = defineProps({
@@ -207,6 +223,9 @@ const uploadResult = ref({
 // 新增：失败明细（仅失败项）
 const failedDetails = computed(() => uploadResult.value.details.filter(d => d.status === 'failed'))
 
+// 新增：付费字幕开关
+const isPaidForBatch = ref(false)
+
 // 计算属性
 const validFileCount = computed(() => {
   return fileList.value.filter(file => !file.error).length
@@ -237,6 +256,8 @@ const resetDialog = () => {
   uploadedCount.value = 0
   totalCount.value = 0
   currentFile.value = ''
+  // 重置付费字幕开关
+  isPaidForBatch.value = false
   uploadResult.value = {
     success: 0,
     failed: 0,
@@ -329,7 +350,7 @@ const startUpload = async () => {
     currentFile.value = '正在上传...'
     
     // 调用批量上传API
-    const response = await subtitleAPI.batchUpload(formData)
+    const response = await subtitleAPI.batchUpload(formData, isPaidForBatch.value)
     
     // 处理响应结果（按后端结构映射）
     const summary = response?.summary || {}

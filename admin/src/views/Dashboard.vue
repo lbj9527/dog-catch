@@ -130,6 +130,16 @@
                 </el-tag>
               </template>
             </el-table-column>
+
+            <!-- 付费标识列 -->
+            <el-table-column label="付费状态" width="100" align="center">
+              <template #default="scope">
+                <el-tag v-if="scope.row.filename" :type="scope.row.is_paid ? 'warning' : 'info'" size="small">
+                  {{ scope.row.is_paid ? '💰付费' : '🆓免费' }}
+                </el-tag>
+                <span v-else style="color: #ccc;">-</span>
+              </template>
+            </el-table-column>
             
             <el-table-column prop="filename" label="文件名" min-width="200">
               <template #default="scope">
@@ -192,6 +202,17 @@
                     title="更新"
                   >
                     <el-icon><Edit /></el-icon>
+                  </el-button>
+
+                  <el-button
+                    v-if="scope.row.filename"
+                    size="small"
+                    :type="scope.row.is_paid ? 'info' : 'warning'"
+                    @click="togglePaidStatus(scope.row)"
+                    :title="scope.row.is_paid ? '设为免费' : '设为付费'"
+                  >
+                    <el-icon v-if="scope.row.is_paid">🔓</el-icon>
+                    <el-icon v-else>🔒</el-icon>
                   </el-button>
                   
                   <el-button
@@ -869,6 +890,37 @@ const deleteSubtitle = async (row) => {
   } catch (error) {
     if (error !== 'cancel') {
       console.error('删除失败:', error)
+    }
+  }
+}
+
+// 切换付费状态
+const togglePaidStatus = async (row) => {
+  const newStatus = row.is_paid ? 0 : 1
+  const statusText = newStatus ? '付费' : '免费'
+  
+  try {
+    await ElMessageBox.confirm(
+      `确定要将视频 "${row.video_id}" 的字幕设置为${statusText}吗？`,
+      '确认修改',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
+    // 调用更新接口，传递is_paid参数
+    const formData = new FormData()
+    formData.append('is_paid', newStatus)
+    
+    await subtitleAPI.update(row.video_id, formData)
+    ElMessage.success(`已设置为${statusText}字幕`)
+    await loadData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('修改付费状态失败:', error)
+      ElMessage.error('修改失败')
     }
   }
 }

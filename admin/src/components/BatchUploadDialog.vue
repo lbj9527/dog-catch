@@ -18,6 +18,22 @@
         <p>4. 单个文件大小不超过 1MB</p>
       </el-alert>
       
+      <!-- 付费字幕开关 -->
+      <div class="paid-switch-container" style="margin-bottom: 20px;">
+        <el-switch
+          v-model="isPaidForBatch"
+          active-text="本批次设为付费字幕"
+          inactive-text="本批次设为免费字幕"
+          active-color="#f56c6c"
+          inactive-color="#409eff"
+          style="--el-switch-on-color: #f56c6c; --el-switch-off-color: #409eff;"
+        />
+        <div class="paid-switch-tip" style="margin-top: 8px; font-size: 12px; color: #909399;">
+          <el-icon><InfoFilled /></el-icon>
+          启用后，本批次上传的字幕均标记为付费。普通用户不可见。
+        </div>
+      </div>
+      
       <!-- 改为选择文件夹并递归扫描 -->
       <div class="folder-select">
         <el-button type="primary" @click="triggerSelectFolder">
@@ -39,7 +55,7 @@
       <!-- 扫描进度 -->
       <div v-if="scanning" class="scan-progress">
         <h4><el-icon class="loading-icon"><Loading /></el-icon>扫描进度</h4>
-        <el-progress :percentage="scanProgress" :status="scanProgress >= 100 ? 'success' : 'active'" :stroke-width="8" />
+        <el-progress :percentage="scanProgress" :status="scanProgress >= 100 ? 'success' : ''" :stroke-width="8" />
         <p class="progress-text">{{ scanStatusText }}</p>
       </div>
       
@@ -163,7 +179,7 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-import { UploadFilled, Check, Close, Loading } from '@element-plus/icons-vue'
+import { UploadFilled, Check, Close, Loading, InfoFilled } from '@element-plus/icons-vue'
 import { subtitleAPI } from '../utils/api'
 
 // Props
@@ -190,6 +206,9 @@ const uploadStatusText = ref('')
 const dirInput = ref()
 // 新增：无效文件名集合
 const invalidFileNames = ref(new Set())
+
+// 新增：付费字幕开关
+const isPaidForBatch = ref(false)
 
 // 新增：扫描与 Worker 管理状态
 const scanning = ref(false)
@@ -277,11 +296,11 @@ const uploadProgress = computed(() => {
 })
 
 const uploadStatus = computed(() => {
-  if (uploading.value) return 'active'
+  if (uploading.value) return ''
   if (uploadResults.value.length > 0) {
     return failedCount.value > 0 ? 'exception' : 'success'
   }
-  return 'normal'
+  return ''
 })
 
 const successCount = computed(() => {
@@ -526,7 +545,7 @@ const handleBatchUpload = async () => {
     uploadStatusText.value = `正在上传: ${fileInfo.fileName}`
     
     try {
-      const res = await subtitleAPI.upload(fileInfo.videoId, fileInfo.file)
+      const res = await subtitleAPI.upload(fileInfo.videoId, fileInfo.file, isPaidForBatch.value)
       const finalId = res?.subtitle?.video_id || fileInfo.videoId
       
       uploadResults.value.push({
@@ -590,6 +609,8 @@ const resetData = () => {
   uploading.value = false
   // 重置无效文件名集合
   invalidFileNames.value.clear()
+  // 重置付费字幕开关
+  isPaidForBatch.value = false
   // 新增：清理扫描状态与超时定时器
   scanning.value = false
   scanProgress.value = 0

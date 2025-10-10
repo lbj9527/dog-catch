@@ -854,6 +854,208 @@ body.modal-open {
     color: #fff;
 }
 
+/* 会员状态显示样式 */
+.user-membership-section {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #333;
+}
+
+.membership-label {
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+.membership-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.membership-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    border: 1px solid #444;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.membership-badge.paid {
+    background: linear-gradient(135deg, #ffd700, #ffb347);
+    color: #1a1a1a;
+    border-color: #ffd700;
+    box-shadow: 0 2px 8px rgba(255, 215, 0, 0.3);
+}
+
+.membership-badge.paid .membership-icon {
+    color: #1a1a1a;
+}
+
+.membership-icon {
+    flex-shrink: 0;
+    color: #999;
+}
+
+.membership-expiry {
+    font-size: 11px;
+    color: #888;
+    padding-left: 20px;
+}
+
+.membership-expiry.expired {
+    color: #ff6b6b;
+}
+
+.membership-expiry.expiring-soon {
+    color: #ffa500;
+}
+
+/* 升级会员弹窗样式 */
+.upgrade-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    backdrop-filter: blur(4px);
+}
+
+.upgrade-modal-content {
+    background: linear-gradient(135deg, #1a1a1a, #2a2a2a);
+    border: 1px solid #444;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 480px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+.upgrade-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid #333;
+}
+
+.upgrade-modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.upgrade-modal-close {
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.upgrade-modal-close:hover {
+    background: #333;
+    color: #fff;
+}
+
+.upgrade-modal-body {
+    padding: 24px;
+    text-align: center;
+}
+
+.upgrade-icon {
+    margin-bottom: 20px;
+}
+
+.upgrade-icon svg {
+    color: #ffd700;
+    filter: drop-shadow(0 2px 8px rgba(255, 215, 0, 0.3));
+}
+
+.upgrade-content h4 {
+    margin: 0 0 12px;
+    font-size: 20px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.upgrade-content p {
+    margin: 0 0 20px;
+    color: #ccc;
+    line-height: 1.5;
+}
+
+.upgrade-benefits {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 24px;
+    text-align: left;
+}
+
+.upgrade-benefits li {
+    padding: 8px 0;
+    color: #ddd;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.upgrade-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.upgrade-btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-width: 100px;
+}
+
+.upgrade-btn.primary {
+    background: linear-gradient(135deg, #ffd700, #ffb347);
+    color: #1a1a1a;
+    box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3);
+}
+
+.upgrade-btn.primary:hover {
+    background: linear-gradient(135deg, #ffed4e, #ffc875);
+    box-shadow: 0 6px 16px rgba(255, 215, 0, 0.4);
+    transform: translateY(-1px);
+}
+
+.upgrade-btn.secondary {
+    background: #333;
+    color: #ccc;
+    border: 1px solid #555;
+}
+
+.upgrade-btn.secondary:hover {
+    background: #444;
+    color: #fff;
+    border-color: #666;
+}
+
 .bio-editor {
     width: 100%;
     min-height: 60px;
@@ -1398,6 +1600,21 @@ body.modal-open {
 .like-button:disabled:hover {
     background: rgba(0, 0, 0, 0.7);
     border-color: rgba(255, 255, 255, 0.2);
+    transform: none;
+    box-shadow: none;
+}
+
+/* 付费字幕禁用状态 */
+.like-button.disabled-paid {
+    background: rgba(0, 0, 0, 0.5);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #ccc;
+    cursor: not-allowed;
+}
+
+.like-button.disabled-paid:hover {
+    background: rgba(0, 0, 0, 0.5);
+    border-color: rgba(255, 255, 255, 0.1);
     transform: none;
     box-shadow: none;
 }

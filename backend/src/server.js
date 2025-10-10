@@ -539,7 +539,7 @@ function authenticateUserToken(req, res, next) {
     const { payload, error } = verifyJwtFromHeader(req);
     if (error) return res.status(401).json({ error });
     if (payload && payload.role === 'user') {
-        getAsync('SELECT id, status, COALESCE(token_version,0) as token_version FROM users WHERE id = ?', [payload.id])
+        getAsync('SELECT id, status, COALESCE(token_version,0) as token_version, membership, paid_until FROM users WHERE id = ?', [payload.id])
             .then(row => {
                 if (!row) return res.status(401).json({ error: '用户不存在或已被删除' });
                 if (String(row.status || '').toLowerCase() !== 'active') {
@@ -549,6 +549,9 @@ function authenticateUserToken(req, res, next) {
                 if (typeof payload.tv !== 'undefined' && Number(payload.tv) !== Number(row.token_version || 0)) {
                     return res.status(401).json({ error: '令牌已失效，请重新登录' });
                 }
+                // 注入会员信息到 payload
+                payload.membership = row.membership || 'free';
+                payload.paid_until = row.paid_until || null;
                 req.user = payload;
                 return next();
             })
@@ -566,7 +569,7 @@ function authenticateAnyToken(req, res, next) {
     if (error) return res.status(401).json({ error });
     if (payload && (payload.role === 'user' || payload.role === 'admin')) {
         if (payload.role === 'admin') { req.user = payload; return next(); }
-        getAsync('SELECT id, status, COALESCE(token_version,0) as token_version FROM users WHERE id = ?', [payload.id])
+        getAsync('SELECT id, status, COALESCE(token_version,0) as token_version, membership, paid_until FROM users WHERE id = ?', [payload.id])
             .then(row => {
                 if (!row) return res.status(401).json({ error: '用户不存在或已被删除' });
                 if (String(row.status || '').toLowerCase() !== 'active') {
@@ -575,6 +578,9 @@ function authenticateAnyToken(req, res, next) {
                 if (typeof payload.tv !== 'undefined' && Number(payload.tv) !== Number(row.token_version || 0)) {
                     return res.status(401).json({ error: '令牌已失效，请重新登录' });
                 }
+                // 注入会员信息到 payload
+                payload.membership = row.membership || 'free';
+                payload.paid_until = row.paid_until || null;
                 req.user = payload; return next();
             })
             .catch(err => { console.error('鉴权查询用户失败:', err); return res.status(500).json({ error: '鉴权失败' }); });
@@ -860,6 +866,24 @@ db.serialize(() => {
     
     // 新增：为 subtitles 表补充 likes_count 列
     db.run('ALTER TABLE subtitles ADD COLUMN likes_count INTEGER DEFAULT 0', () => {});
+    
+    // 新增：付费控制字段
+    db.run('ALTER TABLE subtitles ADD COLUMN is_paid INTEGER DEFAULT 0', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_subtitles_is_paid ON subtitles(is_paid)', () => {});
+
+    db.run('ALTER TABLE users ADD COLUMN membership TEXT DEFAULT "free"', () => {});
+    db.run('ALTER TABLE users ADD COLUMN paid_until DATETIME', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_users_membership ON users(membership)', () => {});
+    db.run('CREATE INDEX IF NOT EXISTS idx_users_paid_until ON users(paid_until)', () => {});
+    
+    // 新增：为 users 表补充 role 字段
+    db.run('ALTER TABLE users ADD COLUMN role TEXT DEFAULT "user"', () => {});
+    
+    // 兼容旧数据：确保空 membership 置为 free
+    db.run('UPDATE users SET membership = COALESCE(membership, "free") WHERE membership IS NULL OR membership = ""', () => {});
+    
+    // 兼容旧数据：确保现有用户都有默认 role
+    db.run('UPDATE users SET role = "user" WHERE role IS NULL OR role = ""', () => {});
     
     // 新增：字幕点赞表
     db.run(`CREATE TABLE IF NOT EXISTS subtitle_likes (
@@ -1228,7 +1252,7 @@ app.post('/api/user/register', requireCaptchaIfFlagged, registerRateLimit, async
         const hash = bcrypt.hashSync(password, 10);
         await runAsync('INSERT INTO users (username, email, password_hash, last_login_at, token_version) VALUES (?,?,?, CURRENT_TIMESTAMP, 0)', [username, email, hash]);
         const user = await getAsync('SELECT id, username, email, COALESCE(token_version,0) as token_version FROM users WHERE username=?', [username]);
-        const token = jwt.sign({ id: user.id, username: user.username, role: 'user', tv: Number(user.token_version||0) }, JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ id: user.id, username: user.username, role: 'user', tv: Number(user.token_version||0), membership: 'free' }, JWT_SECRET, { expiresIn: '7d' });
         return res.json({ message:'注册成功', token, user });
     } catch (e) { console.error(e); return res.status(500).json({ error: '注册失败' }); }
 });
@@ -1241,7 +1265,7 @@ app.post('/api/user/login/password', requireCaptchaIfFlagged, loginRateLimit, as
         const user = await getAsync('SELECT * FROM users WHERE lower(email)=lower(?)', [email]);
         if (!user || !user.password_hash || !bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: '邮箱或密码错误' });
         await runAsync('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
-        const token = jwt.sign({ id: user.id, username: user.username, role: 'user', tv: Number(user.token_version||0) }, JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ id: user.id, username: user.username, role: 'user', tv: Number(user.token_version||0), membership: (user.membership || 'free') }, JWT_SECRET, { expiresIn: '7d' });
         return res.json({ message:'登录成功', token, user: { id:user.id, username:user.username, email:user.email } });
     } catch (e) { console.error(e); return res.status(500).json({ error: '登录失败' }); }
 });
@@ -1269,7 +1293,7 @@ app.post('/api/user/password/reset-confirm', requireCaptchaIfFlagged, async (req
 // 用户 token 校验
 app.get('/api/user/verify', authenticateUserToken, async (req, res) => {
     try {
-        const user = await getAsync('SELECT id, username, email, gender, bio FROM users WHERE id = ?', [req.user.id]);
+        const user = await getAsync('SELECT id, username, email, gender, bio, membership, paid_until FROM users WHERE id = ?', [req.user.id]);
         if (!user) {
             return res.status(404).json({ error: '用户不存在' });
         }
@@ -1280,7 +1304,9 @@ app.get('/api/user/verify', authenticateUserToken, async (req, res) => {
                 username: user.username, 
                 email: user.email,
                 gender: user.gender || '未设置',
-                bio: user.bio || ''
+                bio: user.bio || '',
+                membership: user.membership || 'free',
+                paid_until: user.paid_until || null
             } 
         });
     } catch (error) {
@@ -2074,6 +2100,14 @@ app.get('/api/subtitle/:video_id', authenticateAnyToken, async (req, res) => {
         }
         
         try {
+            // 付费访问控制：付费字幕仅对付费会员或管理员开放
+            const isPaidSubtitle = Number(subtitle.is_paid || 0) === 1;
+            const paidUntil = req.user && req.user.paid_until ? new Date(req.user.paid_until) : null;
+            const isPaidActive = req.user && req.user.membership === 'paid' && (!paidUntil || paidUntil > new Date());
+            if (isPaidSubtitle && req.user && req.user.role !== 'admin' && !isPaidActive) {
+                return res.status(403).json({ error: '需要付费会员' });
+            }
+
             const filePath = path.join(__dirname, '../uploads', path.basename(subtitle.file_path));
             const raw = await fs.readFile(filePath);
             let textUtf8 = '';
@@ -2088,8 +2122,10 @@ app.get('/api/subtitle/:video_id', authenticateAnyToken, async (req, res) => {
             } else {
                 vtt = convertSrtToVttString(textUtf8);
             }
-            // 注入水印
-            vtt = injectVttWatermark(vtt, { userId, videoId });
+            // 仅对付费字幕且付费用户启用水印
+            if (isPaidSubtitle && isPaidActive && SUB_WATERMARK) {
+                vtt = injectVttWatermark(vtt, { userId, videoId });
+            }
             res.set('Content-Type', 'text/vtt; charset=utf-8');
             return res.send(vtt);
         } catch (error) {
@@ -2185,9 +2221,13 @@ app.post('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subti
 
     const originalFilename = file.originalname || saveFilename;
 
+    // 处理 is_paid 参数
+    const rawPaidUpload = (req.body ? (req.body.is_paid ?? req.body.paid ?? req.body.isPaid) : undefined);
+    const isPaidValUpload = (rawPaidUpload === 1 || rawPaidUpload === '1' || String(rawPaidUpload).toLowerCase() === 'true') ? 1 : 0;
+
     const insertOrUpdate = `INSERT OR REPLACE INTO subtitles 
-        (video_id, base_video_id, variant, filename, file_path, file_size, original_filename, content_hash, updated_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`;
+        (video_id, base_video_id, variant, filename, file_path, file_size, original_filename, content_hash, is_paid, updated_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`;
     
     db.run(insertOrUpdate, [
         finalVideoId,
@@ -2197,7 +2237,8 @@ app.post('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subti
         saveFilename,
         saveSize,
         originalFilename,
-        contentHash
+        contentHash,
+        isPaidValUpload
     ], function(err) {
         if (err) {
             return res.status(500).json({ error: '数据库保存失败' });
@@ -2212,7 +2253,8 @@ app.post('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subti
                         filename: saveFilename,
                         size: saveSize,
                         content_hash: contentHash,
-                        original_filename: originalFilename
+                        original_filename: originalFilename,
+                        is_paid: isPaidValUpload
                     }
                 });
     });
@@ -2223,10 +2265,6 @@ app.put('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subtit
     const videoId = (req.params.video_id || '').toLowerCase();
     const file = req.file;
     
-    if (!file) {
-        return res.status(400).json({ error: '请选择字幕文件' });
-    }
-    
     // 先检查是否存在
     db.get('SELECT * FROM subtitles WHERE lower(video_id) = lower(?)', [videoId], async (err, existing) => {
         if (err) {
@@ -2235,6 +2273,36 @@ app.put('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subtit
         
         if (!existing) {
             return res.status(404).json({ error: '字幕文件不存在，请先上传' });
+        }
+        
+        // 如果没有上传文件，只是修改付费状态
+        if (!file) {
+            // 处理 is_paid 参数
+            const rawPaidUpdate = (req.body ? (req.body.is_paid ?? req.body.paid ?? req.body.isPaid) : undefined);
+            if (rawPaidUpdate !== undefined) {
+                const isPaidValUpdate = (rawPaidUpdate === 1 || rawPaidUpdate === '1' || String(rawPaidUpdate).toLowerCase() === 'true') ? 1 : 0;
+                
+                // 只更新付费状态
+                db.run(`UPDATE subtitles SET is_paid = ?, updated_at = CURRENT_TIMESTAMP WHERE lower(video_id) = lower(?)`, 
+                    [isPaidValUpdate, videoId], 
+                    function(err) {
+                        if (err) {
+                            return res.status(500).json({ error: '数据库更新失败' });
+                        }
+                        
+                        res.json({
+                            message: '付费状态更新成功',
+                            subtitle: {
+                                video_id: videoId,
+                                is_paid: isPaidValUpdate
+                            }
+                        });
+                    }
+                );
+                return;
+            } else {
+                return res.status(400).json({ error: '请选择字幕文件或提供付费状态参数' });
+            }
         }
         
         // 处理编码与转码：ASS/SSA 转 VTT，其它字幕统一存为 UTF-8
@@ -2288,11 +2356,15 @@ app.put('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subtit
 
         const originalFilename = file.originalname || saveFilename;
 
+        // 处理 is_paid 参数
+        const rawPaidUpdate = (req.body ? (req.body.is_paid ?? req.body.paid ?? req.body.isPaid) : undefined);
+        const isPaidValUpdate = (rawPaidUpdate === undefined || rawPaidUpdate === null) ? Number(existing.is_paid || 0) : ((rawPaidUpdate === 1 || rawPaidUpdate === '1' || String(rawPaidUpdate).toLowerCase() === 'true') ? 1 : 0);
+
         // 更新记录
         db.run(`UPDATE subtitles SET 
-            filename = ?, file_path = ?, file_size = ?, content_hash = ?, original_filename = ?, updated_at = CURRENT_TIMESTAMP 
+            filename = ?, file_path = ?, file_size = ?, content_hash = ?, original_filename = ?, is_paid = ?, updated_at = CURRENT_TIMESTAMP 
             WHERE lower(video_id) = lower(?)`, 
-            [saveFilename, saveFilename, saveSize, contentHash, originalFilename, videoId], 
+            [saveFilename, saveFilename, saveSize, contentHash, originalFilename, isPaidValUpdate, videoId], 
             function(err) {
                 if (err) {
                     return res.status(500).json({ error: '数据库更新失败' });
@@ -2305,7 +2377,8 @@ app.put('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subtit
                         filename: saveFilename,
                         size: saveSize,
                         content_hash: contentHash,
-                        original_filename: originalFilename
+                        original_filename: originalFilename,
+                        is_paid: isPaidValUpdate
                     }
                 });
             }
@@ -2569,6 +2642,9 @@ app.post('/api/admin/subtitles/batch-upload', authenticateAdminToken, upload.arr
             return res.status(400).json({ error: '单次最多上传50个文件' });
         }
 
+        // 获取付费字幕参数，默认为 false
+        const isPaid = req.body.is_paid === 'true' || req.body.is_paid === true;
+
         const results = {
             success: [],
             failed: [],
@@ -2638,8 +2714,8 @@ app.post('/api/admin/subtitles/batch-upload', authenticateAdminToken, upload.arr
                 await runAsync(
                     `INSERT INTO subtitles (
                         video_id, base_video_id, variant, filename, file_path, file_size, 
-                        content_hash, original_filename, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+                        content_hash, original_filename, is_paid, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
                     [
                         videoId,
                         baseVideoId, 
@@ -2648,7 +2724,8 @@ app.post('/api/admin/subtitles/batch-upload', authenticateAdminToken, upload.arr
                         filePath,
                         Buffer.byteLength(content, 'utf8'),
                         contentHash,
-                        originalName
+                        originalName,
+                        isPaid ? 1 : 0
                     ]
                 );
                 
@@ -2784,11 +2861,18 @@ app.get('/api/subtitles/variants/:base_video_id', authenticateAnyToken, async (r
 
         // 获取所有字幕并进行模糊匹配
         const allSubtitles = await getAllAsync(
-            'SELECT video_id, base_video_id, variant, filename, file_size, updated_at, likes_count FROM subtitles ORDER BY COALESCE(variant,1) ASC, updated_at DESC'
+            'SELECT video_id, base_video_id, variant, filename, file_size, updated_at, likes_count, is_paid FROM subtitles ORDER BY COALESCE(variant,1) ASC, updated_at DESC'
         );
         
         // 使用模糊匹配查找所有匹配的字幕变体
-        const rows = allSubtitles.filter(sub => isFuzzyMatch(baseId, sub.base_video_id));
+        let rows = allSubtitles.filter(sub => isFuzzyMatch(baseId, sub.base_video_id));
+        
+        // 非付费用户不可见付费变体
+        const paidUntil = req.user && req.user.paid_until ? new Date(req.user.paid_until) : null;
+        const isPaidActive = req.user && req.user.membership === 'paid' && (!paidUntil || paidUntil > new Date());
+        if (!isPaidActive && (!req.user || req.user.role !== 'admin')) {
+            rows = rows.filter(sub => Number(sub.is_paid || 0) === 0);
+        }
         
         // 返回结果，即使为空数组也是有效的响应
         res.json({ base: extractBaseVideoId(baseId), variants: rows });
@@ -2806,9 +2890,9 @@ app.get('/api/subtitles/like-status/:video_id', authenticateAnyToken, async (req
     }
 
     try {
-        // 获取字幕的点赞总数
+        // 获取字幕的点赞总数和付费状态
         const subtitle = await getAsync(
-            'SELECT likes_count FROM subtitles WHERE lower(video_id) = lower(?)',
+            'SELECT likes_count, is_paid FROM subtitles WHERE lower(video_id) = lower(?)',
             [videoId]
         );
         
@@ -2817,7 +2901,9 @@ app.get('/api/subtitles/like-status/:video_id', authenticateAnyToken, async (req
         }
 
         const likesCount = subtitle.likes_count || 0;
+        const isPaidSubtitle = subtitle.is_paid === 1;
         let isLiked = false;
+        let canLike = true;
 
         // 如果用户已登录，检查是否已点赞
         if (req.user && req.user.id) {
@@ -2826,13 +2912,39 @@ app.get('/api/subtitles/like-status/:video_id', authenticateAnyToken, async (req
                 [req.user.id, videoId]
             );
             isLiked = !!userLike;
+
+            // 如果是付费字幕，检查用户是否有权限点赞
+            if (isPaidSubtitle) {
+                const user = await getAsync(
+                    'SELECT role, membership, paid_until FROM users WHERE id = ?',
+                    [req.user.id]
+                );
+                
+                if (user) {
+                    const isAdmin = user.role === 'admin';
+                    const isPremium = user.membership === 'premium';
+                    const hasValidPaidUntil = user.paid_until && new Date(user.paid_until) > new Date();
+                    
+                    // 只有管理员或有效会员才能点赞付费字幕
+                    canLike = isAdmin || isPremium || hasValidPaidUntil;
+                } else {
+                    canLike = false;
+                }
+            }
+        } else {
+            // 未登录用户不能点赞付费字幕
+            if (isPaidSubtitle) {
+                canLike = false;
+            }
         }
 
         res.json({
             video_id: videoId,
             likes_count: likesCount,
             is_liked: isLiked,
-            is_logged_in: !!(req.user && req.user.id)
+            is_logged_in: !!(req.user && req.user.id),
+            can_like: canLike,
+            is_paid: isPaidSubtitle
         });
     } catch (err) {
         console.error('获取点赞状态失败:', err);
@@ -2851,14 +2963,41 @@ app.post('/api/subtitles/like-toggle/:video_id', authenticateUserToken, async (r
     const { page_url } = req.body || {};
 
     try {
-        // 检查字幕是否存在
+        // 检查字幕是否存在，同时获取付费状态
         const subtitle = await getAsync(
-            'SELECT id, likes_count FROM subtitles WHERE lower(video_id) = lower(?)',
+            'SELECT id, likes_count, is_paid FROM subtitles WHERE lower(video_id) = lower(?)',
             [videoId]
         );
         
         if (!subtitle) {
             return res.status(404).json({ error: '字幕不存在' });
+        }
+
+        // 检查付费字幕点赞权限
+        if (subtitle.is_paid) {
+            const user = await getAsync(
+                'SELECT role, membership, paid_until FROM users WHERE id = ?',
+                [userId]
+            );
+            
+            if (!user) {
+                return res.status(401).json({ error: '用户信息不存在' });
+            }
+
+            // 管理员可以点赞任何字幕
+            if (user.role !== 'admin') {
+                const now = new Date();
+                const isPaidMember = user.membership === 'paid' && 
+                                   user.paid_until && 
+                                   new Date(user.paid_until) > now;
+                
+                if (!isPaidMember) {
+                    return res.status(403).json({ 
+                        error: '付费字幕仅限付费会员点赞',
+                        code: 'PAID_SUBTITLE_LIKE_RESTRICTED'
+                    });
+                }
+            }
         }
 
         // 检查用户是否已点赞
@@ -2912,10 +3051,29 @@ app.get('/api/rank/subtitles/top-liked', authenticateAnyToken, async (req, res) 
     const limitRaw = (req.query.limit || '50').toString().trim();
     const limit = Math.min(Math.max(parseInt(limitRaw, 10) || 50, 1), 100);
     try {
+        // 判断用户是否可以查看付费字幕
+        let canViewPaid = false;
+        if (req.user) {
+            const now = Date.now();
+            canViewPaid = req.user.role === 'admin' || 
+                         req.user.membership === 'premium' || 
+                         (req.user.paid_until && new Date(req.user.paid_until).getTime() > now);
+        }
+
+        // 根据用户权限构建查询条件
+        let whereClause = 'likes_count IS NOT NULL AND likes_count > 0';
+        let queryParams = [limit];
+        
+        if (!canViewPaid) {
+            // 普通用户：过滤掉付费字幕
+            whereClause += ' AND (is_paid IS NULL OR is_paid = 0)';
+        }
+
         const rows = await getAllAsync(
-            'SELECT video_id, filename, original_filename, likes_count, updated_at FROM subtitles WHERE likes_count IS NOT NULL AND likes_count > 0 ORDER BY likes_count DESC, updated_at DESC LIMIT ?',
-            [limit]
+            `SELECT video_id, filename, original_filename, likes_count, updated_at, is_paid FROM subtitles WHERE ${whereClause} ORDER BY likes_count DESC, updated_at DESC LIMIT ?`,
+            queryParams
         );
+        
         // 为每条记录获取最近一次page_url（如有）
         const data = [];
         for (const r of rows) {
@@ -2925,7 +3083,8 @@ app.get('/api/rank/subtitles/top-liked', authenticateAnyToken, async (req, res) 
                 title: r.filename || r.original_filename || null,
                 likes_count: r.likes_count || 0,
                 updated_at: r.updated_at || null,
-                page_url: p && p.page_url ? p.page_url : null
+                page_url: p && p.page_url ? p.page_url : null,
+                is_paid: r.is_paid || 0
             });
         }
         res.json({ data });
@@ -4341,7 +4500,7 @@ app.get('/api/admin/users', authenticateAdminToken, async (req, res) => {
         const where = search ? 'WHERE username LIKE ? OR email LIKE ?' : '';
         const params = search ? [`%${search}%`, `%${search}%`] : [];
         const count = await getAsync(`SELECT COUNT(*) AS total FROM users ${where}`, params);
-        const list = await getAllAsync(`SELECT id, username, email, gender, bio, created_at, last_login_at, status FROM users ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
+        const list = await getAllAsync(`SELECT id, username, email, gender, bio, membership, paid_until, created_at, last_login_at, status FROM users ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
         res.json({ data: list, pagination: { page, limit, total: count?.total || 0, totalPages: Math.ceil((count?.total||0)/limit) } });
     } catch (e) {
         console.error(e);
@@ -4358,6 +4517,36 @@ app.delete('/api/admin/users/:id', authenticateAdminToken, async (req, res) => {
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: '删除用户失败' });
+    }
+});
+
+// 管理员会员管理：切换用户会员等级
+app.patch('/api/admin/users/:id/membership', authenticateAdminToken, async (req, res) => {
+    try {
+        const userId = Number(req.params.id || 0);
+        const { membership, paid_until } = req.body || {};
+        if (!userId || !Number.isInteger(userId)) {
+            return res.status(400).json({ error: '用户ID无效' });
+        }
+        const mem = String(membership || '').toLowerCase();
+        if (!['free', 'paid'].includes(mem)) {
+            return res.status(400).json({ error: 'membership 只能为 free 或 paid' });
+        }
+        let paidUntilVal = null;
+        if (mem === 'paid') {
+            if (paid_until) {
+                const d = new Date(paid_until);
+                if (isNaN(d.getTime())) {
+                    return res.status(400).json({ error: 'paid_until 无效日期' });
+                }
+                paidUntilVal = d.toISOString().slice(0,19).replace('T',' ');
+            }
+        }
+        await runAsync('UPDATE users SET membership = ?, paid_until = ?, token_version = COALESCE(token_version,0) + 1 WHERE id = ?', [mem, paidUntilVal, userId]);
+        return res.json({ message: '会员更新成功', user: { id: userId, membership: mem, paid_until: paidUntilVal } });
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: '会员更新失败' });
     }
 });
 

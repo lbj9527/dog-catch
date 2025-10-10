@@ -88,9 +88,14 @@ export const subtitleAPI = {
   },
   
   // 上传字幕
-  upload(videoId, file) {
+  upload(videoId, file, isPaid) {
     const formData = new FormData()
     formData.append('subtitle', file)
+    
+    // 如果传入了 isPaid 参数，则添加到 FormData 中
+    if (isPaid !== undefined) {
+      formData.append('is_paid', isPaid ? 1 : 0)
+    }
     
     return api.post(`/api/subtitle/${videoId}`, formData, {
       headers: {
@@ -102,7 +107,21 @@ export const subtitleAPI = {
   // 更新字幕
   update(videoId, file) {
     const formData = new FormData()
-    formData.append('subtitle', file)
+    if (file instanceof File) {
+      formData.append('subtitle', file)
+    } else if (file instanceof FormData) {
+      // 如果传入的是FormData，直接使用
+      return api.put(`/api/subtitle/${videoId}`, file, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      })
+    } else {
+      // 如果传入的是对象，转换为FormData
+      Object.keys(file).forEach(key => {
+        formData.append(key, file[key])
+      })
+    }
     
     return api.put(`/api/subtitle/${videoId}`, formData, {
       headers: {
@@ -138,12 +157,17 @@ export const subtitleAPI = {
   },
 
   // 批量上传字幕（心愿单）
-  batchUpload(formData) {
+  batchUpload(formData, isPaid) {
+    // 如果传入了 isPaid 参数，则添加到 FormData 中
+    if (isPaid !== undefined) {
+      formData.append('is_paid', isPaid ? 1 : 0)
+    }
+    
     return api.post('/api/admin/subtitles/batch-upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       },
-      timeout: 60000 // 增加超时时间到60秒
+      timeout: 300000 // 5分钟超时
     })
   },
 
