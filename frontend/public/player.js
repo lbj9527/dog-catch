@@ -7958,13 +7958,16 @@ class VideoPlayer {
             const time = this.formatTimeAgo(it.updated_at || it.created_at);
             const btnDisabled = !it.page_url;
             const btn = btnDisabled ? '<button class="rank-open-btn" disabled>打开页面</button>' : `<button class="rank-open-btn" data-url="${this.escapeHtml(it.page_url)}">打开页面</button>`;
+            // 为收费字幕添加皇冠标识，与字幕选择列表保持一致
+            const isPaid = Number(it.is_paid || 0) === 1;
+            const crownIcon = isPaid ? ' 👑' : '';
             return `
                 <div class="rank-item rank-item-animate" style="animation-delay: ${idx * 0.1}s;">
                     <div class="rank-item-bubble">
                         <div class="rank-item-content">
                             <div class="rank-item-header">
                                 <div class="rank-item-title-group">
-                                    <div class="rank-item-title">${idx + 1}. ${title}</div>
+                                    <div class="rank-item-title">${idx + 1}. ${title}${crownIcon}</div>
                                     <span class="rank-item-info"><i>${icon}</i> ${cnt}</span>
                                 </div>
                                 <div class="rank-item-action">${btn}</div>

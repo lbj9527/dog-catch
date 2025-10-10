@@ -2922,11 +2922,11 @@ app.get('/api/subtitles/like-status/:video_id', authenticateAnyToken, async (req
                 
                 if (user) {
                     const isAdmin = user.role === 'admin';
-                    const isPremium = user.membership === 'premium';
-                    const hasValidPaidUntil = user.paid_until && new Date(user.paid_until) > new Date();
+                    const paidUntil = user.paid_until ? new Date(user.paid_until) : null;
+                    const isPaidActive = user.membership === 'paid' && (!paidUntil || paidUntil > new Date());
                     
                     // 只有管理员或有效会员才能点赞付费字幕
-                    canLike = isAdmin || isPremium || hasValidPaidUntil;
+                    canLike = isAdmin || isPaidActive;
                 } else {
                     canLike = false;
                 }
@@ -2986,10 +2986,8 @@ app.post('/api/subtitles/like-toggle/:video_id', authenticateUserToken, async (r
 
             // 管理员可以点赞任何字幕
             if (user.role !== 'admin') {
-                const now = new Date();
-                const isPaidMember = user.membership === 'paid' && 
-                                   user.paid_until && 
-                                   new Date(user.paid_until) > now;
+                const paidUntil = user.paid_until ? new Date(user.paid_until) : null;
+                const isPaidMember = user.membership === 'paid' && (!paidUntil || paidUntil > new Date());
                 
                 if (!isPaidMember) {
                     return res.status(403).json({ 
@@ -3051,23 +3049,10 @@ app.get('/api/rank/subtitles/top-liked', authenticateAnyToken, async (req, res) 
     const limitRaw = (req.query.limit || '50').toString().trim();
     const limit = Math.min(Math.max(parseInt(limitRaw, 10) || 50, 1), 100);
     try {
-        // 判断用户是否可以查看付费字幕
-        let canViewPaid = false;
-        if (req.user) {
-            const now = Date.now();
-            canViewPaid = req.user.role === 'admin' || 
-                         req.user.membership === 'premium' || 
-                         (req.user.paid_until && new Date(req.user.paid_until).getTime() > now);
-        }
-
-        // 根据用户权限构建查询条件
+        // 所有用户都可以在排行榜中看到收费字幕（用于吸引转化）
+        // 实际访问控制在字幕内容读取接口中执行
         let whereClause = 'likes_count IS NOT NULL AND likes_count > 0';
         let queryParams = [limit];
-        
-        if (!canViewPaid) {
-            // 普通用户：过滤掉付费字幕
-            whereClause += ' AND (is_paid IS NULL OR is_paid = 0)';
-        }
 
         const rows = await getAllAsync(
             `SELECT video_id, filename, original_filename, likes_count, updated_at, is_paid FROM subtitles WHERE ${whereClause} ORDER BY likes_count DESC, updated_at DESC LIMIT ?`,
@@ -3136,10 +3121,10 @@ app.get('/api/rank/subtitles/top-viewed', authenticateAnyToken, async (req, res)
     const limit = Math.min(Math.max(parseInt(limitRaw, 10) || 50, 1), 100);
     try {
         const rows = await getAllAsync(
-            `SELECT s.video_id, s.filename, s.original_filename, s.updated_at, COUNT(DISTINCT v.user_id) AS viewers_count
+            `SELECT s.video_id, s.filename, s.original_filename, s.updated_at, s.is_paid, COUNT(DISTINCT v.user_id) AS viewers_count
              FROM subtitles s
              LEFT JOIN subtitle_viewers v ON lower(s.video_id) = lower(v.video_id)
-             GROUP BY s.video_id, s.filename, s.original_filename, s.updated_at
+             GROUP BY s.video_id, s.filename, s.original_filename, s.updated_at, s.is_paid
              HAVING COUNT(DISTINCT v.user_id) > 0
              ORDER BY viewers_count DESC, s.updated_at DESC
              LIMIT ?`,
@@ -3159,7 +3144,8 @@ app.get('/api/rank/subtitles/top-viewed', authenticateAnyToken, async (req, res)
                 title: r.filename || r.original_filename || null,
                 viewers_count: r.viewers_count || 0,
                 updated_at: r.updated_at || null,
-                page_url: pageUrl
+                page_url: pageUrl,
+                is_paid: r.is_paid || 0
             });
         }
         res.json({ data });
