@@ -8020,7 +8020,11 @@ class VideoPlayer {
             const title = this.escapeHtml(it.title || '未知字幕');
             const vid = this.escapeHtml(it.video_id || '未知');
             const cnt = Number(it[countKey] || 0);
-            const time = this.formatTimeAgo(it.updated_at || it.created_at);
+            // 优先使用最近互动时间，回退到字幕更新时间
+            const timeField = type === 'liked' ? 
+                (it.last_liked_at || it.updated_at || it.created_at) : 
+                (it.last_viewed_at || it.updated_at || it.created_at);
+            const time = this.formatTimeAgo(timeField);
             const btnDisabled = !it.page_url;
             const btn = btnDisabled ? '<button class="rank-open-btn" disabled>打开页面</button>' : `<button class="rank-open-btn" data-url="${this.escapeHtml(it.page_url)}">打开页面</button>`;
             // 为收费字幕添加皇冠标识，与字幕选择列表保持一致

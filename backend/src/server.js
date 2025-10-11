@@ -3081,23 +3081,27 @@ app.get('/api/rank/subtitles/top-liked', authenticateAnyToken, async (req, res) 
         let queryParams = [limit];
 
         const rows = await getAllAsync(
-            `SELECT video_id, filename, original_filename, likes_count, updated_at, is_paid FROM subtitles WHERE ${whereClause} ORDER BY likes_count DESC, updated_at DESC LIMIT ?`,
+            `SELECT s.video_id, s.filename, s.original_filename, s.likes_count, s.updated_at, s.is_paid,
+                    strftime('%Y-%m-%dT%H:%M:%SZ', MAX(sl.created_at)) as last_liked_at,
+                    (SELECT page_url FROM subtitle_likes WHERE lower(video_id)=lower(s.video_id) ORDER BY created_at DESC LIMIT 1) as page_url
+             FROM subtitles s
+             LEFT JOIN subtitle_likes sl ON lower(s.video_id) = lower(sl.video_id)
+             WHERE ${whereClause}
+             GROUP BY s.video_id, s.filename, s.original_filename, s.likes_count, s.updated_at, s.is_paid
+             ORDER BY s.likes_count DESC, s.updated_at DESC LIMIT ?`,
             queryParams
         );
         
-        // 为每条记录获取最近一次page_url（如有）
-        const data = [];
-        for (const r of rows) {
-            const p = await getAsync('SELECT page_url FROM subtitle_likes WHERE lower(video_id)=lower(?) ORDER BY created_at DESC LIMIT 1', [r.video_id]);
-            data.push({
-                video_id: r.video_id,
-                title: r.filename || r.original_filename || null,
-                likes_count: r.likes_count || 0,
-                updated_at: r.updated_at || null,
-                page_url: p && p.page_url ? p.page_url : null,
-                is_paid: r.is_paid || 0
-            });
-        }
+        // 直接使用查询结果，无需额外循环查询
+        const data = rows.map(r => ({
+            video_id: r.video_id,
+            title: r.filename || r.original_filename || null,
+            likes_count: r.likes_count || 0,
+            updated_at: r.updated_at || null,
+            last_liked_at: r.last_liked_at || null,
+            page_url: r.page_url || null,
+            is_paid: r.is_paid || 0
+        }));
         res.json({ data });
     } catch (err) {
         console.error('获取点赞排行榜失败:', err);
@@ -3147,7 +3151,8 @@ app.get('/api/rank/subtitles/top-viewed', authenticateAnyToken, async (req, res)
     const limit = Math.min(Math.max(parseInt(limitRaw, 10) || 50, 1), 100);
     try {
         const rows = await getAllAsync(
-            `SELECT s.video_id, s.filename, s.original_filename, s.updated_at, s.is_paid, COUNT(DISTINCT v.user_id) AS viewers_count
+            `SELECT s.video_id, s.filename, s.original_filename, s.updated_at, s.is_paid, COUNT(DISTINCT v.user_id) AS viewers_count,
+                    strftime('%Y-%m-%dT%H:%M:%SZ', MAX(v.created_at)) as last_viewed_at
              FROM subtitles s
              LEFT JOIN subtitle_viewers v ON lower(s.video_id) = lower(v.video_id)
              GROUP BY s.video_id, s.filename, s.original_filename, s.updated_at, s.is_paid
@@ -3170,6 +3175,7 @@ app.get('/api/rank/subtitles/top-viewed', authenticateAnyToken, async (req, res)
                 title: r.filename || r.original_filename || null,
                 viewers_count: r.viewers_count || 0,
                 updated_at: r.updated_at || null,
+                last_viewed_at: r.last_viewed_at || null,
                 page_url: pageUrl,
                 is_paid: r.is_paid || 0
             });
