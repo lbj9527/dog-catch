@@ -1560,6 +1560,7 @@ class VideoPlayer {
         if (menuLogout) {
             menuLogout.onclick = async () => {
                 if (userMenu) userMenu.style.display = 'none';
+                if (!confirm('确定要退出登录吗？')) return;
                 this.doLogout();
                 await this.refreshAuthUi();
             };
