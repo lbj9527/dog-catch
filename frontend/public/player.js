@@ -2121,6 +2121,34 @@ class VideoPlayer {
         this.removeAllSubtitleTracks(tip);
     }
 
+    hideSubtitleSelector() {
+        const subtitleSelectEl = document.getElementById('subtitleSelect');
+        const subtitleBtn = document.getElementById('subtitleToggle');
+        
+        // 隐藏字幕选择器
+        if (subtitleSelectEl) {
+            subtitleSelectEl.style.display = 'none';
+            subtitleSelectEl.innerHTML = '';
+            subtitleSelectEl.disabled = true;
+        }
+        
+        // 禁用字幕按钮
+        if (subtitleBtn) {
+            subtitleBtn.disabled = true;
+            subtitleBtn.textContent = '显示字幕';
+        }
+        
+        // 安全移除字幕轨道，不显示占位符
+        if (this.video && this.video.textTracks) {
+            for (let i = this.video.textTracks.length - 1; i >= 0; i--) {
+                const track = this.video.textTracks[i];
+                if (track.kind === 'subtitles') {
+                    track.mode = 'disabled';
+                }
+            }
+        }
+    }
+
     doLogout() {
         try { sessionStorage.removeItem('user_token'); } catch {}
         localStorage.removeItem('user_token');
@@ -2739,6 +2767,18 @@ class VideoPlayer {
             if (response.status === 401) {
                 this.doLogout();
                 this.showMessage('登录已过期，请重新登录', 'error');
+                return;
+            }
+            if (response.status === 403) {
+                // 403 错误处理：付费字幕访问被拒绝
+                console.log('付费字幕访问被拒绝，隐藏字幕选择器');
+                this.hideSubtitleSelector();
+                
+                // 根据用户会员状态决定是否显示升级提示
+                if (!this.isPaidMember()) {
+                    // 普通用户访问付费字幕，显示升级提示
+                    this.showUpgradeModal();
+                }
                 return;
             }
             if (response.ok) {
