@@ -2237,9 +2237,18 @@ class VideoPlayer {
             this.pauseViewerTracking();
         });
         
-        // 添加跳转事件监听
+        // 添加跳转事件监听 - 只在大幅跳转时重置计时
         this.player.on('seeking', () => {
-            this.resetViewerTracking();
+            // 获取当前播放时间和跳转目标时间
+            const currentTime = this.player.video.currentTime;
+            const lastSeekTime = this.viewerTracking.lastSeekTime || 0;
+            
+            // 只有跳转超过10秒才重置计时，避免小幅调整导致重置
+            if (Math.abs(currentTime - lastSeekTime) > 10) {
+                this.resetViewerTracking();
+            }
+            
+            this.viewerTracking.lastSeekTime = currentTime;
         });
         
         // 监听页面可见性变化
@@ -2260,8 +2269,50 @@ class VideoPlayer {
     // 观看时长计时相关方法
     
     // 开始观看计时
+    // 检查观看状态 - 判断用户是否已经上报过该视频的观看记录
+    async checkViewerStatus(videoId) {
+        if (!this.isLoggedIn() || !videoId) {
+            return false;
+        }
+        
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/subtitles/viewers/status/${encodeURIComponent(videoId)}`, {
+                headers: { Authorization: `Bearer ${this.userToken}` }
+            });
+            
+            if (response.status === 401) {
+                this.doLogout();
+                this.showMessage('登录已过期，请重新登录', 'error');
+                return false;
+            }
+            
+            if (response.ok) {
+                const data = await response.json();
+                const hasReported = data.has_reported;
+                
+                // 更新本地状态
+                this.viewerTracking.hasReported = hasReported;
+                
+                return hasReported;
+            } else if (response.status === 403) {
+                return false;
+            } else {
+                console.error('[观看状态检查] API响应错误', response.status);
+                return false;
+            }
+        } catch (error) {
+            console.error('[观看状态检查] 网络错误', error);
+            return false;
+        }
+    }
+
     startViewerTracking() {
         if (!this.isLoggedIn() || !this.subtitleUrl || this.viewerTracking.hasReported) {
+            return;
+        }
+        
+        // 如果已经在播放状态，不需要重新启动计时器
+        if (this.viewerTracking.isPlaying && this.viewerTracking.trackingTimer) {
             return;
         }
         
@@ -2283,9 +2334,9 @@ class VideoPlayer {
                     this.viewerTracking.consecutivePlaySeconds += elapsed;
                     this.viewerTracking.lastPlayTime = now;
                     
-                    const needsReport = this.viewerTracking.consecutivePlaySeconds >= 60 && !this.viewerTracking.hasReported;
+                    const needsReport = this.viewerTracking.consecutivePlaySeconds >= 30 && !this.viewerTracking.hasReported;
                     
-                    // 检查是否达到60秒阈值
+                    // 检查是否达到30秒阈值
                     if (needsReport) {
                         this.reportViewerCount();
                     }
@@ -2307,9 +2358,17 @@ class VideoPlayer {
     
     // 重置观看计时
     resetViewerTracking() {
+        // 添加防抖机制，避免短时间内多次重置
+        const now = Date.now();
+        if (this.viewerTracking.lastResetTime && (now - this.viewerTracking.lastResetTime) < 1000) {
+            return;
+        }
+        this.viewerTracking.lastResetTime = now;
+        
         this.pauseViewerTracking();
         this.viewerTracking.consecutivePlaySeconds = 0;
-        this.viewerTracking.hasReported = false;
+        // 注意：不重置 hasReported 状态，因为用户的上报状态在整个视频观看期间应该保持不变
+        // this.viewerTracking.hasReported = false; // 移除这行，保持原有的上报状态
     }
     
     // 停止观看计时
@@ -2349,9 +2408,6 @@ class VideoPlayer {
                     this.socialPanel.updateViewerCount();
                 }
                 this.stopViewerTracking();
-            } else if (response.status === 403) {
-            } else {
-                console.error('[观看上报] 上报失败:', response.status);
             }
         } catch (error) {
             console.error('[观看上报] 网络错误:', error.message, error);
@@ -2702,6 +2758,9 @@ class VideoPlayer {
                 this.updateViewerCountUI();
                 // 更新心愿单当前视频输入框
                 this.updateWishlistCurrentInput();
+                
+                // 检查观看状态 - 判断用户是否已经上报过该视频的观看记录
+                await this.checkViewerStatus(videoId);
             } else if (response.status === 404) {
                 // 404容错处理：无字幕时的兜底逻辑
                 console.log('当前视频无字幕，但允许发表评论');
@@ -2712,6 +2771,9 @@ class VideoPlayer {
                 this.updateViewerCountUI();
                 // 更新心愿单当前视频输入框
                 this.updateWishlistCurrentInput();
+                
+                // 即使无字幕也检查观看状态
+                await this.checkViewerStatus(videoId);
             }
         } catch (e) {
             console.error('加载字幕失败', e);
@@ -2721,6 +2783,9 @@ class VideoPlayer {
             // 更新观看数显示
             this.updateViewerCountUI();
             this.updateWishlistCurrentInput();
+            
+            // 网络错误时也尝试检查观看状态
+            await this.checkViewerStatus(videoId);
         }
     }
 

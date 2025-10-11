@@ -2149,6 +2149,14 @@ app.post('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subti
     const tempInputPath = path.join(uploadsDir, file.filename);
     let saveFilename = file.filename; // 将被置为最终文件名
     let saveSize = file.size;
+    
+    // 清理临时文件的辅助函数
+    const cleanupTempFile = async () => {
+        try { 
+            await fs.unlink(tempInputPath); 
+        } catch {}
+    };
+    
     try {
         const originalExt = path.extname(file.originalname).toLowerCase();
         if (originalExt === '.ass' || originalExt === '.ssa') {
@@ -2159,7 +2167,7 @@ app.post('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subti
             const outputPath = path.join(uploadsDir, outputFilename);
             await fs.writeFile(outputPath, vtt, 'utf-8');
             // 删除原始文件
-            try { await fs.unlink(tempInputPath); } catch {}
+            await cleanupTempFile();
             const stat = await fs.stat(outputPath);
             saveFilename = outputFilename;
             saveSize = stat.size;
@@ -2176,6 +2184,7 @@ app.post('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subti
             saveSize = stat.size;
         }
     } catch (e) {
+        await cleanupTempFile();
         return res.status(500).json({ error: '字幕转码失败（ASS/SSA→VTT）' });
     }
     
@@ -2216,6 +2225,10 @@ app.post('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subti
     } catch (e) {
         // 文件未能写入最终路径，视为失败，确保不落数据库
         try { await fs.unlink(filePathFinal); } catch {}
+        // 如果是临时文件，也需要清理
+        if (path.basename(filePathFinal) !== desiredName) {
+            await cleanupTempFile();
+        }
         return res.status(500).json({ error: '保存字幕文件失败' });
     }
 
@@ -2310,6 +2323,14 @@ app.put('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subtit
         const tempInputPath = path.join(uploadsDir, file.filename);
         let saveFilename = file.filename;
         let saveSize = file.size;
+        
+        // 清理临时文件的辅助函数
+        const cleanupTempFile = async () => {
+            try { 
+                await fs.unlink(tempInputPath); 
+            } catch {}
+        };
+        
         try {
             const originalExt = path.extname(file.originalname).toLowerCase();
             if (originalExt === '.ass' || originalExt === '.ssa') {
@@ -2319,7 +2340,7 @@ app.put('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subtit
                 const outputFilename = `${videoId}.vtt`;
                 const outputPath = path.join(uploadsDir, outputFilename);
                 await fs.writeFile(outputPath, vtt, 'utf-8');
-                try { await fs.unlink(tempInputPath); } catch {}
+                await cleanupTempFile();
                 const stat = await fs.stat(outputPath);
                 saveFilename = outputFilename;
                 saveSize = stat.size;
@@ -2336,6 +2357,7 @@ app.put('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subtit
                 saveSize = stat.size;
             }
         } catch (e) {
+            await cleanupTempFile();
             return res.status(500).json({ error: '字幕转码失败（ASS/SSA→VTT）' });
         }
         
@@ -2351,6 +2373,10 @@ app.put('/api/subtitle/:video_id', authenticateAdminToken, upload.single('subtit
         const dup = await getAsync('SELECT video_id FROM subtitles WHERE content_hash = ? AND lower(video_id) <> lower(?)', [contentHash, videoId]);
         if (dup) {
             try { await fs.unlink(filePathFinal); } catch {}
+            // 如果是临时文件，也需要清理
+            if (path.basename(filePathFinal) !== saveFilename) {
+                await cleanupTempFile();
+            }
             return res.status(409).json({ error: '内容重复，已存在字幕', exists_video_id: dup.video_id });
         }
 
@@ -3155,6 +3181,45 @@ app.get('/api/rank/subtitles/top-viewed', authenticateAnyToken, async (req, res)
     }
 });
 
+// 检查观看状态API - 用于判断用户是否已经上报过该视频的观看记录
+app.get('/api/subtitles/viewers/status/:video_id', authenticateUserToken, async (req, res) => {
+    const videoId = (req.params.video_id || '').toLowerCase().trim();
+    if (!videoId) {
+        return res.status(400).json({ error: '视频ID不能为空' });
+    }
+
+    const userId = req.user.id;
+
+    try {
+        // 检查字幕是否存在
+        const subtitle = await getAsync(
+            'SELECT id FROM subtitles WHERE lower(video_id) = lower(?)',
+            [videoId]
+        );
+        
+        if (!subtitle) {
+            return res.status(403).json({ error: '字幕不存在或无权限访问' });
+        }
+
+        // 检查用户是否已经上报过该视频的观看记录
+        const viewerRecord = await getAsync(
+            'SELECT id FROM subtitle_viewers WHERE video_id = ? AND user_id = ?',
+            [videoId, userId]
+        );
+
+        const hasReported = !!viewerRecord;
+
+        res.json({
+            video_id: videoId,
+            has_reported: hasReported,
+            message: hasReported ? '用户已上报过观看记录' : '用户未上报过观看记录'
+        });
+    } catch (err) {
+        console.error('检查观看状态失败:', err);
+        res.status(500).json({ error: '检查观看状态失败' });
+    }
+});
+
 app.post('/api/subtitles/viewers/report/:video_id', authenticateUserToken, async (req, res) => {
     const videoId = (req.params.video_id || '').toLowerCase().trim();
     if (!videoId) {
@@ -3165,8 +3230,8 @@ app.post('/api/subtitles/viewers/report/:video_id', authenticateUserToken, async
     const { watchDurationSec } = req.body || {};
 
     // 验证观看时长
-    if (!watchDurationSec || watchDurationSec < 60) {
-        return res.status(400).json({ error: '观看时长必须至少60秒' });
+    if (!watchDurationSec || watchDurationSec < 30) {
+        return res.status(400).json({ error: '观看时长必须至少30秒' });
     }
 
     try {

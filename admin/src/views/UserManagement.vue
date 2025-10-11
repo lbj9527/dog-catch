@@ -38,20 +38,60 @@
 						{{ scope.row.gender || '未设置' }}
 					</template>
 				</el-table-column>
-				<el-table-column prop="membership" label="会员状态" width="120">
+				<el-table-column prop="membership" label="会员状态" width="140">
 					<template #default="scope">
-						<el-tag :type="getMembershipTagType(scope.row.membership)" size="small">
-							{{ getMembershipText(scope.row.membership) }}
-						</el-tag>
+						<el-switch
+							:model-value="scope.row.membership === 'paid'"
+							@change="(val) => handleMembershipSwitch(scope.row, val)"
+							active-text="付费"
+							inactive-text="免费"
+							size="small"
+						/>
 					</template>
 				</el-table-column>
-				<el-table-column prop="paid_until" label="到期时间" width="120">
+				<el-table-column prop="paid_until" label="到期时间" width="160">
 					<template #default="scope">
-						<span v-if="scope.row.membership === 'paid' && scope.row.paid_until" 
-							  :class="getExpiryClass(scope.row.paid_until)">
-							{{ formatDate(scope.row.paid_until, 'date') }}
-						</span>
-						<span v-else class="text-muted">--</span>
+						<el-popover
+							:visible="expiryPopoverVisible[scope.row.id]"
+							placement="bottom"
+							:width="280"
+							trigger="manual"
+						>
+							<template #reference>
+								<span 
+									v-if="scope.row.membership === 'paid' && scope.row.paid_until" 
+									:class="getExpiryClass(scope.row.paid_until)"
+									class="expiry-clickable"
+									@click="openExpiryPopover(scope.row)"
+								>
+									{{ formatDate(scope.row.paid_until, 'date') }}
+								</span>
+								<span 
+									v-else-if="scope.row.membership === 'paid'"
+									class="text-muted expiry-clickable"
+									@click="openExpiryPopover(scope.row)"
+								>
+									点击设置到期时间
+								</span>
+								<span v-else class="text-muted">--</span>
+							</template>
+							<div class="expiry-popover">
+								<h4>设置到期时间</h4>
+								<el-date-picker
+									v-model="tempExpiryDate[scope.row.id]"
+									type="datetime"
+									placeholder="选择到期时间"
+									format="YYYY-MM-DD HH:mm"
+									value-format="YYYY-MM-DD HH:mm:ss"
+									style="width: 100%; margin: 10px 0;"
+								/>
+								<div class="popover-actions">
+									<el-button size="small" @click="cancelExpiryChange(scope.row.id)">取消</el-button>
+									<el-button size="small" type="danger" @click="clearExpiry(scope.row.id)">清除到期</el-button>
+									<el-button size="small" type="primary" @click="saveExpiryChange(scope.row)">保存</el-button>
+								</div>
+							</div>
+						</el-popover>
 					</template>
 				</el-table-column>
 				<el-table-column prop="bio" label="个人简介" width="150" show-overflow-tooltip>
@@ -65,12 +105,8 @@
 				<el-table-column prop="last_login_at" label="最近登录" width="140">
 					<template #default="scope">{{ scope.row.last_login_at ? formatDate(scope.row.last_login_at, 'date') : '从未登录' }}</template>
 				</el-table-column>
-				<el-table-column label="操作" width="180" align="center" fixed="right">
+				<el-table-column label="操作" width="100" align="center" fixed="right">
 					<template #default="scope">
-						<el-button type="primary" size="small" @click="editMembership(scope.row)">
-							👑
-							会员
-						</el-button>
 						<el-button type="danger" size="small" @click="deleteUser(scope.row)">
 							<el-icon><Delete /></el-icon>
 							删除
@@ -105,6 +141,10 @@ const searchQuery = ref('')
 const tableData = ref([])
 const stats = reactive({ total: 0 })
 const pagination = reactive({ page: 1, limit: 50, total: 0 })
+
+// 会员管理相关响应式数据
+const expiryPopoverVisible = ref({})
+const tempExpiryDate = ref({})
 
 const loadStats = async () => {
 	try {
@@ -162,58 +202,90 @@ const getExpiryClass = (paidUntil) => {
 	return 'text-success' // 正常
 }
 
-const editMembership = async (row) => {
-	const currentMembership = row.membership || 'free'
-	const currentPaidUntil = row.paid_until || ''
+// 新的会员切换处理方法
+const handleMembershipSwitch = async (row, newValue) => {
+	const membership = newValue ? 'paid' : 'free'
 	
 	try {
-		const { value } = await ElMessageBox.prompt(
-			`当前用户：${row.username}\n当前状态：${getMembershipText(currentMembership)}\n\n请选择新的会员状态：`,
-			'编辑会员状态',
-			{
-				confirmButtonText: '确定',
-				cancelButtonText: '取消',
-				inputType: 'textarea',
-				inputValue: currentMembership === 'paid' ? 
-					`membership=paid\npaid_until=${currentPaidUntil || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}` :
-					'membership=free',
-				inputPlaceholder: '格式：membership=paid 或 membership=free\n如果是付费会员，可添加：paid_until=2024-12-31'
-			}
-		)
-		
-		// 解析输入
-		const lines = value.split('\n').map(line => line.trim()).filter(line => line)
-		const data = {}
-		
-		for (const line of lines) {
-			const [key, val] = line.split('=').map(s => s.trim())
-			if (key === 'membership' && ['free', 'paid'].includes(val)) {
-				data.membership = val
-			} else if (key === 'paid_until' && val) {
-				data.paid_until = val
-			}
-		}
-		
-		if (!data.membership) {
-			throw new Error('请指定有效的会员状态 (free 或 paid)')
+		const data = { membership }
+		// 如果切换为免费用户，清除到期时间
+		if (!newValue) {
+			data.paid_until = null
 		}
 		
 		await userAdminAPI.updateMembership(row.id, data)
 		ElMessage.success('会员状态更新成功')
 		await loadData()
-		
 	} catch (e) {
-		if (e !== 'cancel') {
-			console.error(e)
-			ElMessage.error(e.message || '更新会员状态失败')
-		}
+		console.error(e)
+		ElMessage.error(e.message || '更新会员状态失败')
 	}
 }
 
-const onSizeChange = (size) => {
-	pagination.limit = size
-	pagination.page = 1
-	loadData()
+// 到期时间弹窗相关方法
+const openExpiryPopover = (row) => {
+	expiryPopoverVisible.value[row.id] = true
+	// 如果已有到期时间，使用现有时间，否则预置+30天
+	if (row.paid_until) {
+		tempExpiryDate.value[row.id] = row.paid_until
+	} else {
+		const defaultExpiry = new Date()
+		defaultExpiry.setDate(defaultExpiry.getDate() + 30)
+		tempExpiryDate.value[row.id] = defaultExpiry.toISOString().slice(0, 19).replace('T', ' ')
+	}
+}
+
+const cancelExpiryChange = (userId) => {
+	expiryPopoverVisible.value[userId] = false
+	delete tempExpiryDate.value[userId]
+}
+
+const clearExpiry = (userId) => {
+	tempExpiryDate.value[userId] = null
+}
+
+const saveExpiryChange = async (row) => {
+	const expiryDate = tempExpiryDate.value[row.id]
+	
+	// 如果清除到期时间
+	if (!expiryDate) {
+		try {
+			await userAdminAPI.updateMembership(row.id, { 
+				membership: 'paid',
+				paid_until: null 
+			})
+			ElMessage.success('已清除到期时间')
+			await loadData()
+			expiryPopoverVisible.value[row.id] = false
+			delete tempExpiryDate.value[row.id]
+		} catch (e) {
+			console.error(e)
+			ElMessage.error(e.message || '更新失败')
+		}
+		return
+	}
+	
+	// 验证日期不能是过去时间
+	const selectedDate = new Date(expiryDate)
+	const now = new Date()
+	if (selectedDate <= now) {
+		ElMessage.warning('到期时间不能是过去时间')
+		return
+	}
+	
+	try {
+		await userAdminAPI.updateMembership(row.id, { 
+			membership: 'paid',
+			paid_until: expiryDate 
+		})
+		ElMessage.success('到期时间更新成功')
+		await loadData()
+		expiryPopoverVisible.value[row.id] = false
+		delete tempExpiryDate.value[row.id]
+	} catch (e) {
+		console.error(e)
+		ElMessage.error(e.message || '更新到期时间失败')
+	}
 }
 
 const onPageChange = (page) => {
@@ -254,4 +326,29 @@ onMounted(async () => {
 .text-warning { color: #e6a23c; }
 .text-danger { color: #f56c6c; }
 .text-muted { color: #909399; }
+
+/* 到期时间点击样式 */
+.expiry-clickable {
+	cursor: pointer;
+	text-decoration: underline;
+	text-decoration-style: dotted;
+}
+
+.expiry-clickable:hover {
+	color: #409EFF;
+}
+
+/* 弹窗样式 */
+.expiry-popover h4 {
+	margin: 0 0 10px 0;
+	font-size: 14px;
+	color: #303133;
+}
+
+.popover-actions {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	margin-top: 15px;
+}
 </style>
