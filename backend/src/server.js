@@ -2893,14 +2893,8 @@ app.get('/api/subtitles/variants/:base_video_id', authenticateAnyToken, async (r
         // 使用模糊匹配查找所有匹配的字幕变体
         let rows = allSubtitles.filter(sub => isFuzzyMatch(baseId, sub.base_video_id));
         
-        // 非付费用户不可见付费变体
-        const paidUntil = req.user && req.user.paid_until ? new Date(req.user.paid_until) : null;
-        const isPaidActive = req.user && req.user.membership === 'paid' && (!paidUntil || paidUntil > new Date());
-        if (!isPaidActive && (!req.user || req.user.role !== 'admin')) {
-            rows = rows.filter(sub => Number(sub.is_paid || 0) === 0);
-        }
-        
         // 返回结果，即使为空数组也是有效的响应
+        // 注意：所有用户都能看到字幕变体列表（包括付费字幕），权限控制在内容获取接口中进行
         res.json({ base: extractBaseVideoId(baseId), variants: rows });
     } catch (e) {
         console.error('获取字幕变体失败:', e);

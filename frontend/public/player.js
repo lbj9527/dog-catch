@@ -1320,18 +1320,7 @@ class VideoPlayer {
             subtitleSelectEl.onchange = (e) => {
                 const videoId = e.target.value;
                 if (videoId) {
-                    // 检查是否为付费字幕且用户无权限
-                    const variant = this.subtitleVariants.find(v => v.video_id === videoId);
-                    const isPaid = variant && Number(variant.is_paid || 0) === 1;
-                    const isPaidMember = this.isPaidMember();
-                    
-                    if (isPaid && !isPaidMember) {
-                        // 阻止选择付费字幕，显示升级提示
-                        e.target.value = this.getActiveVideoId() || ''; // 恢复到当前选中项
-                        this.showUpgradeModal();
-                        return;
-                    }
-                    
+                    // 允许所有用户选择任何字幕，权限控制在switchSubtitleVariant中处理
                     this.switchSubtitleVariant(videoId);
                 }
             };
@@ -2149,6 +2138,27 @@ class VideoPlayer {
         }
     }
 
+    // 禁用字幕按钮（用于非付费用户选择付费字幕时）
+    disableSubtitleButton() {
+        const subtitleBtn = document.getElementById('subtitleToggle');
+        if (subtitleBtn) {
+            subtitleBtn.disabled = true;
+            subtitleBtn.textContent = '显示字幕';
+            subtitleBtn.style.opacity = '0.5';
+            subtitleBtn.style.cursor = 'not-allowed';
+        }
+    }
+
+    // 启用字幕按钮（用于成功加载字幕后）
+    enableSubtitleButton() {
+        const subtitleBtn = document.getElementById('subtitleToggle');
+        if (subtitleBtn) {
+            subtitleBtn.disabled = false;
+            subtitleBtn.style.opacity = '1';
+            subtitleBtn.style.cursor = 'pointer';
+        }
+    }
+
     doLogout() {
         try { sessionStorage.removeItem('user_token'); } catch {}
         localStorage.removeItem('user_token');
@@ -2645,12 +2655,50 @@ class VideoPlayer {
                 return;
             }
             
-            // 选择默认字幕：最近更新项
-            const defaultVariant = this.subtitleVariants.reduce((best, cur) => {
-                const bu = new Date(best.updated_at || 0).getTime();
-                const cu = new Date(cur.updated_at || 0).getTime();
-                return cu > bu ? cur : best;
-            }, this.subtitleVariants[0]);
+            // 优先选择免费字幕，如果没有免费字幕则选择最近更新的付费字幕
+            const freeVariants = this.subtitleVariants.filter(v => Number(v.is_paid || 0) !== 1);
+            let defaultVariant;
+            
+            if (freeVariants.length > 0) {
+                // 有免费字幕，选择最近更新的免费字幕
+                defaultVariant = freeVariants.reduce((best, cur) => {
+                    const bu = new Date(best.updated_at || 0).getTime();
+                    const cu = new Date(cur.updated_at || 0).getTime();
+                    return cu > bu ? cur : best;
+                }, freeVariants[0]);
+            } else {
+                // 没有免费字幕，选择最近更新的付费字幕
+                defaultVariant = this.subtitleVariants.reduce((best, cur) => {
+                    const bu = new Date(best.updated_at || 0).getTime();
+                    const cu = new Date(cur.updated_at || 0).getTime();
+                    return cu > bu ? cur : best;
+                }, this.subtitleVariants[0]);
+            }
+            
+            // 检查默认字幕是否为付费且用户为普通用户
+            const isPaid = Number(defaultVariant.is_paid || 0) === 1;
+            const isPaidMember = this.isPaidMember();
+            
+            // 添加调试信息
+            console.log('loadSubtitleVariants - 默认字幕检查:', {
+                defaultVariant: defaultVariant,
+                isPaid: isPaid,
+                isPaidMember: isPaidMember,
+                userToken: !!this.userToken,
+                membership: this.getCurrentMembership()
+            });
+            
+            if (isPaid && !isPaidMember) {
+                // 普通用户遇到付费字幕，直接弹出升级提示，不加载内容
+                console.log('触发升级提示 - 初始化时');
+                this.currentSubtitleId = defaultVariant.video_id;
+                this.buildSubtitleSelector(defaultVariant.video_id);
+                this.disableSubtitleButton();
+                this.showUpgradeModal();
+                return;
+            }
+            
+            // 正常加载字幕
             await this.loadSubtitleByVideoId(defaultVariant.video_id);
             this.buildSubtitleSelector(defaultVariant.video_id);
         } catch (e) {
@@ -2701,15 +2749,13 @@ class VideoPlayer {
             // 构建显示文本
             let displayText = `${name}  ❤ ${this.formatLikeCount(count)}`;
             if (isPaid) {
-                displayText += isPaidMember ? ' 👑' : ' 🔒';
+                displayText += ' 👑';
             }
             
             option.textContent = displayText;
             
-            // 设置付费字幕的样式和禁用状态
+            // 设置付费字幕的提示信息（但不禁用）
             if (isPaid && !isPaidMember) {
-                option.disabled = true;
-                option.style.color = '#888';
                 option.title = '付费会员专享';
             }
             
@@ -2740,7 +2786,7 @@ class VideoPlayer {
             // 构建显示文本
             let displayText = `${name}  ❤ ${this.formatLikeCount(count)}`;
             if (isPaid) {
-                displayText += isPaidMember ? ' 👑' : ' 🔒';
+                displayText += ' 👑';
             }
             
             options[idx].textContent = displayText;
@@ -2749,6 +2795,33 @@ class VideoPlayer {
 
     async switchSubtitleVariant(videoId) {
         if (!videoId) return;
+        
+        // 检查是否为付费字幕且用户非付费会员
+        const variant = this.subtitleVariants.find(v => v.video_id === videoId);
+        if (variant) {
+            const isPaid = Number(variant.is_paid || 0) === 1;
+            const isPaidMember = this.isPaidMember();
+            
+            // 添加调试信息
+            console.log('switchSubtitleVariant - 字幕切换检查:', {
+                videoId: videoId,
+                variant: variant,
+                isPaid: isPaid,
+                isPaidMember: isPaidMember,
+                userToken: !!this.userToken,
+                membership: this.getCurrentMembership()
+            });
+            
+            if (isPaid && !isPaidMember) {
+                // 非付费用户选择付费字幕时，更新currentSubtitleId但不加载内容
+                console.log('触发升级提示 - 切换字幕时');
+                this.currentSubtitleId = videoId;
+                this.disableSubtitleButton();
+                this.showUpgradeModal();
+                return;
+            }
+        }
+        
         const currentTime = this.player ? this.player.video.currentTime : 0;
         const wasPlaying = this.player && !this.player.video.paused;
         await this.loadSubtitleByVideoId(videoId);
@@ -2771,8 +2844,7 @@ class VideoPlayer {
             }
             if (response.status === 403) {
                 // 403 错误处理：付费字幕访问被拒绝
-                console.log('付费字幕访问被拒绝，隐藏字幕选择器');
-                this.hideSubtitleSelector();
+                console.log('付费字幕访问被拒绝，保持字幕选择器可见');
                 
                 // 根据用户会员状态决定是否显示升级提示
                 if (!this.isPaidMember()) {
@@ -2790,8 +2862,8 @@ class VideoPlayer {
                 this.currentSubtitleId = videoId;
                 this.addSubtitleTrack();
                 // 启用开关按钮
+                this.enableSubtitleButton();
                 const subtitleBtn = document.getElementById('subtitleToggle');
-                subtitleBtn.disabled = false;
                 subtitleBtn.textContent = '隐藏字幕';
                 // 防抖更新点赞状态
                 this.debouncedFetchLikeStatus();
@@ -4494,10 +4566,16 @@ class VideoPlayer {
 
     // 显示升级会员弹窗
     showUpgradeModal() {
+        console.log('showUpgradeModal 被调用');
         const modal = document.getElementById('upgradeModal');
-        if (!modal) return;
+        console.log('找到的modal元素:', modal);
+        if (!modal) {
+            console.error('upgradeModal 元素未找到');
+            return;
+        }
         
         modal.style.display = 'flex';
+        console.log('设置modal显示为flex');
         
         // 绑定关闭事件（只绑定一次）
         if (!modal.dataset.eventsAttached) {
