@@ -440,6 +440,26 @@
       <div class="notification-header">
         <h3>消息通知</h3>
         <div class="notification-actions">
+          <button id="markAllReadBtn" class="btn-text">全部已读</button>
+          <button id="deleteAllBtn" class="btn-text btn-danger-text" aria-label="清空当前面板显示的所有消息">全部删除</button>
+          <button id="closeNotificationPanel" class="btn-close">×</button>
+        </div>
+      </div>
+      <div class="notification-content">
+        <div id="notificationList" class="notification-list">
+          <!-- 通知列表将在这里动态加载 -->
+        </div>
+        <div id="notificationEmpty" class="notification-empty" style="display: none">
+          <p>暂无消息通知</p>
+        </div>
+        <div id="notificationLoading" class="notification-loading" style="display: none">
+          <p>加载中...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 通知面板遮罩 -->
+    <div id="notificationOverlay" class="notification-overlay" style="display: none"></div>
 
     <!-- 升级会员提示弹窗 -->
     <div id="upgradeModal" class="upgrade-modal" style="display: none">
@@ -478,26 +498,6 @@
         </div>
       </div>
     </div>
-          <button id="markAllReadBtn" class="btn-text">全部已读</button>
-          <button id="deleteAllBtn" class="btn-text btn-danger-text" aria-label="清空当前面板显示的所有消息">全部删除</button>
-          <button id="closeNotificationPanel" class="btn-close">×</button>
-        </div>
-      </div>
-      <div class="notification-content">
-        <div id="notificationList" class="notification-list">
-          <!-- 通知列表将在这里动态加载 -->
-        </div>
-        <div id="notificationEmpty" class="notification-empty" style="display: none">
-          <p>暂无消息通知</p>
-        </div>
-        <div id="notificationLoading" class="notification-loading" style="display: none">
-          <p>加载中...</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- 通知面板遮罩 -->
-    <div id="notificationOverlay" class="notification-overlay" style="display: none"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.js"></script>
