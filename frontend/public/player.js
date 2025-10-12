@@ -4115,6 +4115,7 @@ class VideoPlayer {
                 <div class="rank-tabs" role="tablist" aria-label="排行榜类型">
                     <button class="rank-tab active" data-rank="liked" role="tab" aria-selected="true">点赞最多</button>
                     <button class="rank-tab" data-rank="viewed" role="tab" aria-selected="false">观看最多</button>
+                    <button class="rank-tab" data-rank="latest" role="tab" aria-selected="false">最新上线</button>
                 </div>
                 <div class="rank-content">
                     <div class="rank-list" id="rankList" aria-live="polite"></div>
@@ -8092,6 +8093,8 @@ class VideoPlayer {
             let data = [];
             if (type === 'liked') {
                 data = await this.fetchTopLikedSubtitles(limit);
+            } else if (type === 'latest') {
+                data = await this.fetchLatestSubtitles(limit);
             } else {
                 data = await this.fetchTopViewedSubtitles(limit);
             }
@@ -8131,18 +8134,41 @@ class VideoPlayer {
         return Array.isArray(json.data) ? json.data : [];
     }
 
+    // 获取最新上线榜单
+    async fetchLatestSubtitles(limit = 50) {
+        const base = (API_BASE_URL || (window.PLAYER_CONFIG?.API_BASE_URL || '')).replace(/\/$/, '');
+        const url = `${base}/api/rank/subtitles/latest?limit=${limit}`;
+        const headers = { 'Authorization': `Bearer ${this.userToken || ''}` };
+        const resp = await fetch(url, { headers });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json = await resp.json();
+        return Array.isArray(json.data) ? json.data : [];
+    }
+
     // 渲染极简卡片式榜单
     renderRankList(container, items, type = 'liked') {
-        const icon = type === 'liked' ? '👍' : '👀';
-        const countKey = type === 'liked' ? 'likes_count' : 'viewers_count';
+        const icon = type === 'liked' ? '👍' : (type === 'viewed' ? '👀' : '🆕');
+        const countKey = type === 'liked' ? 'likes_count' : (type === 'viewed' ? 'viewers_count' : null);
         container.innerHTML = items.map((it, idx) => {
             const title = this.escapeHtml(it.title || '未知字幕');
             const vid = this.escapeHtml(it.video_id || '未知');
-            const cnt = Number(it[countKey] || 0);
+            
+            // 根据类型显示不同的统计信息
+            let countDisplay = '';
+            if (type === 'latest') {
+                // 最新上线显示上传时间
+                const uploadTime = this.formatTimeAgo(it.created_at || it.updated_at);
+                countDisplay = uploadTime;
+            } else {
+                const cnt = Number(it[countKey] || 0);
+                countDisplay = cnt.toString();
+            }
+            
             // 优先使用最近互动时间，回退到字幕更新时间
             const timeField = type === 'liked' ? 
                 (it.last_liked_at || it.updated_at || it.created_at) : 
-                (it.last_viewed_at || it.updated_at || it.created_at);
+                (type === 'viewed' ? (it.last_viewed_at || it.updated_at || it.created_at) :
+                (it.created_at || it.updated_at));
             const time = this.formatTimeAgo(timeField);
             const btnDisabled = !it.page_url;
             const btn = btnDisabled ? '<button class="rank-open-btn" disabled>打开页面</button>' : `<button class="rank-open-btn" data-url="${this.escapeHtml(it.page_url)}">打开页面</button>`;
@@ -8156,7 +8182,7 @@ class VideoPlayer {
                             <div class="rank-item-header">
                                 <div class="rank-item-title-group">
                                     <div class="rank-item-title">${idx + 1}. ${title}${crownIcon}</div>
-                                    <span class="rank-item-info"><i>${icon}</i> ${cnt}</span>
+                                    <span class="rank-item-info"><i>${icon}</i> ${countDisplay}</span>
                                 </div>
                                 <div class="rank-item-action">${btn}</div>
                             </div>

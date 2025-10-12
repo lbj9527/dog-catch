@@ -3181,6 +3181,43 @@ app.get('/api/rank/subtitles/top-viewed', authenticateAnyToken, async (req, res)
     }
 });
 
+app.get('/api/rank/subtitles/latest', authenticateAnyToken, async (req, res) => {
+    const limitRaw = (req.query.limit || '50').toString().trim();
+    const limit = Math.min(Math.max(parseInt(limitRaw, 10) || 50, 1), 100);
+    try {
+        const rows = await getAllAsync(
+            `SELECT s.video_id, s.filename, s.original_filename, s.updated_at, s.is_paid,
+                    strftime('%Y-%m-%dT%H:%M:%SZ', s.updated_at) as formatted_updated_at
+             FROM subtitles s
+             ORDER BY s.updated_at DESC
+             LIMIT ?`,
+            [limit]
+        );
+        const data = [];
+        for (const r of rows) {
+            // 优先取最近的 viewer page_url，其次取最近的 like page_url
+            const pv = await getAsync('SELECT page_url FROM subtitle_viewers WHERE lower(video_id)=lower(?) AND page_url IS NOT NULL ORDER BY created_at DESC LIMIT 1', [r.video_id]);
+            let pageUrl = pv && pv.page_url ? pv.page_url : null;
+            if (!pageUrl) {
+                const pl = await getAsync('SELECT page_url FROM subtitle_likes WHERE lower(video_id)=lower(?) AND page_url IS NOT NULL ORDER BY created_at DESC LIMIT 1', [r.video_id]);
+                pageUrl = pl && pl.page_url ? pl.page_url : null;
+            }
+            data.push({
+                video_id: r.video_id,
+                title: r.filename || r.original_filename || null,
+                updated_at: r.updated_at || null,
+                formatted_updated_at: r.formatted_updated_at || null,
+                page_url: pageUrl,
+                is_paid: r.is_paid || 0
+            });
+        }
+        res.json({ data });
+    } catch (err) {
+        console.error('获取最新字幕排行榜失败:', err);
+        res.status(500).json({ error: '获取排行榜失败' });
+    }
+});
+
 // 检查观看状态API - 用于判断用户是否已经上报过该视频的观看记录
 app.get('/api/subtitles/viewers/status/:video_id', authenticateUserToken, async (req, res) => {
     const videoId = (req.params.video_id || '').toLowerCase().trim();
