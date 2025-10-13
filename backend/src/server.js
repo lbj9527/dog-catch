@@ -2435,13 +2435,44 @@ app.delete('/api/subtitle/:video_id', authenticateAdminToken, (req, res) => {
             // 继续删除数据库记录
         }
         
-        // 删除数据库记录
-        db.run('DELETE FROM subtitles WHERE lower(video_id) = lower(?)', [videoId], function(err) {
-            if (err) {
-                return res.status(500).json({ error: '数据库删除失败' });
+        // 开始数据库事务，清理相关数据
+        db.serialize(() => {
+            db.run('BEGIN TRANSACTION');
+            
+            // 1. 删除字幕点赞记录
+            db.run('DELETE FROM subtitle_likes WHERE lower(video_id) = lower(?)', [videoId], function(err) {
+                if (err) {
+                    console.error('删除字幕点赞记录失败:', err);
+                }
+            });
+            
+            // 2. 删除字幕观看记录
+            db.run('DELETE FROM subtitle_viewers WHERE lower(video_id) = lower(?)', [videoId], function(err) {
+                if (err) {
+                    console.error('删除字幕观看记录失败:', err);
+                }
+            });
+            
+            // 3. 更新心愿单状态：将对应base_video_id的状态从"已更新"改为"未更新"
+            if (subtitle.base_video_id) {
+                db.run('UPDATE wishlists SET status = ? WHERE base_video_id = ? AND status = ?', 
+                    ['未更新', subtitle.base_video_id, '已更新'], function(err) {
+                    if (err) {
+                        console.error('更新心愿单状态失败:', err);
+                    }
+                });
             }
             
-            res.json({ message: '字幕文件删除成功' });
+            // 4. 删除字幕数据库记录
+            db.run('DELETE FROM subtitles WHERE lower(video_id) = lower(?)', [videoId], function(err) {
+                if (err) {
+                    db.run('ROLLBACK');
+                    return res.status(500).json({ error: '数据库删除失败' });
+                }
+                
+                db.run('COMMIT');
+                res.json({ message: '字幕文件删除成功' });
+            });
         });
     });
 });
@@ -2520,6 +2551,46 @@ app.delete('/api/subtitles', authenticateAdminToken, async (req, res) => {
         });
     });
 
+    // 清理相关数据的函数
+    const cleanupRelatedData = (vid, baseVideoId) => new Promise((resolve, reject) => {
+        db.serialize(() => {
+            db.run('BEGIN TRANSACTION');
+            
+            // 1. 删除字幕点赞记录
+            db.run('DELETE FROM subtitle_likes WHERE lower(video_id) = lower(?)', [vid], function(err) {
+                if (err) {
+                    console.error(`删除字幕点赞记录失败 (${vid}):`, err);
+                }
+            });
+            
+            // 2. 删除字幕观看记录
+            db.run('DELETE FROM subtitle_viewers WHERE lower(video_id) = lower(?)', [vid], function(err) {
+                if (err) {
+                    console.error(`删除字幕观看记录失败 (${vid}):`, err);
+                }
+            });
+            
+            // 3. 更新心愿单状态：将对应base_video_id的状态从"已更新"改为"未更新"
+            if (baseVideoId) {
+                db.run('UPDATE wishlists SET status = ? WHERE base_video_id = ? AND status = ?', 
+                    ['未更新', baseVideoId, '已更新'], function(err) {
+                    if (err) {
+                        console.error(`更新心愿单状态失败 (${vid}):`, err);
+                    }
+                });
+            }
+            
+            db.run('COMMIT', (err) => {
+                if (err) {
+                    db.run('ROLLBACK');
+                    reject(err);
+                } else {
+                    resolve();
+                }
+            });
+        });
+    });
+
     for (const vid of normalizedIds) {
         try {
             const row = await selectById(vid);
@@ -2535,6 +2606,13 @@ app.delete('/api/subtitles', authenticateAdminToken, async (req, res) => {
                 if (!e || e.code !== 'ENOENT') {
                     failed[vid] = '删除物理文件失败';
                 }
+            }
+
+            // 清理相关数据
+            try {
+                await cleanupRelatedData(vid, row.base_video_id);
+            } catch (e) {
+                console.error(`清理相关数据失败 (${vid}):`, e);
             }
 
             const ok = await deleteById(vid);
@@ -2587,7 +2665,7 @@ app.delete('/api/subtitles/all', authenticateAdminToken, async (req, res) => {
             try {
                 // 获取所有字幕文件信息
                 const allSubtitles = await new Promise((resolve, reject) => {
-                    db.all('SELECT video_id, file_path FROM subtitles', (err, rows) => {
+                    db.all('SELECT video_id, file_path, base_video_id FROM subtitles', (err, rows) => {
                         if (err) return reject(err);
                         resolve(rows || []);
                     });
@@ -2595,6 +2673,46 @@ app.delete('/api/subtitles/all', authenticateAdminToken, async (req, res) => {
 
                 let deleted = 0;
                 const failed = {};
+
+                // 清理相关数据的函数
+                const cleanupRelatedData = (vid, baseVideoId) => new Promise((resolve, reject) => {
+                    db.serialize(() => {
+                        db.run('BEGIN TRANSACTION');
+                        
+                        // 1. 删除字幕点赞记录
+                        db.run('DELETE FROM subtitle_likes WHERE lower(video_id) = lower(?)', [vid], function(err) {
+                            if (err) {
+                                console.error(`删除字幕点赞记录失败 (${vid}):`, err);
+                            }
+                        });
+                        
+                        // 2. 删除字幕观看记录
+                        db.run('DELETE FROM subtitle_viewers WHERE lower(video_id) = lower(?)', [vid], function(err) {
+                            if (err) {
+                                console.error(`删除字幕观看记录失败 (${vid}):`, err);
+                            }
+                        });
+                        
+                        // 3. 更新心愿单状态：将对应base_video_id的状态从"已更新"改为"未更新"
+                        if (baseVideoId) {
+                            db.run('UPDATE wishlists SET status = ? WHERE base_video_id = ? AND status = ?', 
+                                ['未更新', baseVideoId, '已更新'], function(err) {
+                                if (err) {
+                                    console.error(`更新心愿单状态失败 (${vid}):`, err);
+                                }
+                            });
+                        }
+                        
+                        db.run('COMMIT', (err) => {
+                            if (err) {
+                                db.run('ROLLBACK');
+                                reject(err);
+                            } else {
+                                resolve();
+                            }
+                        });
+                    });
+                });
 
                 // 批量删除，每次处理50个文件
                 const batchSize = 50;
@@ -2613,6 +2731,13 @@ app.delete('/api/subtitles/all', authenticateAdminToken, async (req, res) => {
                                 if (fileError.code !== 'ENOENT') {
                                     console.warn(`删除物理文件失败: ${subtitle.video_id}`, fileError);
                                 }
+                            }
+
+                            // 清理相关数据
+                            try {
+                                await cleanupRelatedData(subtitle.video_id, subtitle.base_video_id);
+                            } catch (cleanupError) {
+                                console.error(`清理相关数据失败 (${subtitle.video_id}):`, cleanupError);
                             }
 
                             // 删除数据库记录
