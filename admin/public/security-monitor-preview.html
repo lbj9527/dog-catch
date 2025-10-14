@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>安全监测预览 · 字幕访问频率与封禁</title>
+  <style>
+    :root {
+      --bg: #0f1320;
+      --panel: #151a2e;
+      --muted: #7e8ca3;
+      --text: #e6ebf5;
+      --primary: #4ea1ff;
+      --danger: #ff4d4f;
+      --warning: #faad14;
+      --success: #52c41a;
+      --border: #243052;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; background: var(--bg); color: var(--text); line-height: 1.6; }
+    .header { position: sticky; top: 0; z-index: 10; backdrop-filter: saturate(180%) blur(8px); background: rgba(15,19,32,0.7); border-bottom: 1px solid var(--border); }
+    .header-inner { margin: 0 auto; padding: 12px; display: flex; align-items: center; gap: 12px; }
+    .title { font-size: 18px; font-weight: 600; }
+    .subtitle { color: var(--muted); font-size: 13px; }
+    .container { margin: 0 auto; padding: 12px; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+    .panel h3 { margin: 0 0 12px; font-size: 16px; }
+    .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .input, .select, .button { height: 32px; border-radius: 8px; border: 1px solid var(--border); background: #0c1120; color: var(--text); padding: 0 10px; }
+    .button { background: #0c1120; cursor: pointer; }
+    .button.primary { background: #183055; border-color: #22406f; color: #d6e6ff; }
+    .button.danger { background: #341a1a; border-color: #4c2323; color: #ffd9d9; }
+    .button.success { background: #182f1d; border-color: #22462a; color: #d9ffe5; }
+    .button.secondary { background: #121728; border-color: #28324f; color: #cfd6e6; }
+    .tag { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; font-size: 13px; border: 1px solid var(--border); color: var(--muted); margin: 4px 6px 4px 0; }
+    .status { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
+    .status.ok { color: var(--success); border-color: #2b4d2f; background: #102314; }
+    .status.warn { color: var(--warning); border-color: #4a3a17; background: #1a160d; }
+    .status.danger { color: var(--danger); border-color: #4a2627; background: #1a0f10; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border-bottom: 1px solid var(--border); padding: 12px 10px; text-align: left; font-size: 13px; line-height: 1.6; }
+    th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+    td { word-break: break-word; overflow-wrap: anywhere; }
+    tbody tr:hover { background: rgba(255,255,255,0.03); }
+    .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; word-break: break-all; }
+    td.actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    td.select-cell { text-align: center; }
+    .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 12px; }
+    .card { background: #0c1120; border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+    .card .label { color: var(--muted); font-size: 12px; }
+    .card .value { font-size: 18px; font-weight: 600; margin-top: 6px; }
+    .section { margin-bottom: 16px; }
+    .muted { color: var(--muted); }
+    .flex { display: flex; align-items: center; gap: 8px; }
+    .right-sticky { position: sticky; top: 68px; align-self: stretch; }
+    .right-sticky .panel { height: 100%; display: flex; flex-direction: column; }
+    #alerts { display: flex; flex-wrap: wrap; gap: 8px; overflow: auto; }
+    .footnote { margin-top: 12px; color: var(--muted); font-size: 12px; }
+    #alerts { display: flex; flex-wrap: wrap; gap: 8px; }
+    .hidden { display: none !important; }
+    .table-scroll { height: 120vh; max-height: none; overflow: auto; }
+    .table-scroll thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+    .toolbar.stats { justify-content: space-between; }
+    .toolbar-left { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .toolbar-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    .tab { height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border); background: #121728; color: var(--text); cursor: pointer; font-size: 13px; }
+    .tab.active { background: #183055; border-color: #22406f; color: #d6e6ff; }
+    .tab-panels {}
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-inner">
+      <div class="title">安全监测（预览）</div>
+      <div class="subtitle">字幕访问频率 · 报警 · 手动封禁</div>
+      <div style="flex:1"></div>
+      <select class="select" id="timeRange">
+        <option value="10m">近10分钟</option>
+        <option value="1h" selected>近1小时</option>
+        <option value="24h">近24小时</option>
+      </select>
+      <button class="button secondary" id="toggleThresholds" aria-expanded="false">阈值设定</button>
+      <button class="button secondary" id="refreshBtn">刷新样例数据</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="grid">
+      <!-- 左列：统计与列表 -->
+      <div>
+        <div class="panel section hidden" id="thresholdPanel">
+          <h3>阈值与报警设定（示意）</h3>
+          <div class="toolbar">
+            <label class="tag">IP-10分钟请求阈值 <input class="input" id="thIp10m" type="number" value="100" style="width:90px"></label>
+            <label class="tag">IP-1小时请求阈值 <input class="input" id="thIp1h" type="number" value="500" style="width:90px"></label>
+            <label class="tag">IP-10分钟不同视频数 <input class="input" id="thIpVid10m" type="number" value="50" style="width:90px"></label>
+            <label class="tag">用户-1小时请求阈值 <input class="input" id="thUser1h" type="number" value="300" style="width:90px"></label>
+            <button class="button primary" id="applyThresholds">应用</button>
+          </div>
+          <div class="footnote">说明：实际后端会根据 `usage_events` 中的 `subtitle_access` 聚合得到上述指标，本页仅为UI预览与交互示意。</div>
+        </div>
+
+        <div class="panel section">
+          <div class="cards" id="summaryCards"></div>
+          <h3>频率统计</h3>
+          <div class="tabs">
+            <button class="tab active" data-tab="ip">按 IP</button>
+            <button class="tab" data-tab="user">按 用户</button>
+          </div>
+          <div class="tab-panels">
+            <div class="tab-panel active" id="tab-ip">
+              <div class="toolbar stats">
+                <div class="toolbar-left">
+                  <input class="input" id="ipFilter" placeholder="按 IP/地区/UA过滤">
+                  <button class="button secondary" id="ipClear">清空过滤</button>
+                </div>
+                <div class="toolbar-right">
+                  <button class="button danger" id="banSelectedIPs">批量封禁所选IP</button>
+                  <button class="button secondary" id="exportIP">导出当前IP视图</button>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table id="ipTable">
+                  <colgroup>
+                    <col style="width:60px">
+                    <col style="width:280px">
+                    <col style="width:70px">
+                    <col style="width:80px">
+                    <col style="width:80px">
+                    <col style="width:100px">
+                    <col style="width:80px">
+                    <col style="width:80px">
+                    <col style="width:90px">
+                    <col style="width:260px">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>选择</th>
+                      <th>IP</th>
+                      <th>1分钟</th>
+                      <th>10分钟</th>
+                      <th>1小时</th>
+                      <th>不同视频(1h)</th>
+                      <th>UA多样性</th>
+                      <th>风险评分</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="tab-panel" id="tab-user">
+              <div class="toolbar stats">
+                <div class="toolbar-left">
+                  <input class="input" id="userFilter" placeholder="按用户ID/昵称过滤">
+                  <button class="button secondary" id="userClear">清空过滤</button>
+                </div>
+                <div class="toolbar-right">
+                  <button class="button danger" id="deleteSelectedUsers">批量删除所选用户</button>
+                  <button class="button secondary" id="exportUser">导出当前用户视图</button>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table id="userTable">
+                  <colgroup>
+                    <col style="width:60px">
+                    <col style="width:280px">
+                    <col style="width:120px">
+                    <col style="width:140px">
+                    <col style="width:120px">
+                    <col style="width:120px">
+                    <col style="width:120px">
+                    <col style="width:220px">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>选择</th>
+                      <th>用户</th>
+                      <th>请求(1h)</th>
+                      <th>不同视频(1h)</th>
+                      <th>使用IP数</th>
+                      <th>风险评分</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        
+      </div>
+
+      <!-- 右列：报警流 -->
+      <div class="right-sticky">
+        <div class="panel section">
+          <h3>报警与事件（示意）</h3>
+          <div id="alerts"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // —— 样例数据（实际来源为后端聚合的 usage_events: subtitle_access）——
+    const sampleIPs = [
+      { ip: '203.0.113.10', m1: 15, m10: 180, h1: 860, distinctVideosH1: 120, uaDiversity: 8, region: 'JP', status: 'ok' },
+      { ip: '198.51.100.42', m1: 3, m10: 20, h1: 60, distinctVideosH1: 10, uaDiversity: 2, region: 'US', status: 'ok' },
+      { ip: '192.0.2.77', m1: 40, m10: 410, h1: 1200, distinctVideosH1: 210, uaDiversity: 15, region: 'CN', status: 'warn' },
+      { ip: '2404:6800:4008:812::200e', m1: 1, m10: 8, h1: 36, distinctVideosH1: 6, uaDiversity: 1, region: 'HK', status: 'ok' },
+      { ip: '203.0.113.99', m1: 22, m10: 260, h1: 980, distinctVideosH1: 160, uaDiversity: 12, region: 'SG', status: 'warn' },
+    ]
+
+    const sampleUsers = [
+      { id: 1001, name: '用户1001', h1: 280, distinctVideosH1: 40, ipCount: 3, status: 'ok' },
+      { id: 2002, name: '用户2002', h1: 680, distinctVideosH1: 120, ipCount: 6, status: 'warn' },
+      { id: 3003, name: '用户3003', h1: 32, distinctVideosH1: 8, ipCount: 1, status: 'ok' },
+      { id: 4004, name: '用户4004', h1: 900, distinctVideosH1: 160, ipCount: 9, status: 'danger' },
+    ]
+
+    const thresholds = {
+      ip10m: 100,
+      ip1h: 500,
+      ipVid10m: 50,
+      user1h: 300,
+    }
+
+    const summaryEl = document.getElementById('summaryCards')
+    const ipTableBody = document.querySelector('#ipTable tbody')
+    const userTableBody = document.querySelector('#userTable tbody')
+    const ipFilterEl = document.getElementById('ipFilter')
+    const userFilterEl = document.getElementById('userFilter')
+    const alertsEl = document.getElementById('alerts')
+
+    function riskColor(score){ 
+      return score >= 80 ? 'danger' : (score >= 50 ? 'warn' : 'ok')
+    }
+
+    function calcIpRisk(ip){
+      const { m10, h1, distinctVideosH1, uaDiversity } = ip
+      let score = 0
+      // 基础：窗口频率
+      score += Math.min(100, Math.round((m10 / thresholds.ip10m) * 40))
+      score += Math.min(100, Math.round((h1 / thresholds.ip1h) * 40))
+      // 辅助维度
+      score += Math.min(100, Math.round((distinctVideosH1 / thresholds.ipVid10m) * 15))
+      score += Math.min(100, uaDiversity * 1.5) // UA多样性提高风险（代理/爬虫）
+      return Math.min(100, Math.round(score))
+    }
+
+    function calcUserRisk(u){
+      const { h1, distinctVideosH1, ipCount } = u
+      let score = 0
+      score += Math.min(100, Math.round((h1 / thresholds.user1h) * 60))
+      score += Math.min(100, Math.round(distinctVideosH1 * 0.3))
+      score += Math.min(100, Math.round(ipCount * 5))
+      return Math.min(100, Math.round(score))
+    }
+
+    function renderSummary(){
+      const ipDanger = sampleIPs.filter(ip => calcIpRisk(ip) >= 80).length
+      const userDanger = sampleUsers.filter(u => calcUserRisk(u) >= 80).length
+      const ipWarn = sampleIPs.filter(ip => calcIpRisk(ip) >= 50 && calcIpRisk(ip) < 80).length
+      const userWarn = sampleUsers.filter(u => calcUserRisk(u) >= 50 && calcUserRisk(u) < 80).length
+      summaryEl.innerHTML = [
+        { label: '高风险 IP', value: ipDanger },
+        { label: '高风险 用户', value: userDanger },
+        { label: '预警 IP', value: ipWarn },
+        { label: '预警 用户', value: userWarn },
+      ].map(c => `<div class="card"><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`).join('')
+    }
+
+    function renderIPTable(){
+      const keyword = (ipFilterEl.value || '').toLowerCase()
+      const rows = sampleIPs.filter(r => !keyword || r.ip.toLowerCase().includes(keyword) || (r.region||'').toLowerCase().includes(keyword))
+      ipTableBody.innerHTML = rows.map(r => {
+        const score = calcIpRisk(r)
+        const colorCls = riskColor(score)
+        const statusLabel = colorCls === 'danger' ? '高风险' : (colorCls === 'warn' ? '预警' : '正常')
+        return `<tr>
+          <td class="select-cell"><input type="checkbox" aria-label="选择" /></td>
+          <td class="mono">${r.ip} <span class="muted">(${r.region||'-'})</span></td>
+          <td>${r.m1}</td>
+          <td>${r.m10}</td>
+          <td>${r.h1}</td>
+          <td>${r.distinctVideosH1}</td>
+          <td>${r.uaDiversity}</td>
+          <td><span class="status ${colorCls}">${score}</span></td>
+          <td><span class="status ${colorCls}">${statusLabel}</span></td>
+          <td class="actions">
+            <button class="button danger" onclick="alert('封禁IP: ${r.ip}（示意）')">封禁IP</button>
+            <button class="button secondary" onclick="navigator.clipboard.writeText('${r.ip}')">复制IP</button>
+          </td>
+        </tr>`
+      }).join('')
+    }
+
+    function renderUserTable(){
+      const keyword = (userFilterEl.value || '').toLowerCase()
+      const rows = sampleUsers.filter(r => !keyword || String(r.id).includes(keyword) || (r.name||'').toLowerCase().includes(keyword))
+      userTableBody.innerHTML = rows.map(r => {
+        const score = calcUserRisk(r)
+        const colorCls = riskColor(score)
+        const statusLabel = colorCls === 'danger' ? '高风险' : (colorCls === 'warn' ? '预警' : '正常')
+        return `<tr>
+          <td class="select-cell"><input type="checkbox" aria-label="选择" /></td>
+          <td class="mono">${r.name} <span class="muted">(ID: ${r.id})</span></td>
+          <td>${r.h1}</td>
+          <td>${r.distinctVideosH1}</td>
+          <td>${r.ipCount}</td>
+          <td><span class="status ${colorCls}">${score}</span></td>
+          <td><span class="status ${colorCls}">${statusLabel}</span></td>
+          <td class="actions">
+            <button class="button danger" onclick="alert('封禁用户: ${r.id}（示意）')">封禁用户</button>
+          </td>
+        </tr>`
+      }).join('')
+    }
+
+    function renderAlerts(){
+      const items = []
+      sampleIPs.forEach(ip => {
+        const score = calcIpRisk(ip)
+        if (score >= 80) items.push(`<div class="tag" style="border-color:#4a2627;color:#ffb3b4">⚠️ IP ${ip.ip} 超过阈值（1h:${ip.h1} / 10m:${ip.m10} / 视频:${ip.distinctVideosH1}）</div>`)
+        else if (score >= 50) items.push(`<div class="tag" style="border-color:#4a3a17;color:#ffd89c">ℹ️ IP ${ip.ip} 接近阈值（1h:${ip.h1} / 10m:${ip.m10}）</div>`)
+      })
+      sampleUsers.forEach(u => {
+        const score = calcUserRisk(u)
+        if (score >= 80) items.push(`<div class="tag" style="border-color:#4a2627;color:#ffb3b4">⚠️ 用户 ${u.id} 超过阈值（1h:${u.h1} / 视频:${u.distinctVideosH1} / IP数:${u.ipCount}）</div>`)
+        else if (score >= 50) items.push(`<div class="tag" style="border-color:#4a3a17;color:#ffd89c">ℹ️ 用户 ${u.id} 接近阈值（1h:${u.h1}）</div>`)
+      })
+      alertsEl.innerHTML = items.join('') || '<div class="muted">暂无报警</div>'
+    }
+
+    function renderAll(){
+      renderSummary();
+      renderIPTable();
+      renderUserTable();
+      renderAlerts();
+    }
+
+    // 事件绑定
+    document.getElementById('applyThresholds').addEventListener('click', () => {
+      thresholds.ip10m = Number(document.getElementById('thIp10m').value) || thresholds.ip10m
+      thresholds.ip1h = Number(document.getElementById('thIp1h').value) || thresholds.ip1h
+      thresholds.ipVid10m = Number(document.getElementById('thIpVid10m').value) || thresholds.ipVid10m
+      thresholds.user1h = Number(document.getElementById('thUser1h').value) || thresholds.user1h
+      renderAll()
+    })
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      // 仅用于视觉反馈：打乱样例数据
+      sampleIPs.sort(() => Math.random() - 0.5)
+      sampleUsers.sort(() => Math.random() - 0.5)
+      renderAll()
+    })
+    document.getElementById('ipFilter').addEventListener('input', renderIPTable)
+    document.getElementById('ipClear').addEventListener('click', () => { ipFilterEl.value=''; renderIPTable() })
+    document.getElementById('userFilter').addEventListener('input', renderUserTable)
+    document.getElementById('userClear').addEventListener('click', () => { userFilterEl.value=''; renderUserTable() })
+    // 批量操作按钮事件（随Tab所在工具栏）
+    document.getElementById('banSelectedIPs').addEventListener('click', () => alert('批量封禁所选IP（示意）'))
+    document.getElementById('exportIP').addEventListener('click', () => alert('导出当前IP视图（示意）'))
+    document.getElementById('deleteSelectedUsers').addEventListener('click', () => alert('批量删除所选用户（示意）'))
+    document.getElementById('exportUser').addEventListener('click', () => alert('导出当前用户视图（示意）'))
+
+    // 阈值设定面板显示/隐藏
+    const thresholdPanel = document.getElementById('thresholdPanel')
+    const toggleBtn = document.getElementById('toggleThresholds')
+    toggleBtn.addEventListener('click', () => {
+      const isHidden = thresholdPanel.classList.toggle('hidden')
+      toggleBtn.setAttribute('aria-expanded', String(!isHidden))
+      toggleBtn.textContent = isHidden ? '阈值设定' : '关闭设定'
+    })
+
+    // Tab 切换
+    const tabButtons = document.querySelectorAll('.tab')
+    const tabPanelsMap = { ip: document.getElementById('tab-ip'), user: document.getElementById('tab-user') }
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.dataset.tab
+        tabButtons.forEach(b => b.classList.remove('active'))
+        btn.classList.add('active')
+        Object.values(tabPanelsMap).forEach(p => p.classList.remove('active'))
+        tabPanelsMap[target].classList.add('active')
+        if (target === 'ip') renderIPTable(); else renderUserTable();
+      })
+    })
+
+    renderAll()
+  </script>
+</body>
+</html>
