@@ -293,6 +293,12 @@ const onPageChange = (page) => {
 	loadData()
 }
 
+const onSizeChange = (size) => {
+	pagination.limit = size
+	pagination.page = 1
+	loadData()
+}
+
 const formatDate = (val, type = 'datetime') => {
 	if (!val) return '-'
 	const date = new Date(val)

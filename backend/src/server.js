@@ -1091,6 +1091,29 @@ db.serialize(() => {
 
     // 补充列：为 subtitle_viewers 表添加 page_url（如果不存在）
     db.run('ALTER TABLE subtitle_viewers ADD COLUMN page_url TEXT', () => {});
+
+    // 创建使用事件表 - 用于实时监控用户字幕使用情况
+    db.run(`CREATE TABLE IF NOT EXISTS usage_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        video_id TEXT NOT NULL,
+        event_type TEXT NOT NULL, -- 'subtitle_access', 'subtitle_view_report'
+        ip_address TEXT,
+        user_agent TEXT,
+        page_url TEXT,
+        metadata TEXT, -- JSON格式的额外数据
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    )`);
+
+    // 创建 usage_events 表的索引
+    db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_user_id ON usage_events(user_id)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_video_id ON usage_events(video_id)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_type ON usage_events(event_type)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_created_at ON usage_events(created_at)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_ip ON usage_events(ip_address)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_composite ON usage_events(event_type, created_at)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_user_type ON usage_events(user_id, event_type, created_at)`);
     
     // 创建默认管理员账号 (用户名: admin, 密码: admin123)
     const defaultPassword = bcrypt.hashSync('admin123', 10);
@@ -2126,6 +2149,47 @@ app.get('/api/subtitle/:video_id', authenticateAnyToken, async (req, res) => {
             if (isPaidSubtitle && isPaidActive && SUB_WATERMARK) {
                 vtt = injectVttWatermark(vtt, { userId, videoId });
             }
+
+            // 记录字幕访问事件（排除管理员访问）
+            try {
+                const isAdminAccess = req.user && req.user.role === 'admin';
+                if (!isAdminAccess) {
+                    const metadata = JSON.stringify({
+                        isPaidSubtitle,
+                        isPaidActive,
+                        fileSize: raw.length,
+                        encoding: enc,
+                        extension: ext,
+                        hasWatermark: isPaidSubtitle && isPaidActive && SUB_WATERMARK
+                    });
+                    db.run(`INSERT INTO usage_events (user_id, video_id, event_type, ip_address, user_agent, page_url, metadata) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?)`, 
+                        [userId || null, videoId, 'subtitle_access', ip, req.get('User-Agent') || null, req.get('Referer') || null, metadata],
+                        (err) => {
+                            if (err) {
+                                console.error('记录字幕访问事件失败:', err);
+                            } else {
+                                // 广播实时事件
+                                const eventData = {
+                                    id: Date.now(),
+                                    user_id: userId || null,
+                                    video_id: videoId,
+                                    event_type: 'subtitle_access',
+                                    ip_address: ip,
+                                    user_agent: req.get('User-Agent') || null,
+                                    page_url: req.get('Referer') || null,
+                                    metadata: JSON.parse(metadata),
+                                    created_at: new Date().toISOString()
+                                };
+                                broadcastUsageEvent(eventData);
+                            }
+                        }
+                    );
+                }
+            } catch (eventErr) {
+                console.error('记录字幕访问事件异常:', eventErr);
+            }
+
             res.set('Content-Type', 'text/vtt; charset=utf-8');
             return res.send(vtt);
         } catch (error) {
@@ -3426,6 +3490,38 @@ app.post('/api/subtitles/viewers/report/:video_id', authenticateUserToken, async
         // 检查是否成功插入（即用户首次观看）
         const isNewViewer = result.changes > 0;
 
+        // 记录使用事件
+        try {
+            const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
+            const userAgent = req.get('User-Agent') || 'unknown';
+            const metadata = JSON.stringify({
+                watchDurationSec: watchDurationSec,
+                isNewViewer: isNewViewer
+            });
+
+            await runAsync(
+                'INSERT INTO usage_events (user_id, video_id, event_type, ip_address, user_agent, page_url, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime("now"))',
+                [userId, videoId, 'video_view_report', clientIp, userAgent, pageUrl, metadata]
+            );
+
+            // 广播实时事件
+            const eventData = {
+                id: Date.now(),
+                user_id: userId,
+                video_id: videoId,
+                event_type: 'video_view_report',
+                ip_address: clientIp,
+                user_agent: userAgent,
+                page_url: pageUrl,
+                metadata: JSON.parse(metadata),
+                created_at: new Date().toISOString()
+            };
+            broadcastUsageEvent(eventData);
+        } catch (eventErr) {
+            console.error('记录观看事件失败:', eventErr);
+            // 不影响主要功能，继续执行
+        }
+
         res.json({
             video_id: videoId,
             success: true,
@@ -4692,6 +4788,250 @@ app.delete('/api/replies/:replyId', authenticateUserToken, async (req, res) => {
         res.status(500).json({ success: false, message: '删除回复失败' });
     }
 });
+
+// 使用监控统计API
+app.get('/api/admin/usage/stats', authenticateAdminToken, async (req, res) => {
+    try {
+        const timeRange = req.query.range || '24h'; // 24h, 7d, 30d
+        let timeCondition = '';
+        
+        switch (timeRange) {
+            case '24h':
+                timeCondition = "WHERE created_at >= datetime('now', '-1 day')";
+                break;
+            case '7d':
+                timeCondition = "WHERE created_at >= datetime('now', '-7 days')";
+                break;
+            case '30d':
+                timeCondition = "WHERE created_at >= datetime('now', '-30 days')";
+                break;
+            default:
+                timeCondition = "WHERE created_at >= datetime('now', '-1 day')";
+        }
+
+        // 总体统计
+        const totalEvents = await getAsync(`SELECT COUNT(*) as count FROM usage_events ue WHERE ue.created_at >= datetime('now', '-1 day')`);
+        const uniqueUsers = await getAsync(`SELECT COUNT(DISTINCT ue.user_id) as count FROM usage_events ue WHERE ue.created_at >= datetime('now', '-1 day')`);
+        const uniqueVideos = await getAsync(`SELECT COUNT(DISTINCT ue.video_id) as count FROM usage_events ue WHERE ue.created_at >= datetime('now', '-1 day')`);
+
+        // 事件类型统计
+        const eventTypeStats = await getAllAsync(`
+            SELECT ue.event_type, COUNT(*) as count 
+            FROM usage_events ue
+            WHERE ue.created_at >= datetime('now', '-1 day')
+            GROUP BY ue.event_type 
+            ORDER BY count DESC
+        `);
+
+        // 热门视频统计
+        const topVideos = await getAllAsync(`
+            SELECT 
+                ue.video_id,
+                COUNT(*) as access_count,
+                COUNT(DISTINCT ue.user_id) as unique_users
+            FROM usage_events ue
+            WHERE ue.created_at >= datetime('now', '-1 day')
+            GROUP BY ue.video_id
+            ORDER BY access_count DESC
+            LIMIT 10
+        `);
+
+        // 活跃用户统计
+        const topUsers = await getAllAsync(`
+            SELECT 
+                ue.user_id,
+                u.username,
+                COUNT(*) as activity_count,
+                COUNT(DISTINCT ue.video_id) as unique_videos
+            FROM usage_events ue
+            LEFT JOIN users u ON ue.user_id = u.id
+            WHERE ue.created_at >= datetime('now', '-1 day')
+            GROUP BY ue.user_id
+            ORDER BY activity_count DESC
+            LIMIT 10
+        `);
+
+        // 时间分布统计（按小时）
+        const hourlyStats = await getAllAsync(`
+            SELECT 
+                strftime('%H', ue.created_at) as hour,
+                COUNT(*) as count
+            FROM usage_events ue
+            WHERE ue.created_at >= datetime('now', '-1 day')
+            GROUP BY strftime('%H', ue.created_at)
+            ORDER BY hour
+        `);
+
+        // IP地址统计
+        const ipStats = await getAllAsync(`
+            SELECT 
+                ue.ip_address,
+                COUNT(*) as count,
+                COUNT(DISTINCT ue.user_id) as unique_users
+            FROM usage_events ue
+            WHERE ue.created_at >= datetime('now', '-1 day')
+            GROUP BY ue.ip_address
+            ORDER BY count DESC
+            LIMIT 20
+        `);
+
+        res.json({
+            timeRange,
+            summary: {
+                totalEvents: totalEvents?.count || 0,
+                uniqueUsers: uniqueUsers?.count || 0,
+                uniqueVideos: uniqueVideos?.count || 0
+            },
+            eventTypes: eventTypeStats || [],
+            topVideos: topVideos || [],
+            topUsers: topUsers || [],
+            hourlyDistribution: hourlyStats || [],
+            topIPs: ipStats || []
+        });
+    } catch (err) {
+        console.error('获取使用统计失败:', err);
+        res.status(500).json({ error: '获取使用统计失败' });
+    }
+});
+
+// 实时使用事件SSE接口
+const usageEventClients = new Set();
+
+app.get('/api/admin/usage/events', (req, res) => {
+    // 对于SSE连接，支持从查询参数获取token
+    let token = req.query.token;
+    if (!token) {
+        // 如果查询参数没有token，尝试从Authorization头部获取
+        const authHeader = req.headers['authorization'];
+        token = authHeader && authHeader.split(' ')[1];
+    }
+    
+    if (!token) {
+        return res.status(401).json({ error: '需要访问令牌' });
+    }
+    
+    try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        if (!payload || payload.role !== 'admin') {
+            return res.status(403).json({ error: '没有管理员权限' });
+        }
+        req.user = payload;
+    } catch (e) {
+        return res.status(401).json({ error: '无效的访问令牌' });
+    }
+
+    // 设置SSE响应头
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': req.headers.origin || '*',
+        'Access-Control-Allow-Credentials': 'true'
+    });
+
+    // 发送初始连接消息
+    res.write('data: {"type":"connected","message":"已连接到实时事件流"}\n\n');
+
+    // 将客户端添加到集合中
+    const client = { res, lastPing: Date.now() };
+    usageEventClients.add(client);
+
+    // 定期发送心跳包
+    const heartbeat = setInterval(() => {
+        try {
+            res.write('data: {"type":"heartbeat","timestamp":' + Date.now() + '}\n\n');
+            client.lastPing = Date.now();
+        } catch (err) {
+            clearInterval(heartbeat);
+            usageEventClients.delete(client);
+        }
+    }, 30000); // 每30秒发送一次心跳
+
+    // 客户端断开连接时清理
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        usageEventClients.delete(client);
+        console.log('SSE客户端断开连接，当前连接数:', usageEventClients.size);
+    });
+
+    req.on('error', () => {
+        clearInterval(heartbeat);
+        usageEventClients.delete(client);
+    });
+
+    console.log('新的SSE客户端连接，当前连接数:', usageEventClients.size);
+});
+
+// 最近使用事件查询接口
+app.get('/api/admin/usage/events/recent', authenticateAdminToken, async (req, res) => {
+    try {
+        const limitRaw = parseInt(req.query.limit);
+        const limit = Math.min(200, Math.max(1, Number.isNaN(limitRaw) ? 50 : limitRaw));
+        const timeRange = String(req.query.timeRange || '24h');
+
+        const rangeMap = { '1h': '-1 hour', '24h': '-1 day', '7d': '-7 days', '30d': '-30 days' };
+        const interval = timeRange === 'all' ? null : (rangeMap[timeRange] || '-1 day');
+
+        let sql = `SELECT id, user_id, video_id, event_type, ip_address, user_agent, page_url, metadata, created_at FROM usage_events`;
+        const params = [];
+        if (interval) {
+            sql += ` WHERE created_at >= datetime('now', ?)`;
+            params.push(interval);
+        }
+        sql += ` ORDER BY created_at DESC LIMIT ?`;
+        params.push(limit);
+
+        const rows = await getAllAsync(sql, params);
+        const events = rows.map(row => {
+            let metaObj = null;
+            try { metaObj = row.metadata ? JSON.parse(row.metadata) : null; } catch { metaObj = null; }
+            let createdIso = row.created_at ? (row.created_at.replace(' ', 'T') + 'Z') : new Date().toISOString();
+            return {
+                id: row.id,
+                user_id: row.user_id,
+                video_id: row.video_id,
+                event_type: row.event_type,
+                ip_address: row.ip_address,
+                user_agent: row.user_agent,
+                page_url: row.page_url,
+                metadata: metaObj,
+                created_at: createdIso
+            };
+        });
+
+        return res.json({ events, page: { limit, timeRange } });
+    } catch (err) {
+        console.error('获取最近使用事件失败:', err);
+        return res.status(500).json({ error: '获取最近使用事件失败' });
+    }
+});
+
+// 广播使用事件到所有SSE客户端
+function broadcastUsageEvent(eventData) {
+    if (usageEventClients.size === 0) return;
+
+    const message = JSON.stringify({
+        type: 'usage_event',
+        data: eventData,
+        timestamp: Date.now()
+    });
+
+    // 向所有连接的客户端发送事件
+    const clientsToRemove = [];
+    for (const client of usageEventClients) {
+        try {
+            client.res.write(`data: ${message}\n\n`);
+        } catch (err) {
+            console.error('发送SSE消息失败:', err);
+            clientsToRemove.push(client);
+        }
+    }
+
+    // 清理失效的客户端连接
+    clientsToRemove.forEach(client => {
+        usageEventClients.delete(client);
+    });
+}
 
 // 管理员用户管理
 app.get('/api/admin/users/stats', authenticateAdminToken, async (req, res) => {

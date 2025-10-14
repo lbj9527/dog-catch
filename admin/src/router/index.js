@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Login from '../views/Login.vue'
 import Dashboard from '../views/Dashboard.vue'
+import UsageMonitoring from '../views/UsageMonitoring.vue'
 
 const routes = [
   {
@@ -18,6 +19,12 @@ const routes = [
   {
     path: '/dashboard',
     redirect: '/'
+  },
+  {
+    path: '/usage-monitoring',
+    name: 'UsageMonitoring',
+    component: UsageMonitoring,
+    meta: { requiresAuth: true }
   }
 ]
 
@@ -39,4 +46,4 @@ router.beforeEach((to, from, next) => {
   }
 })
 
-export default router 
+export default router

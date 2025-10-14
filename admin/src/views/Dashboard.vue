@@ -279,6 +279,10 @@
         <UserManagement />
       </el-tab-pane>
 
+      <el-tab-pane label="使用监控" name="usage-monitoring">
+        <UsageMonitoring />
+      </el-tab-pane>
+
       <!-- 新增：心愿单管理 -->
       <el-tab-pane label="心愿单" name="wishlist">
         <div class="toolbar">
@@ -610,6 +614,7 @@ import BatchUploadDialog from '../components/BatchUploadDialog.vue'
 import PreviewDialog from '../components/PreviewDialog.vue'
 import WishlistBatchUploadDialog from '../components/WishlistBatchUploadDialog.vue'
 import UserManagement from './UserManagement.vue'
+import UsageMonitoring from './UsageMonitoring.vue'
 
 const router = useRouter()
 
