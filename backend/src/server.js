@@ -4966,19 +4966,41 @@ app.get('/api/admin/usage/events', (req, res) => {
 app.get('/api/admin/usage/events/recent', authenticateAdminToken, async (req, res) => {
     try {
         const limitRaw = parseInt(req.query.limit);
-        const limit = Math.min(200, Math.max(1, Number.isNaN(limitRaw) ? 50 : limitRaw));
+        const limit = Math.min(500, Math.max(1, Number.isNaN(limitRaw) ? 50 : limitRaw));
         const timeRange = String(req.query.timeRange || '24h');
+        const beforeIdRaw = req.query.before_id;
+        const beforeCreatedAtRaw = req.query.before_created_at;
 
         const rangeMap = { '1h': '-1 hour', '24h': '-1 day', '7d': '-7 days', '30d': '-30 days' };
         const interval = timeRange === 'all' ? null : (rangeMap[timeRange] || '-1 day');
 
+        function isoToSqliteDT(iso) {
+            if (!iso || typeof iso !== 'string') return null;
+            const match = iso.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/);
+            if (!match) return null;
+            return `${match[1]} ${match[2]}`;
+        }
+        const beforeCreatedAt = isoToSqliteDT(beforeCreatedAtRaw);
+        const beforeId = beforeIdRaw ? parseInt(beforeIdRaw) : null;
+
         let sql = `SELECT id, user_id, video_id, event_type, ip_address, user_agent, page_url, metadata, created_at FROM usage_events`;
+        const conditions = [];
         const params = [];
         if (interval) {
-            sql += ` WHERE created_at >= datetime('now', ?)`;
+            conditions.push(`created_at >= datetime('now', ?)`);
             params.push(interval);
         }
-        sql += ` ORDER BY created_at DESC LIMIT ?`;
+        if (beforeCreatedAt && beforeId && Number.isInteger(beforeId)) {
+            conditions.push(`(created_at < ? OR (created_at = ? AND id < ?))`);
+            params.push(beforeCreatedAt, beforeCreatedAt, beforeId);
+        } else if (beforeCreatedAt) {
+            conditions.push(`created_at < ?`);
+            params.push(beforeCreatedAt);
+        }
+        if (conditions.length) {
+            sql += ` WHERE ` + conditions.join(' AND ');
+        }
+        sql += ` ORDER BY created_at DESC, id DESC LIMIT ?`;
         params.push(limit);
 
         const rows = await getAllAsync(sql, params);
@@ -4999,7 +5021,13 @@ app.get('/api/admin/usage/events/recent', authenticateAdminToken, async (req, re
             };
         });
 
-        return res.json({ events, page: { limit, timeRange } });
+        let nextCursor = null;
+        if (events.length === limit) {
+            const last = events[events.length - 1];
+            nextCursor = { before_id: last.id, before_created_at: last.created_at };
+        }
+
+        return res.json({ events, page: { limit, timeRange, next_cursor: nextCursor } });
     } catch (err) {
         console.error('获取最近使用事件失败:', err);
         return res.status(500).json({ error: '获取最近使用事件失败' });

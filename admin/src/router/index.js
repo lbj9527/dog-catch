@@ -1,7 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Login from '../views/Login.vue'
 import Dashboard from '../views/Dashboard.vue'
-import UsageMonitoring from '../views/UsageMonitoring.vue'
+// 移除旧版组件引用
+// import UsageMonitoring from '../views/UsageMonitoring.vue'
+import UsageMonitoringPlus from '../views/UsageMonitoringPlus.vue'
 
 const routes = [
   {
@@ -23,7 +25,14 @@ const routes = [
   {
     path: '/usage-monitoring',
     name: 'UsageMonitoring',
-    component: UsageMonitoring,
+    // 指向增强版组件
+    component: UsageMonitoringPlus,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/usage-monitoring-plus',
+    name: 'UsageMonitoringPlus',
+    component: UsageMonitoringPlus,
     meta: { requiresAuth: true }
   }
 ]

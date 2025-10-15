@@ -11,9 +11,9 @@ const usageMonitorAPI = {
   
   // 新增：查询最近事件
   getRecentEvents(params = {}) {
-    const { limit = 50, timeRange = '24h' } = params
+    const { limit = 50, timeRange = '24h', before_id, before_created_at } = params
     return api.get('/api/admin/usage/events/recent', {
-      params: { limit, timeRange }
+      params: { limit, timeRange, before_id, before_created_at }
     })
   },
 
