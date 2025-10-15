@@ -8,13 +8,14 @@
         <!-- 已移除时间范围下拉框，改为默认近24小时 -->
         
         <button class="button secondary" @click="toggleThresholds" :aria-expanded="String(showThresholds)">{{ showThresholds ? '关闭设定' : '阈值设定' }}</button>
+        <button class="button secondary" @click="toggleAlertsEvents" :aria-expanded="String(showAlertsEvents)">{{ showAlertsEvents ? '隐藏报警与事件' : '显示报警与事件' }}</button>
         <button class="button secondary" @click="refreshData">刷新数据</button>
         <span :class="['status', isConnected ? 'ok' : 'danger']" style="margin-left:8px">{{ isConnected ? '实时已连接' : '未连接' }}</span>
       </div>
     </div>
 
     <div class="container">
-      <div class="grid">
+      <div class="grid" :class="{ 'grid-full': !showAlertsEvents }">
         <!-- 左列：统计与列表 -->
         <div>
           <div class="panel section" v-show="showThresholds">
@@ -110,10 +111,10 @@
                         <td>
                           <span class="tag" v-for="t in row.tags" :key="t">{{ t }}</span>
                         </td>
-                        <td :class="riskColorClass(row._risk)">{{ riskLabel(row._risk) }}</td>
+                        <td :class="row._banned ? 'danger' : riskColorClass(row._risk)">{{ row._banned ? '已封禁' : riskLabel(row._risk) }}</td>
                         <td>
                           <button class="button" @click="showIpDetail(row)">查看明细</button>
-                          <button class="button danger" @click="banIP(row.ip)">封禁</button>
+                          <button class="button" :class="row._banned ? 'success' : 'danger'" @click="toggleIPBan(row)">{{ row._banned ? '解封' : '封禁' }}</button>
                         </td>
                       </tr>
                       <tr v-if="filteredIPRows.length===0"><td colspan="10" class="muted" style="text-align:center;padding:14px">暂无数据</td></tr>
@@ -128,7 +129,7 @@
                     <button class="button secondary" @click="userFilter='';">清空过滤</button>
                   </div>
                   <div class="toolbar-right">
-                    <button class="button danger" @click="deleteSelectedUsers">批量删除所选用户</button>
+                    <button class="button danger" @click="banSelectedUsers">批量封禁所选用户</button>
                     <button class="button secondary" @click="exportUserView">导出当前用户视图</button>
                   </div>
                 </div>
@@ -175,10 +176,10 @@
                         <td>
                           <span class="tag" v-for="t in u.tags" :key="t">{{ t }}</span>
                         </td>
-                        <td :class="riskColorClass(u._risk)">{{ riskLabel(u._risk) }}</td>
+                        <td :class="u._banned ? 'danger' : riskColorClass(u._risk)">{{ u._banned ? '已封禁' : riskLabel(u._risk) }}</td>
                         <td>
                           <button class="button" @click="showUserDetail(u)">查看明细</button>
-                          <button class="button danger" @click="deleteUser(u.id)">封禁</button>
+                          <button class="button" :class="u._banned ? 'success' : 'danger'" @click="toggleUserBan(u)">{{ u._banned ? '解封' : '封禁' }}</button>
                         </td>
                       </tr>
                       <tr v-if="filteredUserRows.length===0"><td colspan="8" class="muted" style="text-align:center;padding:14px">暂无数据</td></tr>
@@ -191,7 +192,7 @@
         </div>
 
         <!-- 右列：报警流 -->
-        <div class="right-sticky">
+        <div class="right-sticky" v-show="showAlertsEvents">
           <div class="panel section">
             <h3>报警与事件</h3>
             <div id="alerts" class="alerts">
@@ -247,6 +248,7 @@ export default {
     return {
       thresholds: { ip10m: 100, ip1h: 500, ip6h: 2000, ip12h: 3000, ipVid10m: 50, user1h: 300, user6h: 1200, user12h: 1800 },
       showThresholds: false,
+      showAlertsEvents: true,
       activeTab: 'ip',
       ipFilter: '',
       userFilter: '',
@@ -267,13 +269,19 @@ export default {
       summary: { ipDanger: 0, userDanger: 0, ipWarn: 0, userWarn: 0 },
       // 新增：用户ID到用户名的本地缓存映射，避免显示为纯ID
       userNameById: {},
+      // 新增：用户ID到状态(active/banned)映射，用于初始封禁同步
+      userStatusById: {},
+      // 新增：IP封禁集合（归一化后的IP），用于初始封禁同步
+      ipBanSet: new Set(),
       // 新增：跨天轻量缓存（本地存储），记录最近活跃日期
       riskCache: { ip: {}, user: {}, lastCleanup: 0, ttlDays: 7 }
     }
   },
   async mounted() {
-    // 预加载部分用户数据到缓存，提升用户名显示的命中率
+    // 预加载用户缓存（用户名 + 状态），提升显示与封禁同步命中率
     await this.loadUserCache()
+    // 预加载已封禁IP集合，用于初始标记
+    await this.loadIpBanSet()
     // 新增：加载持久化的阈值设定
     this.loadThresholds()
     // 新增：加载跨天缓存
@@ -334,18 +342,36 @@ export default {
     // 批量加载用户列表，建立 id -> username 缓存
     async loadUserCache() {
       try {
-        const res = await userAdminAPI.getList({ page: 1, limit: 500 })
-        const list = Array.isArray(res?.data) ? res.data : []
-        const map = {}
+        const payload = await userAdminAPI.getList({ page: 1, limit: 1000 })
+        const list = Array.isArray(payload?.data) ? payload.data : []
+        const nameMap = {}
+        const statusMap = {}
         for (const u of list) {
           if (u && (u.id !== undefined && u.id !== null)) {
-            map[String(u.id)] = u.username || ''
+            const key = String(u.id)
+            nameMap[key] = u.username || ''
+            statusMap[key] = u.status || 'active'
           }
         }
-        this.userNameById = map
+        this.userNameById = nameMap
+        this.userStatusById = statusMap
       } catch (e) {
         // 缓存加载失败不阻塞主流程
         console.warn('加载用户缓存失败:', e)
+      }
+    },
+    // 新增：加载已封禁IP集合（用于初始标记 _banned）
+    async loadIpBanSet(){
+      try {
+        const payload = await usageMonitorAPI.getIpBans()
+        const list = Array.isArray(payload?.data) ? payload.data : []
+        const set = new Set()
+        for (const it of list) {
+          if (it && it.ip) set.add(this.normalizeIP(it.ip))
+        }
+        this.ipBanSet = set
+      } catch (e) {
+        console.warn('加载IP封禁列表失败:', e)
       }
     },
     formatIP(ip) {
@@ -521,7 +547,8 @@ export default {
           uaDiversity: r.uaSet.size,
           region: r.region,
           _selected: false,
-          tags: []
+          tags: [],
+          _banned: this.isIpBanned(r.ip)
         }
         row._risk = this.calcIpRisk(row)
         const ipExceed = (
@@ -545,7 +572,8 @@ export default {
           distinctVideosH1: u.vids.size,
           ipCount: u.ips.size,
           _selected: false,
-          tags: []
+          tags: [],
+          _banned: this.isUserBanned(u.id)
         }
         row._risk = this.calcUserRisk(row)
         const userExceed = (
@@ -591,56 +619,80 @@ export default {
       this.rebuildAggregations()
     },
     refreshData(){ this.loadInitialEvents() },
+    toggleAlertsEvents(){ this.showAlertsEvents = !this.showAlertsEvents },
 
     // 操作区（实现）
     async banSelectedIPs(){
-      const ips = this.ipRows.filter(r => r._selected).map(r => r.ip)
+      const selected = this.ipRows.filter(r => r._selected)
+      const ips = selected.map(r => r.ip)
       if (!ips.length) return alert('未选择IP')
       try {
         for (const ip of ips) {
           await usageMonitorAPI.banIP(ip, { reason: '批量封禁', expires_at: null })
+          // 同步集合，保证后续重建也保持封禁状态
+          this.ipBanSet.add(this.normalizeIP(ip))
         }
+        // 更新选中行的状态与按钮
+        for (const r of selected) { r._banned = true }
         alert('已封禁选中IP')
-        this.refreshData()
       } catch (e) {
         console.error('批量封禁IP失败:', e)
         alert('批量封禁IP失败')
       }
     },
-    async banIP(ip){
-      if (!ip) return
+    async toggleIPBan(row){
+      if (!row || !row.ip) return
       try {
-        await usageMonitorAPI.banIP(ip, { reason: '手动封禁', expires_at: null })
-        alert(`IP已封禁: ${ip}`)
-        this.refreshData()
+        if (row._banned) {
+          await usageMonitorAPI.unbanIP(row.ip)
+          row._banned = false
+          this.ipBanSet.delete(this.normalizeIP(row.ip))
+          alert(`IP已解封: ${row.ip}`)
+        } else {
+          await usageMonitorAPI.banIP(row.ip, { reason: '手动封禁', expires_at: null })
+          row._banned = true
+          this.ipBanSet.add(this.normalizeIP(row.ip))
+          alert(`IP已封禁: ${row.ip}`)
+        }
       } catch (e) {
-        console.error('封禁IP失败:', e)
-        alert('封禁IP失败')
+        console.error('切换IP封禁失败:', e)
+        alert('操作失败')
       }
     },
-    async deleteSelectedUsers(){
-      const uids = this.userRows.filter(u => u._selected).map(u => u.id)
+    async banSelectedUsers(){
+      const selected = this.userRows.filter(u => u._selected)
+      const uids = selected.map(u => u.id)
       if (!uids.length) return alert('未选择用户')
       try {
         for (const id of uids) {
           await userAdminAPI.banUser(id, '批量封禁')
+          // 同步状态映射
+          this.userStatusById[String(id)] = 'banned'
         }
+        for (const u of selected) { u._banned = true }
         alert('已封禁选中用户')
-        this.refreshData()
       } catch (e) {
         console.error('批量封禁用户失败:', e)
         alert('批量封禁用户失败')
       }
     },
-    async deleteUser(id){
-      if (!id) return
+    async toggleUserBan(u){
+      if (!u || !u.id) return
       try {
-        await userAdminAPI.banUser(id, '手动封禁')
-        alert(`用户已封禁: ${id}`)
-        this.refreshData()
+        if (u._banned) {
+          await userAdminAPI.unbanUser(u.id)
+          u._banned = false
+          this.userStatusById[String(u.id)] = 'active'
+          alert(`用户已解封: ${u.id}`)
+        } else {
+          await userAdminAPI.banUser(u.id, '手动封禁')
+          u._banned = true
+          this.userStatusById[String(u.id)] = 'banned'
+          alert(`用户已封禁: ${u.id}`)
+        }
       } catch (e) {
-        console.error('封禁用户失败:', e)
-        alert('封禁用户失败')
+        console.error('切换用户封禁失败:', e)
+        alert('操作失败')
       }
     },
     exportIPView(){ const lines = this.filteredIPRows.map(r => `${r.ip}\t${r.m1}\t${r.m10}\t${r.h1}\t${r.h6}\t${r.h12}\t${r.distinctVideosH1}\t${r.uaDiversity}\t${r._risk}\t${(r.tags||[]).join('|')}`)
@@ -649,10 +701,7 @@ export default {
     exportUserView(){ const lines = this.filteredUserRows.map(u => `${u.id}\t${u.name}\t${u.h1}\t${u.h6}\t${u.h12}\t${u.distinctVideosH1}\t${u.ipCount}\t${u._risk}\t${(u.tags||[]).join('|')}`)
       this.copyText(lines.join('\n'))
     },
-    banIP(ip){ alert(`封禁IP（示意）: ${ip}`) },
     copyText(text){ navigator.clipboard?.writeText(String(text)).catch(()=>{}) },
-    deleteSelectedUsers(){ const uids = this.userRows.filter(u => u._selected).map(u => u.id); if (!uids.length) return alert('未选择用户'); alert('批量删除用户（示意）: '+ uids.join(', ')) },
-    deleteUser(id){ alert(`封禁用户（示意）: ${id}`) },
     // 新增：解释面板入口
     showIpDetail(row){ const breakdown = computeIpBreakdown(row, this.thresholds); this.openDetail('IP 风险明细', 'ip', row, breakdown) },
     showUserDetail(u){ const breakdown = computeUserBreakdown(u, this.thresholds); this.openDetail('用户 风险明细', 'user', u, breakdown) },
@@ -779,6 +828,14 @@ export default {
       this.saveRiskCache()
     },
 
+    // 新增：辅助判定封禁状态
+    isIpBanned(ip){
+      try { return this.ipBanSet && this.ipBanSet.has(this.normalizeIP(ip)) } catch { return false }
+    },
+    isUserBanned(id){
+      try { return String(this.userStatusById[String(id)] || '') === 'banned' } catch { return false }
+    },
+
     // 清理：移除所有 Legacy 方法，避免误用与混淆（方案A收尾）
     // （已删除 legacy 方法）
 
@@ -796,6 +853,7 @@ export default {
 .subtitle { color: var(--muted); font-size:13px; }
 .container { margin:0 auto; padding:12px; }
 .grid { display:grid; grid-template-columns:minmax(0,1fr) 380px; gap:20px; }
+.grid-full { grid-template-columns: 1fr; }
 .panel { background: var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px; }
 .panel h3 { margin:0 0 12px; font-size:16px; }
 .toolbar { display:flex; gap:12px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
@@ -803,6 +861,7 @@ export default {
 .button { background:#0c1120; cursor:pointer; }
 .button.primary { background:#183055; border-color:#22406f; color:#d6e6ff; }
 .button.danger { background:#341a1a; border-color:#4c2323; color:#ffd9d9; }
+.button.success { background:#143018; border-color:#27482b; color:#d7fce0; }
 .button.secondary { background:#121728; border-color:#28324f; color:#cfd6e6; }
 .tag { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; font-size:13px; border:1px solid var(--border); color:var(--muted); margin:4px 6px 4px 0; }
 .status { font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--border); }
