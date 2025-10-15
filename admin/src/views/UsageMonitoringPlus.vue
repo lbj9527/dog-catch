@@ -238,7 +238,7 @@
 
 <script>
 import usageMonitorAPI from '../utils/usageMonitorApi'
-import { userAdminAPI } from '../utils/userAdminApi'
+import userAdminAPI from '../utils/userAdminApi'
 import { computeIpRisk, computeUserRisk, computeIpBreakdown, computeUserBreakdown } from '../utils/riskScoring'
 
 export default {
@@ -592,8 +592,57 @@ export default {
     },
     refreshData(){ this.loadInitialEvents() },
 
-    // 操作区（示意）
-    banSelectedIPs(){ const ips = this.ipRows.filter(r => r._selected).map(r => r.ip); if (!ips.length) return alert('未选择IP'); alert('批量封禁IP（示意）: '+ ips.join(', ')) },
+    // 操作区（实现）
+    async banSelectedIPs(){
+      const ips = this.ipRows.filter(r => r._selected).map(r => r.ip)
+      if (!ips.length) return alert('未选择IP')
+      try {
+        for (const ip of ips) {
+          await usageMonitorAPI.banIP(ip, { reason: '批量封禁', expires_at: null })
+        }
+        alert('已封禁选中IP')
+        this.refreshData()
+      } catch (e) {
+        console.error('批量封禁IP失败:', e)
+        alert('批量封禁IP失败')
+      }
+    },
+    async banIP(ip){
+      if (!ip) return
+      try {
+        await usageMonitorAPI.banIP(ip, { reason: '手动封禁', expires_at: null })
+        alert(`IP已封禁: ${ip}`)
+        this.refreshData()
+      } catch (e) {
+        console.error('封禁IP失败:', e)
+        alert('封禁IP失败')
+      }
+    },
+    async deleteSelectedUsers(){
+      const uids = this.userRows.filter(u => u._selected).map(u => u.id)
+      if (!uids.length) return alert('未选择用户')
+      try {
+        for (const id of uids) {
+          await userAdminAPI.banUser(id, '批量封禁')
+        }
+        alert('已封禁选中用户')
+        this.refreshData()
+      } catch (e) {
+        console.error('批量封禁用户失败:', e)
+        alert('批量封禁用户失败')
+      }
+    },
+    async deleteUser(id){
+      if (!id) return
+      try {
+        await userAdminAPI.banUser(id, '手动封禁')
+        alert(`用户已封禁: ${id}`)
+        this.refreshData()
+      } catch (e) {
+        console.error('封禁用户失败:', e)
+        alert('封禁用户失败')
+      }
+    },
     exportIPView(){ const lines = this.filteredIPRows.map(r => `${r.ip}\t${r.m1}\t${r.m10}\t${r.h1}\t${r.h6}\t${r.h12}\t${r.distinctVideosH1}\t${r.uaDiversity}\t${r._risk}\t${(r.tags||[]).join('|')}`)
       this.copyText(lines.join('\n'))
     },

@@ -22,6 +22,18 @@ const usageMonitorAPI = {
     const token = localStorage.getItem('admin_token')
     const url = `${API_BASE_URL}/api/admin/usage/events${token ? `?token=${encodeURIComponent(token)}` : ''}`
     return new EventSource(url)
+  },
+
+  // 新增：IP封禁相关接口
+  getIpBans() {
+    return api.get('/api/admin/ip-bans')
+  },
+  banIP(ip, payload = {}) {
+    const { reason = '', expires_at } = payload
+    return api.post('/api/admin/ip-bans', { ip, reason, expires_at })
+  },
+  unbanIP(ip) {
+    return api.delete(`/api/admin/ip-bans/${encodeURIComponent(ip)}`)
   }
 }
 

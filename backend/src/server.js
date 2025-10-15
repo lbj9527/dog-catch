@@ -1115,6 +1115,18 @@ db.serialize(() => {
     db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_composite ON usage_events(event_type, created_at)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_user_type ON usage_events(user_id, event_type, created_at)`);
     
+    // 新增：IP 封禁表
+    db.run(`CREATE TABLE IF NOT EXISTS ip_bans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ip_address TEXT UNIQUE NOT NULL,
+        reason TEXT,
+        expires_at DATETIME,
+        created_by_admin_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_ip_bans_ip ON ip_bans(ip_address)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_ip_bans_expires ON ip_bans(expires_at)');
+    
     // 创建默认管理员账号 (用户名: admin, 密码: admin123)
     const defaultPassword = bcrypt.hashSync('admin123', 10);
     db.run(`INSERT OR IGNORE INTO admins (username, password_hash) VALUES (?, ?)`, 
@@ -1212,6 +1224,30 @@ async function moveFileSafe(src, dest) {
         }
     }
 }
+
+// 新增：IP 封禁中间件（避免拦截管理员实时SSE）
+async function ipBanMiddleware(req, res, next) {
+    try {
+        const url = String(req.originalUrl || req.url || '')
+        // 排除管理员实时事件流
+        if (url.startsWith('/api/admin/usage/events')) return next()
+        // 获取来源IP（支持代理）
+        const ip = String((req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')).split(',')[0].trim()
+        if (!ip) return next()
+        const row = await getAsync('SELECT ip_address, expires_at FROM ip_bans WHERE ip_address = ?', [ip])
+        if (!row) return next()
+        if (row.expires_at) {
+            const exp = new Date(row.expires_at)
+            if (isNaN(exp.getTime()) || exp.getTime() <= Date.now()) return next()
+        }
+        return res.status(403).json({ error: 'IP已被封禁' })
+    } catch (e) {
+        console.error('IP封禁中间件错误:', e)
+        return res.status(500).json({ error: '服务器错误' })
+    }
+}
+// 应用 IP 封禁中间件
+app.use(ipBanMiddleware)
 
 // JWT 验证中间件
 const authenticateToken = (req, res, next) => {
@@ -5128,6 +5164,90 @@ app.patch('/api/admin/users/:id/membership', authenticateAdminToken, async (req,
     } catch (e) {
         console.error(e);
         return res.status(500).json({ error: '会员更新失败' });
+    }
+});
+
+// 新增：管理员封禁用户（状态变更为 banned，并使令牌失效）
+app.post('/api/admin/users/:id/ban', authenticateAdminToken, async (req, res) => {
+    try {
+        const userId = Number(req.params.id || 0);
+        const { reason = '' } = req.body || {};
+        if (!userId || !Number.isInteger(userId)) {
+            return res.status(400).json({ error: '用户ID无效' });
+        }
+        const user = await getAsync('SELECT id, status FROM users WHERE id = ?', [userId]);
+        if (!user) return res.status(404).json({ error: '用户不存在' });
+        await runAsync('UPDATE users SET status = ?, token_version = COALESCE(token_version,0) + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['banned', userId]);
+        return res.json({ message: '用户已封禁', user: { id: userId, status: 'banned', reason } });
+    } catch (e) {
+        console.error('封禁用户失败:', e);
+        return res.status(500).json({ error: '封禁用户失败' });
+    }
+});
+
+// 新增：管理员解封用户（状态恢复为 active，并使令牌失效）
+app.post('/api/admin/users/:id/unban', authenticateAdminToken, async (req, res) => {
+    try {
+        const userId = Number(req.params.id || 0);
+        if (!userId || !Number.isInteger(userId)) {
+            return res.status(400).json({ error: '用户ID无效' });
+        }
+        const user = await getAsync('SELECT id FROM users WHERE id = ?', [userId]);
+        if (!user) return res.status(404).json({ error: '用户不存在' });
+        await runAsync('UPDATE users SET status = ?, token_version = COALESCE(token_version,0) + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['active', userId]);
+        return res.json({ message: '用户已解封', user: { id: userId, status: 'active' } });
+    } catch (e) {
+        console.error('解封用户失败:', e);
+        return res.status(500).json({ error: '解封用户失败' });
+    }
+});
+
+// 新增：管理员封禁 IP
+app.post('/api/admin/ip-bans', authenticateAdminToken, async (req, res) => {
+    try {
+        const { ip, reason = '', expires_at } = req.body || {};
+        const ipStr = String(ip || '').trim();
+        if (!ipStr) return res.status(400).json({ error: 'IP无效' });
+        let expSql = null;
+        if (expires_at) {
+            const d = new Date(expires_at);
+            if (isNaN(d.getTime())) return res.status(400).json({ error: 'expires_at 无效日期' });
+            expSql = d.toISOString().slice(0,19).replace('T',' ');
+        }
+        const existing = await getAsync('SELECT id FROM ip_bans WHERE ip_address = ?', [ipStr]);
+        if (existing) {
+            await runAsync('UPDATE ip_bans SET reason = ?, expires_at = ?, created_at = CURRENT_TIMESTAMP WHERE ip_address = ?', [reason, expSql, ipStr]);
+        } else {
+            await runAsync('INSERT INTO ip_bans (ip_address, reason, expires_at, created_by_admin_id) VALUES (?, ?, ?, ?)', [ipStr, reason, expSql, req.user?.id || null]);
+        }
+        return res.json({ message: 'IP封禁已生效', ip: ipStr, expires_at: expSql });
+    } catch (e) {
+        console.error('封禁IP失败:', e);
+        return res.status(500).json({ error: '封禁IP失败' });
+    }
+});
+
+// 新增：管理员解封 IP
+app.delete('/api/admin/ip-bans/:ip', authenticateAdminToken, async (req, res) => {
+    try {
+        const ipStr = String(req.params.ip || '').trim();
+        if (!ipStr) return res.status(400).json({ error: 'IP无效' });
+        await runAsync('DELETE FROM ip_bans WHERE ip_address = ?', [ipStr]);
+        return res.json({ message: 'IP已解除封禁', ip: ipStr });
+    } catch (e) {
+        console.error('解封IP失败:', e);
+        return res.status(500).json({ error: '解封IP失败' });
+    }
+});
+
+// 新增：查询封禁的 IP 列表
+app.get('/api/admin/ip-bans', authenticateAdminToken, async (req, res) => {
+    try {
+        const rows = await getAllAsync('SELECT ip_address as ip, reason, expires_at, created_at FROM ip_bans ORDER BY created_at DESC', []);
+        return res.json({ data: rows });
+    } catch (e) {
+        console.error('获取IP封禁列表失败:', e);
+        return res.status(500).json({ error: '获取IP封禁列表失败' });
     }
 });
 
