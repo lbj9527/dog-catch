@@ -431,8 +431,20 @@
       </div>
     </div>
 
-    <!-- hCaptcha script & container (invisible) -->
-    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+    <!-- hCaptcha script & container (invisible, 按需加载) -->
+    <script>
+      (function(){
+        try {
+          var cfg = window.PLAYER_CONFIG || {};
+          if (cfg.CAPTCHA_ENABLED === true) {
+            var s = document.createElement('script');
+            s.src = 'https://js.hcaptcha.com/1/api.js';
+            s.async = true; s.defer = true;
+            document.head.appendChild(s);
+          }
+        } catch (e) {}
+      })();
+    </script>
     <div id="hcap" style="display: none"></div>
 
     <!-- 通知面板 -->

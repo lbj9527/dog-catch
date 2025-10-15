@@ -93,6 +93,10 @@ class VideoPlayer {
             isPlaying: false,           // 当前是否在播放
             trackingTimer: null         // 计时器
         };
+
+        // 封禁事件 SSE 订阅
+        this.banEventSource = null;
+        this._banEsReconnectTimer = null;
         
         this.init();
     }
@@ -714,6 +718,11 @@ class VideoPlayer {
         // 先校验 token，确保 UI 与权限同步
         await this.verifyTokenAndSyncUI();
         await this.refreshAuthUi();
+
+        // 若已登录，启动封禁事件流订阅
+        if (this.isLoggedIn()) {
+            this.startBanEventStream();
+        }
         
         // 初始化DPlayer播放器
         this.initDPlayer();
@@ -1239,7 +1248,22 @@ class VideoPlayer {
         if (!this.isLoggedIn()) return;
         try {
             const r = await fetch(`${API_BASE_URL}/api/user/verify`, { headers: { Authorization: `Bearer ${this.userToken}` } });
-            if (!r.ok) throw new Error('unauthorized');
+            if (r.ok) return;
+            let msg = '登录已过期，请重新登录';
+            try {
+                const j = await r.json();
+                if (r.status === 403) {
+                    msg = j.error || '账号状态不可用';
+                } else if (r.status === 401) {
+                    msg = j.error || msg;
+                }
+            } catch {}
+            this.doLogout(msg);
+            if (r.status === 403) {
+                try { this.showBanDialog(msg); } catch {}
+            } else {
+                this.showMessage(msg, 'error');
+            }
         } catch (_) {
             this.doLogout();
             this.showMessage('登录已过期，请重新登录', 'error');
@@ -1741,6 +1765,8 @@ class VideoPlayer {
                 loginModal.style.display='none';
                 if (loginError) loginError.textContent='';
                 await this.refreshAuthUi();
+                // 登录成功后启动封禁事件订阅
+                this.startBanEventStream();
                 // 登录成功后：刷新社交按钮状态并重新拉取点赞状态
                 if (typeof this.updateSocialButtonsState === 'function') {
                     this.updateSocialButtonsState();
@@ -2159,10 +2185,12 @@ class VideoPlayer {
         }
     }
 
-    doLogout() {
+    doLogout(message = null) {
         try { sessionStorage.removeItem('user_token'); } catch {}
         localStorage.removeItem('user_token');
         this.userToken = '';
+        // 关闭封禁事件订阅
+        this.stopBanEventStream();
         // Reset like state and UI on logout
         this.currentLikeStatus = { isLiked: false, likesCount: 0 };
         this.updateLikeUI();
@@ -2196,7 +2224,7 @@ class VideoPlayer {
         this.removeAllSubtitleTracks('登录后可用');
         this.disableSubtitleUi('登录后可用');
         this.refreshAuthUi();
-        this.showMessage('已退出登录');
+        this.showMessage(message || '已退出登录');
     }
 
     // 初始化DPlayer播放器
@@ -2988,12 +3016,69 @@ class VideoPlayer {
                 this.subtitleUrl = '';
             }
         } catch {}
+        // 关闭封禁事件订阅
+        try { this.stopBanEventStream(); } catch {}
         try {
             if (this.player && typeof this.player.destroy === 'function') {
                 this.player.destroy();
                 this.player = null;
             }
         } catch {}
+    }
+
+    // ===== 封禁事件流（SSE）订阅与处理 =====
+    startBanEventStream() {
+        // 防重复
+        try { this.stopBanEventStream(); } catch {}
+        if (!this.isLoggedIn() || !this.userToken) return;
+        const base = (API_BASE_URL || (window.PLAYER_CONFIG?.API_BASE_URL || '')).replace(/\/$/, '');
+        const url = `${base}/api/user/ban/events?token=${encodeURIComponent(this.userToken)}`;
+        try {
+            const es = new EventSource(url, { withCredentials: true });
+            this.banEventSource = es;
+            es.onmessage = (evt) => {
+                let payload = null;
+                try { payload = JSON.parse(evt.data); } catch { return; }
+                if (!payload || !payload.type) return;
+                if (payload.type === 'ban_event') {
+                    const ev = payload.data || {};
+                    if (ev.action === 'ban') {
+                        const msg = ev.reason ? `账号被封禁：${ev.reason}` : '账号被封禁';
+                        // 先退出登录，再提示封禁信息
+                        this.doLogout(msg);
+                        // 显示强提醒弹窗
+                        try { this.showBanDialog(msg); } catch {}
+                    } else if (ev.action === 'unban') {
+                        this.showMessage('封禁已解除，可重新登录', 'info');
+                    }
+                }
+            };
+            es.onerror = () => {
+                try { es.close(); } catch {}
+                this.banEventSource = null;
+                if (this._banEsReconnectTimer) {
+                    clearTimeout(this._banEsReconnectTimer);
+                    this._banEsReconnectTimer = null;
+                }
+                // 简单重连（避免频繁重试）
+                this._banEsReconnectTimer = setTimeout(() => {
+                    if (this.isLoggedIn()) this.startBanEventStream();
+                }, 5000);
+            };
+        } catch (e) {
+            console.error('启动封禁事件流失败:', e);
+        }
+    }
+
+    stopBanEventStream() {
+        if (this._banEsReconnectTimer) {
+            try { clearTimeout(this._banEsReconnectTimer); } catch {}
+            this._banEsReconnectTimer = null;
+        }
+        if (this.banEventSource) {
+            try { this.banEventSource.close(); } catch {}
+            this.banEventSource = null;
+        }
     }
     
     // 转换SRT为WebVTT格式
@@ -6636,6 +6721,99 @@ class VideoPlayer {
             this.currentFocusTrap = null;
         }
     }
+
+    // 显示封禁提示弹窗（模态框），用于强提醒
+    showBanDialog(message = '账号被封禁') {
+        const existing = document.querySelector('.ban-alert-modal');
+        if (existing) { try { existing.remove(); } catch {} }
+
+        const overlay = document.createElement('div');
+        overlay.className = 'ban-alert-modal';
+        overlay.style.position = 'fixed';
+        overlay.style.inset = '0';
+        overlay.style.background = 'rgba(0,0,0,0.4)';
+        overlay.style.display = 'flex';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.zIndex = '10000';
+        overlay.style.pointerEvents = 'auto';
+
+        const box = document.createElement('div');
+        box.className = 'ban-alert-content';
+        box.setAttribute('role', 'dialog');
+        box.setAttribute('aria-modal', 'true');
+        box.style.background = '#fff';
+        box.style.borderRadius = '8px';
+        box.style.boxShadow = '0 12px 30px rgba(0,0,0,0.25)';
+        box.style.width = 'min(420px, 92vw)';
+        box.style.maxWidth = '92vw';
+        box.style.padding = '20px';
+        box.style.color = '#333';
+        box.style.fontSize = '14px';
+
+        const titleEl = document.createElement('h3');
+        titleEl.id = 'ban-alert-title';
+        titleEl.textContent = '账号已被封禁';
+        titleEl.style.margin = '0 0 8px 0';
+        titleEl.style.fontSize = '16px';
+        titleEl.style.color = '#d32f2f';
+        box.appendChild(titleEl);
+
+        const msgEl = document.createElement('p');
+        msgEl.textContent = message || '账号状态不可用';
+        msgEl.style.margin = '0 0 16px 0';
+        msgEl.style.lineHeight = '1.6';
+        box.appendChild(msgEl);
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.gap = '10px';
+        actions.style.justifyContent = 'flex-end';
+
+        const loginBtn = document.createElement('button');
+        loginBtn.textContent = '去登录';
+        loginBtn.style.background = '#1976d2';
+        loginBtn.style.color = '#fff';
+        loginBtn.style.border = 'none';
+        loginBtn.style.borderRadius = '6px';
+        loginBtn.style.padding = '8px 12px';
+        loginBtn.style.cursor = 'pointer';
+
+        const okBtn = document.createElement('button');
+        okBtn.textContent = '知道了';
+        okBtn.style.background = '#e0e0e0';
+        okBtn.style.color = '#333';
+        okBtn.style.border = 'none';
+        okBtn.style.borderRadius = '6px';
+        okBtn.style.padding = '8px 12px';
+        okBtn.style.cursor = 'pointer';
+
+        actions.appendChild(loginBtn);
+        actions.appendChild(okBtn);
+        box.appendChild(actions);
+
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+
+        const close = () => {
+            try { this.removeFocusTrap(); } catch {}
+            try { overlay.remove(); } catch {}
+        };
+
+        okBtn.addEventListener('click', close);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close();
+        });
+        loginBtn.addEventListener('click', () => {
+            close();
+            try {
+                const loginModal = document.getElementById('loginModal');
+                if (loginModal) loginModal.style.display = 'flex';
+            } catch {}
+        });
+
+        try { this.currentFocusTrap = this.setupFocusTrap(box); } catch {}
+    }
     
     // ===== 回复模式相关方法 =====
     
@@ -7668,9 +7846,9 @@ class VideoPlayer {
                 this.updateNotificationBadge();
                 // 重置重试计数
                 this.notificationRetryCount = 0;
-            } else if (response.status === 401) {
-                // 认证失败，停止轮询
-                console.warn('认证失败，停止通知轮询');
+            } else if (response.status === 401 || response.status === 403) {
+                // 认证失败或无权限，停止轮询
+                console.warn('认证失败或无权限，停止通知轮询');
                 this.stopNotificationPolling();
             } else {
                 throw new Error(`HTTP ${response.status}`);
@@ -7724,15 +7902,17 @@ class VideoPlayer {
     }
     
     startNotificationPolling() {
+        // 仅在登录状态下启动轮询
+        if (!this.isLoggedIn()) return;
         if (this.notificationState.isPolling) return;
-        
+
         this.notificationState.isPolling = true;
-        
+
         // 创建防抖的获取函数，避免重复请求
         if (!this.debouncedFetchUnreadCount) {
             this.debouncedFetchUnreadCount = this.debounce(this.fetchUnreadCount.bind(this), 1000);
         }
-        
+
         // 立即获取一次未读数
         this.fetchUnreadCount();
         
@@ -9400,6 +9580,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const instance = new VideoPlayer();
     window.videoPlayerInstance = instance; // 保持向后兼容
     window.videoPlayerApp = instance; // 新增别名，推荐用于调试和外部调用
+
+    // 构造函数已调用 init()，避免重复初始化导致事件监听重复绑定
 });
 
 // 页面卸载时清理资源

@@ -1225,25 +1225,59 @@ async function moveFileSafe(src, dest) {
     }
 }
 
-// 新增：IP 封禁中间件（避免拦截管理员实时SSE）
+// IP规范化：统一本地与IPv4映射形式
+function normalizeIp(ip) {
+    if (!ip) return ip;
+    const s = String(ip).trim();
+    if (s === '::1') return '127.0.0.1';
+    // 处理 IPv4 映射（例如 ::ffff:127.0.0.1 或 ::ffff:1.2.3.4）
+    if (s.startsWith('::ffff:')) {
+        const parts = s.split(':');
+        return parts[parts.length - 1];
+    }
+    return s;
+}
+
+// 新增：IP 封禁中间件（管理员与关键接口放行）
 async function ipBanMiddleware(req, res, next) {
     try {
-        const url = String(req.originalUrl || req.url || '')
-        // 排除管理员实时事件流
-        if (url.startsWith('/api/admin/usage/events')) return next()
-        // 获取来源IP（支持代理）
-        const ip = String((req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')).split(',')[0].trim()
-        if (!ip) return next()
-        const row = await getAsync('SELECT ip_address, expires_at FROM ip_bans WHERE ip_address = ?', [ip])
-        if (!row) return next()
-        if (row.expires_at) {
-            const exp = new Date(row.expires_at)
-            if (isNaN(exp.getTime()) || exp.getTime() <= Date.now()) return next()
+        // 放行 CORS 预检请求，避免跨域失败
+        if (String(req.method).toUpperCase() === 'OPTIONS') return next();
+
+        const url = String(req.originalUrl || req.url || '');
+        const urlLower = url.toLowerCase();
+
+        // 允许管理员实时事件流、播放器HLS代理、用户封禁事件SSE
+        // 以及管理员登录与验证接口，避免管理员被 IP 封禁锁死
+        if (
+            urlLower.startsWith('/api/admin/usage/events') ||
+            urlLower.startsWith('/api/hls') ||
+            urlLower.startsWith('/api/user/ban/events') ||
+            urlLower.startsWith('/api/auth/login') ||
+            urlLower.startsWith('/api/auth/verify') ||
+            urlLower.startsWith('/api/admin')
+        ) {
+            return next();
         }
-        return res.status(403).json({ error: 'IP已被封禁' })
+
+        // 若请求携带有效的管理员令牌，也跳过 IP 封禁
+        const { payload } = verifyJwtFromHeader(req);
+        if (payload && payload.role === 'admin') return next();
+
+        // 获取来源IP（支持代理）
+        const ip = normalizeIp(String((req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')).split(',')[0].trim());
+        if (!ip) return next();
+
+        const row = await getAsync('SELECT ip_address, expires_at FROM ip_bans WHERE ip_address = ?', [ip]);
+        if (!row) return next();
+        if (row.expires_at) {
+            const exp = new Date(row.expires_at);
+            if (isNaN(exp.getTime()) || exp.getTime() <= Date.now()) return next();
+        }
+        return res.status(403).json({ error: 'IP已被封禁' });
     } catch (e) {
-        console.error('IP封禁中间件错误:', e)
-        return res.status(500).json({ error: '服务器错误' })
+        console.error('IP封禁中间件错误:', e);
+        return res.status(500).json({ error: '服务器错误' });
     }
 }
 // 应用 IP 封禁中间件
@@ -5097,6 +5131,94 @@ function broadcastUsageEvent(eventData) {
     });
 }
 
+// ==================== 用户封禁事件 SSE ====================
+const banEventClients = new Set();
+
+// 用户侧：封禁事件实时SSE（登录用户订阅）
+app.get('/api/user/ban/events', (req, res) => {
+    // 支持从查询参数或Authorization头获取token
+    let token = req.query.token;
+    if (!token) {
+        const authHeader = req.headers['authorization'];
+        token = authHeader && authHeader.split(' ')[1];
+    }
+
+    if (!token) {
+        return res.status(401).json({ error: '需要访问令牌' });
+    }
+
+    let payload = null;
+    try {
+        payload = jwt.verify(token, JWT_SECRET);
+        if (!payload || !payload.id) {
+            return res.status(403).json({ error: '无效的用户令牌' });
+        }
+        req.user = payload;
+    } catch (e) {
+        return res.status(401).json({ error: '无效的访问令牌' });
+    }
+
+    const userId = req.user.id;
+    const ip = normalizeIp(String((req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')).split(',')[0].trim());
+
+    // 设置SSE响应头
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': req.headers.origin || '*',
+        'Access-Control-Allow-Credentials': 'true'
+    });
+
+    // 发送初始连接消息
+    res.write('data: {"type":"connected","message":"已连接到封禁事件流"}\n\n');
+
+    // 记录客户端
+    const client = { res, userId, ip, lastPing: Date.now() };
+    banEventClients.add(client);
+
+    // 心跳
+    const heartbeat = setInterval(() => {
+        try {
+            res.write('data: {"type":"heartbeat","timestamp":' + Date.now() + '}\n\n');
+            client.lastPing = Date.now();
+        } catch (err) {
+            clearInterval(heartbeat);
+            banEventClients.delete(client);
+        }
+    }, 30000);
+
+    // 断开清理
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        banEventClients.delete(client);
+    });
+    req.on('error', () => {
+        clearInterval(heartbeat);
+        banEventClients.delete(client);
+    });
+});
+
+// 广播封禁事件到相关SSE客户端
+function broadcastBanEvent(event) {
+    // event: { kind: 'user'|'ip', action: 'ban'|'unban', user_id?: number, ip_address?: string, reason?: string, expires_at?: string|null }
+    if (banEventClients.size === 0) return;
+    const message = JSON.stringify({ type: 'ban_event', data: event, timestamp: Date.now() });
+    const clientsToRemove = [];
+    for (const client of banEventClients) {
+        // 仅向匹配的客户端发送
+        const matchUser = event.kind === 'user' && event.user_id && client.userId === event.user_id;
+        const matchIp = event.kind === 'ip' && event.ip_address && client.ip === normalizeIp(event.ip_address);
+        if (!matchUser && !matchIp) continue;
+        try {
+            client.res.write(`data: ${message}\n\n`);
+        } catch (err) {
+            clientsToRemove.push(client);
+        }
+    }
+    clientsToRemove.forEach(c => banEventClients.delete(c));
+}
+
 // 管理员用户管理
 app.get('/api/admin/users/stats', authenticateAdminToken, async (req, res) => {
     try {
@@ -5178,6 +5300,8 @@ app.post('/api/admin/users/:id/ban', authenticateAdminToken, async (req, res) =>
         const user = await getAsync('SELECT id, status FROM users WHERE id = ?', [userId]);
         if (!user) return res.status(404).json({ error: '用户不存在' });
         await runAsync('UPDATE users SET status = ?, token_version = COALESCE(token_version,0) + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['banned', userId]);
+        // 广播用户封禁事件
+        try { broadcastBanEvent({ kind: 'user', action: 'ban', user_id: userId, reason }); } catch (e) { /* noop */ }
         return res.json({ message: '用户已封禁', user: { id: userId, status: 'banned', reason } });
     } catch (e) {
         console.error('封禁用户失败:', e);
@@ -5195,6 +5319,8 @@ app.post('/api/admin/users/:id/unban', authenticateAdminToken, async (req, res) 
         const user = await getAsync('SELECT id FROM users WHERE id = ?', [userId]);
         if (!user) return res.status(404).json({ error: '用户不存在' });
         await runAsync('UPDATE users SET status = ?, token_version = COALESCE(token_version,0) + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['active', userId]);
+        // 广播用户解封事件
+        try { broadcastBanEvent({ kind: 'user', action: 'unban', user_id: userId }); } catch (e) { /* noop */ }
         return res.json({ message: '用户已解封', user: { id: userId, status: 'active' } });
     } catch (e) {
         console.error('解封用户失败:', e);
@@ -5220,6 +5346,8 @@ app.post('/api/admin/ip-bans', authenticateAdminToken, async (req, res) => {
         } else {
             await runAsync('INSERT INTO ip_bans (ip_address, reason, expires_at, created_by_admin_id) VALUES (?, ?, ?, ?)', [ipStr, reason, expSql, req.user?.id || null]);
         }
+        // 广播IP封禁事件
+        try { broadcastBanEvent({ kind: 'ip', action: 'ban', ip_address: ipStr, reason, expires_at: expSql }); } catch (e) { /* noop */ }
         return res.json({ message: 'IP封禁已生效', ip: ipStr, expires_at: expSql });
     } catch (e) {
         console.error('封禁IP失败:', e);
@@ -5233,6 +5361,8 @@ app.delete('/api/admin/ip-bans/:ip', authenticateAdminToken, async (req, res) =>
         const ipStr = String(req.params.ip || '').trim();
         if (!ipStr) return res.status(400).json({ error: 'IP无效' });
         await runAsync('DELETE FROM ip_bans WHERE ip_address = ?', [ipStr]);
+        // 广播IP解封事件
+        try { broadcastBanEvent({ kind: 'ip', action: 'unban', ip_address: ipStr }); } catch (e) { /* noop */ }
         return res.json({ message: 'IP已解除封禁', ip: ipStr });
     } catch (e) {
         console.error('解封IP失败:', e);
