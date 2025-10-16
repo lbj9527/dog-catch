@@ -21,17 +21,15 @@
           <div class="panel section" v-show="showThresholds">
             <h3>阈值与报警设定</h3>
             <div class="toolbar">
-              <label class="tag">IP-10分钟请求阈值 <input class="input" type="number" v-model.number="thresholds.ip10m" style="width:90px"></label>
-              <label class="tag">IP-1小时请求阈值 <input class="input" type="number" v-model.number="thresholds.ip1h" style="width:90px"></label>
-              <label class="tag">IP-10分钟不同视频数 <input class="input" type="number" v-model.number="thresholds.ipVid10m" style="width:90px"></label>
-              <label class="tag">用户-1小时请求阈值 <input class="input" type="number" v-model.number="thresholds.user1h" style="width:90px"></label>
-              <label class="tag">IP-6小时请求阈值 <input class="input" type="number" v-model.number="thresholds.ip6h" style="width:90px"></label>
-              <label class="tag">IP-12小时请求阈值 <input class="input" type="number" v-model.number="thresholds.ip12h" style="width:90px"></label>
-              <label class="tag">用户-6小时请求阈值 <input class="input" type="number" v-model.number="thresholds.user6h" style="width:90px"></label>
-              <label class="tag">用户-12小时请求阈值 <input class="input" type="number" v-model.number="thresholds.user12h" style="width:90px"></label>
+              <label class="tag">IP-1小时不同视频数 <input class="input" type="number" v-model.number="thresholds.ipVid1h" style="width:90px"></label>
+              <label class="tag">IP-6小时不同视频数阈值 <input class="input" type="number" v-model.number="thresholds.ip6h" style="width:90px"></label>
+              <label class="tag">IP-12小时不同视频数阈值 <input class="input" type="number" v-model.number="thresholds.ip12h" style="width:90px"></label>
+              <label class="tag">用户-1小时不同视频数 <input class="input" type="number" v-model.number="thresholds.userVid1h" style="width:90px"></label>
+              <label class="tag">用户-6小时不同视频数阈值 <input class="input" type="number" v-model.number="thresholds.user6h" style="width:90px"></label>
+              <label class="tag">用户-12小时不同视频数阈值 <input class="input" type="number" v-model.number="thresholds.user12h" style="width:90px"></label>
               <button class="button primary" @click="applyThresholds">应用</button>
             </div>
-            <div class="footnote">说明：数据来源于后端 usage_events（subtitle_access），当前前端对 1m/10m/1h 进行窗口聚合。</div>
+            <div class="footnote">说明：数据来源于后端 usage_events（subtitle_access），当前前端对 6h/12h 聚合不同视频数，另提供 1h 不同视频数。</div>
           </div>
 
           <div class="panel section">
@@ -63,54 +61,45 @@
                   </div>
                 </div>
                 <div class="table-scroll">
-                  <table>
-                    <colgroup>
-                      <col style="width:60px"><!-- 选择 -->
-                      <col style="width:280px"><!-- IP -->
-                      <col style="width:70px"><!-- 1分钟 -->
-                      <col style="width:80px"><!-- 10分钟 -->
-                      <col style="width:80px"><!-- 1小时 -->
-                      <col style="width:80px"><!-- 6小时 -->
-                      <col style="width:80px"><!-- 12小时 -->
-                      <col style="width:120px"><!-- 不同视频(1h) -->
-                      <col style="width:80px"><!-- UA多样性 -->
-                      <col style="width:80px"><!-- 风险评分 -->
-                      <col style="width:140px"><!-- 标签 -->
-                      <col style="width:90px"><!-- 状态 -->
-                      <col style="width:260px"><!-- 操作 -->
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th>选择</th>
-                        <th>IP</th>
-                        <th>1分钟</th>
-                        <th>10分钟</th>
-                        <th>1小时</th>
-                        <th>6小时</th>
-                        <th>12小时</th>
-                        <th>不同视频(1h)</th>
-                        <th>UA多样性</th>
-                        <th>风险评分</th>
-                        <th>标签</th>
-                        <th>状态</th>
-                        <th>操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="row in filteredIPRows" :key="row.ip">
-                        <td class="select-cell"><input type="checkbox" v-model="row._selected"></td>
-                        <td class="mono">{{ formatIP(row.ip) }} <span class="muted">({{ row.region || '-' }})</span></td>
-                        <td>{{ row.m1 }}</td>
-                        <td>{{ row.m10 }}</td>
-                        <td>{{ row.h1 }}</td>
-                        <td>{{ row.h6 }}</td>
-                        <td>{{ row.h12 }}</td>
-                        <td>{{ row.distinctVideosH1 }}</td>
-                        <td>{{ row.uaDiversity }}</td>
-                        <td :class="riskColorClass(row._risk)">{{ row._risk }}</td>
-                        <td>
-                          <span class="tag" v-for="t in row.tags" :key="t">{{ t }}</span>
-                        </td>
+                    <table>
+                      <colgroup>
+                        <col style="width:60px"><!-- 选择 -->
+                        <col style="width:280px"><!-- IP -->
+                        <col style="width:120px"><!-- 6小时不同视频数 -->
+                        <col style="width:120px"><!-- 12小时不同视频数 -->
+                        <col style="width:120px"><!-- 不同视频(1h) -->
+                        <col style="width:80px"><!-- UA多样性 -->
+                        <col style="width:80px"><!-- 风险评分 -->
+                        <col style="width:140px"><!-- 标签 -->
+                        <col style="width:90px"><!-- 状态 -->
+                        <col style="width:260px"><!-- 操作 -->
+                      </colgroup>
+                      <thead>
+                        <tr>
+                          <th>选择</th>
+                          <th>IP</th>
+                          <th>6小时不同视频数</th>
+                          <th>12小时不同视频数</th>
+                          <th>不同视频(1h)</th>
+                          <th>UA多样性</th>
+                          <th>风险评分</th>
+                          <th>标签</th>
+                          <th>状态</th>
+                          <th>操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="row in filteredIPRows" :key="row.ip">
+                          <td class="select-cell"><input type="checkbox" v-model="row._selected"></td>
+                          <td class="mono">{{ formatIP(row.ip) }} <span class="muted">({{ row.region || '-' }})</span></td>
+                          <td>{{ row.distinctVideosH6 }}</td>
+                          <td>{{ row.distinctVideosH12 }}</td>
+                          <td>{{ row.distinctVideosH1 }}</td>
+                          <td>{{ row.uaDiversity }}</td>
+                          <td :class="riskColorClass(row._risk)">{{ row._risk }}</td>
+                          <td>
+                            <span class="tag" v-for="t in row.tags" :key="t">{{ t }}</span>
+                          </td>
                         <td :class="row._banned ? 'danger' : riskColorClass(row._risk)">{{ row._banned ? '已封禁' : riskLabel(row._risk) }}</td>
                         <td>
                           <button class="button" @click="showIpDetail(row)">查看明细</button>
@@ -138,9 +127,8 @@
                     <colgroup>
                       <col style="width:60px"><!-- 选择 -->
                       <col style="width:260px"><!-- 用户 -->
-                      <col style="width:80px"><!-- 1小时 -->
-                      <col style="width:80px"><!-- 6小时 -->
-                      <col style="width:80px"><!-- 12小时 -->
+                      <col style="width:120px"><!-- 6小时不同视频数 -->
+                      <col style="width:120px"><!-- 12小时不同视频数 -->
                       <col style="width:120px"><!-- 不同视频(1h) -->
                       <col style="width:80px"><!-- IP数 -->
                       <col style="width:80px"><!-- 风险评分 -->
@@ -152,9 +140,8 @@
                       <tr>
                         <th>选择</th>
                         <th>用户</th>
-                        <th>1小时</th>
-                        <th>6小时</th>
-                        <th>12小时</th>
+                        <th>6小时不同视频数</th>
+                        <th>12小时不同视频数</th>
                         <th>不同视频(1h)</th>
                         <th>IP数</th>
                         <th>风险评分</th>
@@ -167,9 +154,8 @@
                       <tr v-for="u in filteredUserRows" :key="u.id">
                         <td class="select-cell"><input type="checkbox" v-model="u._selected"></td>
                         <td class="mono">{{ (u.name && u.name.trim()) ? u.name : ('用户'+u.id) }}</td>
-                        <td>{{ u.h1 }}</td>
-                        <td>{{ u.h6 }}</td>
-                        <td>{{ u.h12 }}</td>
+                        <td>{{ u.distinctVideosH6 }}</td>
+                        <td>{{ u.distinctVideosH12 }}</td>
                         <td>{{ u.distinctVideosH1 }}</td>
                         <td>{{ u.ipCount }}</td>
                         <td :class="riskColorClass(u._risk)">{{ u._risk }}</td>
@@ -246,7 +232,7 @@ export default {
   name: 'UsageMonitoringPlus',
   data() {
     return {
-      thresholds: { ip10m: 100, ip1h: 500, ip6h: 2000, ip12h: 3000, ipVid10m: 50, user1h: 300, user6h: 1200, user12h: 1800 },
+      thresholds: { ip6h: 2000, ip12h: 3000, ipVid1h: 50, userVid1h: 40, user6h: 1200, user12h: 1800 },
       showThresholds: false,
       showAlertsEvents: true,
       activeTab: 'ip',
@@ -379,7 +365,7 @@ export default {
       return this.normalizeIP(ip)
     },
     onTimeRangeChange() {
-      // 仅用于控制初始加载数据量；列展示始终依据当前时间的 1m/10m/1h 窗口
+      // 仅用于控制初始加载数据量；列展示始终依据当前时间的 10m/1h/6h/12h 窗口
       this.loadInitialEvents()
     },
     // 时间范围选择已移除，默认加载近24小时数据
@@ -491,8 +477,6 @@ export default {
     },
     rebuildAggregations() {
       const now = Date.now()
-      const m1 = now - 60*1000
-      const m10 = now - 10*60*1000
       const h1 = now - 60*60*1000
       const h6 = now - 6*60*60*1000
       const h12 = now - 12*60*60*1000
@@ -509,24 +493,22 @@ export default {
         const ua = e.user_agent || ''
 
         // IP聚合（使用归一化键）
-        if (!ipMap.has(ipKey)) ipMap.set(ipKey, { ip: ipKey, m1:0, m10:0, h1:0, h6:0, h12:0, distinctVideosH1Set:new Set(), uaSet:new Set(), region: '-' , tags: [], _selected:false })
+      if (!ipMap.has(ipKey)) ipMap.set(ipKey, { ip: ipKey, h1:0, h6:0, h12:0, distinctVideosH1Set:new Set(), distinctVideosH6Set:new Set(), distinctVideosH12Set:new Set(), uaSet:new Set(), region: '-' , tags: [], _selected:false })
         const ipRec = ipMap.get(ipKey)
-        if (ts >= h12) ipRec.h12++
-        if (ts >= h6) ipRec.h6++
+        if (ts >= h12) { ipRec.h12++; if (normVid) ipRec.distinctVideosH12Set.add(normVid) }
+        if (ts >= h6) { ipRec.h6++; if (normVid) ipRec.distinctVideosH6Set.add(normVid) }
         if (ts >= h1) {
           ipRec.h1++
           if (normVid) ipRec.distinctVideosH1Set.add(normVid)
           if (ua) ipRec.uaSet.add(ua)
         }
-        if (ts >= m10) ipRec.m10++
-        if (ts >= m1) ipRec.m1++
 
         // 用户聚合
         if (uidKey != null) {
-          if (!userMap.has(uidKey)) userMap.set(uidKey, { id: uidKey, h1:0, h6:0, h12:0, vids:new Set(), ips:new Set(), name: this.userNameById[uidKey] || '', tags: [], _selected:false })
+          if (!userMap.has(uidKey)) userMap.set(uidKey, { id: uidKey, h1:0, h6:0, h12:0, vids:new Set(), vids6:new Set(), vids12:new Set(), ips:new Set(), name: this.userNameById[uidKey] || '', tags: [], _selected:false })
           const uRec = userMap.get(uidKey)
-          if (ts >= h12) uRec.h12++
-          if (ts >= h6) uRec.h6++
+          if (ts >= h12) { uRec.h12++; if (normVid) uRec.vids12.add(normVid) }
+          if (ts >= h6) { uRec.h6++; if (normVid) uRec.vids6.add(normVid) }
           if (ts >= h1) {
             uRec.h1++
             if (normVid) uRec.vids.add(normVid)
@@ -538,12 +520,12 @@ export default {
       const ipRows = Array.from(ipMap.values()).map(r => {
         const row = {
           ip: r.ip,
-          m1: r.m1,
-          m10: r.m10,
-          h1: r.h1,
-          h6: r.h6,
-          h12: r.h12,
+      h1: r.h1,
+      h6: r.h6,
+      h12: r.h12,
           distinctVideosH1: r.distinctVideosH1Set.size,
+          distinctVideosH6: r.distinctVideosH6Set.size,
+          distinctVideosH12: r.distinctVideosH12Set.size,
           uaDiversity: r.uaSet.size,
           region: r.region,
           _selected: false,
@@ -552,15 +534,13 @@ export default {
         }
         row._risk = this.calcIpRisk(row)
         const ipExceed = (
-          (this.thresholds.ip10m > 0 && row.m10 >= this.thresholds.ip10m) ||
-          (this.thresholds.ip1h > 0 && row.h1 >= this.thresholds.ip1h) ||
-          (this.thresholds.ipVid10m > 0 && row.distinctVideosH1 >= this.thresholds.ipVid10m) ||
-          (this.thresholds.ip6h > 0 && row.h6 >= this.thresholds.ip6h) ||
-          (this.thresholds.ip12h > 0 && row.h12 >= this.thresholds.ip12h)
+          (this.thresholds.ipVid1h > 0 && row.distinctVideosH1 >= this.thresholds.ipVid1h) ||
+          (this.thresholds.ip6h > 0 && row.distinctVideosH6 >= this.thresholds.ip6h) ||
+          (this.thresholds.ip12h > 0 && row.distinctVideosH12 >= this.thresholds.ip12h)
         )
         if (ipExceed) row._risk = Math.max(row._risk, 85)
         return row
-      }).sort((a,b) => b.h1 - a.h1)
+      }).sort((a,b) => (b.distinctVideosH1 - a.distinctVideosH1) || (b.distinctVideosH6 - a.distinctVideosH6) || (b.distinctVideosH12 - a.distinctVideosH12))
 
       const userRows = Array.from(userMap.values()).map(u => {
         const row = {
@@ -570,6 +550,8 @@ export default {
           h6: u.h6,
           h12: u.h12,
           distinctVideosH1: u.vids.size,
+          distinctVideosH6: u.vids6.size,
+          distinctVideosH12: u.vids12.size,
           ipCount: u.ips.size,
           _selected: false,
           tags: [],
@@ -577,13 +559,12 @@ export default {
         }
         row._risk = this.calcUserRisk(row)
         const userExceed = (
-          (this.thresholds.user1h > 0 && row.h1 >= this.thresholds.user1h) ||
-          (this.thresholds.user6h > 0 && row.h6 >= this.thresholds.user6h) ||
-          (this.thresholds.user12h > 0 && row.h12 >= this.thresholds.user12h)
+          (this.thresholds.user6h > 0 && row.distinctVideosH6 >= this.thresholds.user6h) ||
+          (this.thresholds.user12h > 0 && row.distinctVideosH12 >= this.thresholds.user12h)
         )
         if (userExceed) row._risk = Math.max(row._risk, 85)
         return row
-      }).sort((a,b) => b.h1 - a.h1)
+      }).sort((a,b) => (b.distinctVideosH1 - a.distinctVideosH1) || (b.distinctVideosH6 - a.distinctVideosH6) || (b.ipCount - a.ipCount) || (b.distinctVideosH12 - a.distinctVideosH12))
 
       this.updateCrossDayTags(ipRows, userRows)
 
@@ -599,13 +580,13 @@ export default {
 
       const alerts = []
       for (const r of ipRows) {
-        if (r._risk >= 80) alerts.push({ key: `ip-${r.ip}-danger`, text: `⚠️ IP ${this.formatIP(r.ip)} 超过阈值（1h:${r.h1} / 10m:${r.m10} / 视频:${r.distinctVideosH1}）`, style:{borderColor:'#4a2627',color:'#ffb3b4'} })
-        else if (r._risk >= 50) alerts.push({ key: `ip-${r.ip}-warn`, text: `ℹ️ IP ${this.formatIP(r.ip)} 接近阈值（1h:${r.h1} / 10m:${r.m10}）`, style:{borderColor:'#4a3a17',color:'#ffd89c'} })
+        if (r._risk >= 80) alerts.push({ key: `ip-${r.ip}-danger`, text: `⚠️ IP ${this.formatIP(r.ip)} 超过阈值（1h视频:${r.distinctVideosH1} / 6h视频:${r.distinctVideosH6}）`, style:{borderColor:'#4a2627',color:'#ffb3b4'} })
+        else if (r._risk >= 50) alerts.push({ key: `ip-${r.ip}-warn`, text: `ℹ️ IP ${this.formatIP(r.ip)} 接近阈值（6h视频:${r.distinctVideosH6}）`, style:{borderColor:'#4a3a17',color:'#ffd89c'} })
       }
       for (const u of userRows) {
         const displayName = (u.name && u.name.trim()) ? u.name : `用户${u.id}`
-        if (u._risk >= 80) alerts.push({ key: `u-${u.id}-danger`, text: `⚠️ 用户 ${displayName} 超过阈值（1h:${u.h1} / 视频:${u.distinctVideosH1} / IP数:${u.ipCount}）`, style:{borderColor:'#4a2627',color:'#ffb3b4'} })
-        else if (u._risk >= 50) alerts.push({ key: `u-${u.id}-warn`, text: `ℹ️ 用户 ${displayName} 接近阈值（1h:${u.h1}）`, style:{borderColor:'#4a3a17',color:'#ffd89c'} })
+        if (u._risk >= 80) alerts.push({ key: `u-${u.id}-danger`, text: `⚠️ 用户 ${displayName} 超过阈值（视频:${u.distinctVideosH1} / IP数:${u.ipCount}）`, style:{borderColor:'#4a2627',color:'#ffb3b4'} })
+        else if (u._risk >= 50) alerts.push({ key: `u-${u.id}-warn`, text: `ℹ️ 用户 ${displayName} 接近阈值（视频:${u.distinctVideosH1}）`, style:{borderColor:'#4a3a17',color:'#ffd89c'} })
       }
       this.alerts = alerts
     },
@@ -695,10 +676,10 @@ export default {
         alert('操作失败')
       }
     },
-    exportIPView(){ const lines = this.filteredIPRows.map(r => `${r.ip}\t${r.m1}\t${r.m10}\t${r.h1}\t${r.h6}\t${r.h12}\t${r.distinctVideosH1}\t${r.uaDiversity}\t${r._risk}\t${(r.tags||[]).join('|')}`)
+    exportIPView(){ const lines = this.filteredIPRows.map(r => `${r.ip}\t${r.distinctVideosH6}\t${r.distinctVideosH12}\t${r.distinctVideosH1}\t${r.uaDiversity}\t${r._risk}\t${(r.tags||[]).join('|')}`)
       this.copyText(lines.join('\n'))
     },
-    exportUserView(){ const lines = this.filteredUserRows.map(u => `${u.id}\t${u.name}\t${u.h1}\t${u.h6}\t${u.h12}\t${u.distinctVideosH1}\t${u.ipCount}\t${u._risk}\t${(u.tags||[]).join('|')}`)
+    exportUserView(){ const lines = this.filteredUserRows.map(u => `${u.id}\t${u.name}\t${u.distinctVideosH6}\t${u.distinctVideosH12}\t${u.distinctVideosH1}\t${u.ipCount}\t${u._risk}\t${(u.tags||[]).join('|')}`)
       this.copyText(lines.join('\n'))
     },
     copyText(text){ navigator.clipboard?.writeText(String(text)).catch(()=>{}) },
@@ -711,10 +692,8 @@ export default {
       try {
         const t = this.thresholds || {}
         const num = {
-          ip10m: Number(t.ip10m) || 0,
-          ip1h: Number(t.ip1h) || 0,
-          ipVid10m: Number(t.ipVid10m) || 0,
-          user1h: Number(t.user1h) || 0,
+          ipVid1h: Number(t.ipVid1h) || 0,
+          userVid1h: Number(t.userVid1h) || 0,
           ip6h: Number(t.ip6h) || 0,
           ip12h: Number(t.ip12h) || 0,
           user6h: Number(t.user6h) || 0,
@@ -731,10 +710,8 @@ export default {
         if (!raw) return
         const parsed = JSON.parse(raw)
         const merged = {
-          ip10m: isFinite(Number(parsed.ip10m)) ? Number(parsed.ip10m) : this.thresholds.ip10m,
-          ip1h: isFinite(Number(parsed.ip1h)) ? Number(parsed.ip1h) : this.thresholds.ip1h,
-          ipVid10m: isFinite(Number(parsed.ipVid10m)) ? Number(parsed.ipVid10m) : this.thresholds.ipVid10m,
-          user1h: isFinite(Number(parsed.user1h)) ? Number(parsed.user1h) : this.thresholds.user1h,
+          ipVid1h: isFinite(Number(parsed.ipVid1h)) ? Number(parsed.ipVid1h) : (isFinite(Number(parsed.ipVid10m)) ? Number(parsed.ipVid10m) : this.thresholds.ipVid1h),
+          userVid1h: isFinite(Number(parsed.userVid1h)) ? Number(parsed.userVid1h) : this.thresholds.userVid1h,
           ip6h: isFinite(Number(parsed.ip6h)) ? Number(parsed.ip6h) : (isFinite(Number(parsed.ip8h)) ? Number(parsed.ip8h) : this.thresholds.ip6h),
           ip12h: isFinite(Number(parsed.ip12h)) ? Number(parsed.ip12h) : this.thresholds.ip12h,
           user6h: isFinite(Number(parsed.user6h)) ? Number(parsed.user6h) : (isFinite(Number(parsed.user8h)) ? Number(parsed.user8h) : this.thresholds.user6h),
@@ -806,7 +783,7 @@ export default {
         root[key] = entry
       }
       for (const r of ipRows) {
-        const active = (r.m1 || r.m10 || r.h1 || r.h6 || r.h12) > 0
+        const active = (r.distinctVideosH6 || r.distinctVideosH12 || r.distinctVideosH1) > 0
         if (active) markActive(r.ip, 'ip')
         const entry = (this.riskCache.ip || {})[r.ip]
         const dates = entry?.dates ? Object.keys(entry.dates) : []
@@ -816,7 +793,7 @@ export default {
         }
       }
       for (const u of userRows) {
-        const active = (u.h1 || u.h6 || u.h12 || u.distinctVideosH1 || u.ipCount) > 0
+        const active = (u.distinctVideosH6 || u.distinctVideosH12 || u.distinctVideosH1 || u.ipCount) > 0
         if (active) markActive(u.id, 'user')
         const entry = (this.riskCache.user || {})[u.id]
         const dates = entry?.dates ? Object.keys(entry.dates) : []

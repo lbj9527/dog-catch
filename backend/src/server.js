@@ -68,13 +68,11 @@ const RATE = {
     SUBTITLE_USER_5MIN: Number(process.env.SUBTITLE_RATE_USER_5MIN || 20),
     SUBTITLE_BURST_USER: Number(process.env.SUBTITLE_BURST_USER || 40),
     SUBTITLE_IP_1H: Number(process.env.SUBTITLE_RATE_IP_1H || 2000),
-    SUBTITLE_BURST_IP_10MIN: Number(process.env.SUBTITLE_BURST_IP_10MIN || 400),
     VARIANTS_USER_5MIN: Number(process.env.VARIANTS_RATE_USER_5MIN || 10),
     VARIANTS_BURST_USER: Number(process.env.VARIANTS_BURST_USER || 20),
     VARIANTS_IP_1H: Number(process.env.VARIANTS_RATE_IP_1H || 1000),
-    VARIANTS_BURST_IP_10MIN: Number(process.env.VARIANTS_BURST_IP_10MIN || 200),
-    SCAN_UNIQUE_VIDEO_10MIN: Number(process.env.SCAN_UNIQUE_VIDEO_10MIN || 40),
-    SCAN_UNIQUE_BASE_10MIN: Number(process.env.SCAN_UNIQUE_BASE_10MIN || 30),
+    SCAN_UNIQUE_VIDEO_1H: Number(process.env.SCAN_UNIQUE_VIDEO_1H || 40),
+    SCAN_UNIQUE_BASE_1H: Number(process.env.SCAN_UNIQUE_BASE_1H || 30),
     SCAN_PENALTY_WINDOW_MIN: Number(process.env.SCAN_PENALTY_WINDOW_MIN || 30)
 };
 
@@ -130,10 +128,8 @@ const SIMPLE_RATE_LIMITS = {
     LOGIN_IP_PER_MIN: Number(process.env.RL_LOGIN_IP_PER_MIN || 20),
     LOGIN_ACCOUNT_PER_MIN: Number(process.env.RL_LOGIN_ACCOUNT_PER_MIN || 5),
     EMAIL_CODE_EMAIL_COOLDOWN_SEC: Number(process.env.RL_EMAIL_CODE_EMAIL_COOLDOWN_SEC || 30),
-    EMAIL_CODE_EMAIL_PER_10MIN: Number(process.env.RL_EMAIL_CODE_EMAIL_PER_10MIN || 5),
     EMAIL_CODE_EMAIL_PER_HOUR: Number(process.env.RL_EMAIL_CODE_EMAIL_PER_HOUR || 10),
     EMAIL_CODE_IP_PER_HOUR: Number(process.env.RL_EMAIL_CODE_IP_PER_HOUR || 20),
-    REGISTER_IP_PER_10MIN: Number(process.env.RL_REGISTER_IP_PER_10MIN || 5),
     REGISTER_IP_PER_HOUR: Number(process.env.RL_REGISTER_IP_PER_HOUR || 20),
     REGISTER_EMAIL_PER_HOUR: Number(process.env.RL_REGISTER_EMAIL_PER_HOUR || 3)
 };
@@ -348,15 +344,11 @@ async function requireCaptchaIfFlagged(req, res, next){
 
 // 两类接口限流器
 const allowSubtitleUser = makeLimiter({ keyPrefix: 'rl:sub:u', points: RATE.SUBTITLE_BURST_USER, durationSec: 5*60 });
-const allowSubtitleIp10m = makeLimiter({ keyPrefix: 'rl:sub:ip10', points: RATE.SUBTITLE_BURST_IP_10MIN, durationSec: 10*60 });
 const allowSubtitleIp1h = makeLimiter({ keyPrefix: 'rl:sub:ip60', points: RATE.SUBTITLE_IP_1H, durationSec: 60*60 });
 
 const allowVariantsUser = makeLimiter({ keyPrefix: 'rl:var:u', points: RATE.VARIANTS_BURST_USER, durationSec: 5*60 });
-const allowVariantsIp10m = makeLimiter({ keyPrefix: 'rl:var:ip10', points: RATE.VARIANTS_BURST_IP_10MIN, durationSec: 10*60 });
 const allowVariantsIp1h = makeLimiter({ keyPrefix: 'rl:var:ip60', points: RATE.VARIANTS_IP_1H, durationSec: 60*60 });
 
-const allowLoginUser10m = makeLimiter({ keyPrefix: 'rl:login:u', points: 5, durationSec: 10*60 });
-const allowLoginIp10m = makeLimiter({ keyPrefix: 'rl:login:ip', points: 30, durationSec: 10*60 });
 const allowEmailIp1h = makeLimiter({ keyPrefix: 'rl:ecode:ip', points: 20, durationSec: 60*60 });
 
 // 新的简化限流中间件
@@ -367,13 +359,11 @@ const loginRateLimit = createRateLimit([
 
 const emailCodeRateLimit = createRateLimit([
     { key: 'email', type: 'cooldown', window: SIMPLE_RATE_LIMITS.EMAIL_CODE_EMAIL_COOLDOWN_SEC },
-    { key: 'email', type: 'window', window: 600, limit: SIMPLE_RATE_LIMITS.EMAIL_CODE_EMAIL_PER_10MIN },
     { key: 'email', type: 'window', window: 3600, limit: SIMPLE_RATE_LIMITS.EMAIL_CODE_EMAIL_PER_HOUR },
     { key: 'ip', type: 'window', window: 3600, limit: SIMPLE_RATE_LIMITS.EMAIL_CODE_IP_PER_HOUR }
 ]);
 
 const registerRateLimit = createRateLimit([
-    { key: 'ip', type: 'window', window: 600, limit: SIMPLE_RATE_LIMITS.REGISTER_IP_PER_10MIN },
     { key: 'ip', type: 'window', window: 3600, limit: SIMPLE_RATE_LIMITS.REGISTER_IP_PER_HOUR },
     { key: 'email', type: 'window', window: 3600, limit: SIMPLE_RATE_LIMITS.REGISTER_EMAIL_PER_HOUR }
 ]);
@@ -2182,14 +2172,14 @@ app.get('/api/subtitle/:video_id', authenticateAnyToken, async (req, res) => {
         const userId = req.user && req.user.id ? String(req.user.id) : '';
         const ip = req.ip || req.connection?.remoteAddress || 'unknown';
         // 用户 5 分钟突发桶
-        if (!allowSubtitleUser(userId)) { await markCaptchaRequired('user', userId); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
-        // IP 突发 + 1小时桶
-        if (!allowSubtitleIp10m(ip) || !allowSubtitleIp1h(ip)) { await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
-        // 扫描阈值与降配（10 分钟窗口 + 阈值）
-        await addScan(userId, 'video', videoId.toUpperCase(), 10*60, RATE.SCAN_UNIQUE_VIDEO_10MIN);
+        if (!(await allowSubtitleUser(userId))) { await markCaptchaRequired('user', userId); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        // IP 1小时桶
+        if (!(await allowSubtitleIp1h(ip))) { await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        // 扫描阈值与降配（1 小时窗口 + 阈值）
+        await addScan(userId, 'video', videoId.toUpperCase(), 60*60, RATE.SCAN_UNIQUE_VIDEO_1H);
         if (await isPenalized(userId)) {
             // 简单降配：再次消耗一次用户桶，若失败则限流
-            if (!allowSubtitleUser(userId)) { await markCaptchaRequired('user', userId); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+            if (!(await allowSubtitleUser(userId))) { await markCaptchaRequired('user', userId); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
         }
         
         try {
@@ -3137,11 +3127,11 @@ app.get('/api/subtitles/variants/:base_video_id', authenticateAnyToken, async (r
         // 限流与扫描（用户+IP）
         const userId = req.user && req.user.id ? String(req.user.id) : '';
         const ip = req.ip || req.connection?.remoteAddress || 'unknown';
-        if (!allowVariantsUser(userId)) { await markCaptchaRequired('user', userId); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
-        if (!allowVariantsIp10m(ip) || !allowVariantsIp1h(ip)) { await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
-        await addScan(userId, 'base', baseId, 10*60, RATE.SCAN_UNIQUE_BASE_10MIN);
+        if (!(await allowVariantsUser(userId))) { await markCaptchaRequired('user', userId); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        if (!(await allowVariantsIp1h(ip))) { await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+        await addScan(userId, 'base', baseId, 60*60, RATE.SCAN_UNIQUE_BASE_1H);
         if (await isPenalized(userId)) {
-            if (!allowVariantsUser(userId)) { await markCaptchaRequired('user', userId); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
+            if (!(await allowVariantsUser(userId))) { await markCaptchaRequired('user', userId); await markCaptchaRequired('ip', ip); return res.status(429).json({ error: '请求过于频繁', requireCaptcha: true }); }
         }
 
         // 获取所有字幕并进行模糊匹配
@@ -4921,14 +4911,14 @@ app.get('/api/admin/usage/stats', authenticateAdminToken, async (req, res) => {
             LIMIT 10
         `);
 
-        // 时间分布统计（按小时）
-        const hourlyStats = await getAllAsync(`
+        // 时间分布统计（按小时）仅保留 1h 去重视频数
+        const hourlyDistinctVideos = await getAllAsync(`
             SELECT 
-                strftime('%H', ue.created_at) as hour,
-                COUNT(*) as count
+                strftime('%Y-%m-%d %H', ue.created_at) as hour,
+                COUNT(DISTINCT ue.video_id) as distinct_count
             FROM usage_events ue
             WHERE ue.created_at >= datetime('now', '-1 day')
-            GROUP BY strftime('%H', ue.created_at)
+            GROUP BY strftime('%Y-%m-%d %H', ue.created_at)
             ORDER BY hour
         `);
 
@@ -4955,7 +4945,7 @@ app.get('/api/admin/usage/stats', authenticateAdminToken, async (req, res) => {
             eventTypes: eventTypeStats || [],
             topVideos: topVideos || [],
             topUsers: topUsers || [],
-            hourlyDistribution: hourlyStats || [],
+            hourlyDistinctVideos: hourlyDistinctVideos || [],
             topIPs: ipStats || []
         });
     } catch (err) {
