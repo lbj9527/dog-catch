@@ -27,6 +27,8 @@
               <label class="tag">用户-1小时不同视频数 <input class="input" type="number" v-model.number="thresholds.userVid1h" style="width:90px"></label>
               <label class="tag">用户-6小时不同视频数阈值 <input class="input" type="number" v-model.number="thresholds.user6h" style="width:90px"></label>
               <label class="tag">用户-12小时不同视频数阈值 <input class="input" type="number" v-model.number="thresholds.user12h" style="width:90px"></label>
+              <label class="tag">IP-UA多样性硬阈值 <input class="input" type="number" v-model.number="thresholds.uaHard" style="width:90px"></label>
+              <label class="tag">用户-IP数硬阈值 <input class="input" type="number" v-model.number="thresholds.userIpHard" style="width:90px"></label>
               <button class="button primary" @click="applyThresholds">应用</button>
             </div>
             <div class="footnote">说明：数据来源于后端 usage_events（subtitle_access），当前前端对 6h/12h 聚合不同视频数，另提供 1h 不同视频数。</div>
@@ -232,7 +234,7 @@ export default {
   name: 'UsageMonitoringPlus',
   data() {
     return {
-      thresholds: { ip6h: 2000, ip12h: 3000, ipVid1h: 50, userVid1h: 40, user6h: 1200, user12h: 1800 },
+      thresholds: { ip6h: 2000, ip12h: 3000, ipVid1h: 50, userVid1h: 40, user6h: 1200, user12h: 1800, uaHard: 10, userIpHard: 5 },
       showThresholds: false,
       showAlertsEvents: true,
       activeTab: 'ip',
@@ -536,7 +538,8 @@ export default {
         const ipExceed = (
           (this.thresholds.ipVid1h > 0 && row.distinctVideosH1 >= this.thresholds.ipVid1h) ||
           (this.thresholds.ip6h > 0 && row.distinctVideosH6 >= this.thresholds.ip6h) ||
-          (this.thresholds.ip12h > 0 && row.distinctVideosH12 >= this.thresholds.ip12h)
+          (this.thresholds.ip12h > 0 && row.distinctVideosH12 >= this.thresholds.ip12h) ||
+          (this.thresholds.uaHard > 0 && row.uaDiversity >= this.thresholds.uaHard)
         )
         if (ipExceed) row._risk = Math.max(row._risk, 85)
         return row
@@ -560,7 +563,9 @@ export default {
         row._risk = this.calcUserRisk(row)
         const userExceed = (
           (this.thresholds.user6h > 0 && row.distinctVideosH6 >= this.thresholds.user6h) ||
-          (this.thresholds.user12h > 0 && row.distinctVideosH12 >= this.thresholds.user12h)
+          (this.thresholds.user12h > 0 && row.distinctVideosH12 >= this.thresholds.user12h) ||
+          (this.thresholds.userVid1h > 0 && row.distinctVideosH1 >= this.thresholds.userVid1h) ||
+          (this.thresholds.userIpHard > 0 && row.ipCount >= this.thresholds.userIpHard)
         )
         if (userExceed) row._risk = Math.max(row._risk, 85)
         return row
@@ -580,13 +585,34 @@ export default {
 
       const alerts = []
       for (const r of ipRows) {
-        if (r._risk >= 80) alerts.push({ key: `ip-${r.ip}-danger`, text: `⚠️ IP ${this.formatIP(r.ip)} 超过阈值（1h视频:${r.distinctVideosH1} / 6h视频:${r.distinctVideosH6}）`, style:{borderColor:'#4a2627',color:'#ffb3b4'} })
-        else if (r._risk >= 50) alerts.push({ key: `ip-${r.ip}-warn`, text: `ℹ️ IP ${this.formatIP(r.ip)} 接近阈值（6h视频:${r.distinctVideosH6}）`, style:{borderColor:'#4a3a17',color:'#ffd89c'} })
+        // 逐项检查触发，拼接详细文案
+        const ipTriggers = []
+        if (this.thresholds.ipVid1h > 0 && r.distinctVideosH1 >= this.thresholds.ipVid1h) ipTriggers.push(`1h不同视频数 ${r.distinctVideosH1}/${this.thresholds.ipVid1h}`)
+        if (this.thresholds.ip6h > 0 && r.distinctVideosH6 >= this.thresholds.ip6h) ipTriggers.push(`6h不同视频数 ${r.distinctVideosH6}/${this.thresholds.ip6h}`)
+        if (this.thresholds.ip12h > 0 && r.distinctVideosH12 >= this.thresholds.ip12h) ipTriggers.push(`12h不同视频数 ${r.distinctVideosH12}/${this.thresholds.ip12h}`)
+        if (this.thresholds.uaHard > 0 && r.uaDiversity >= this.thresholds.uaHard) ipTriggers.push(`UA多样性 ${r.uaDiversity}/${this.thresholds.uaHard}`)
+        if (r._risk >= 80) {
+          const detail = ipTriggers.length ? `（触发项：${ipTriggers.join('，')}）` : `（当前分数:${r._risk}）`
+          alerts.push({ key: `ip-${r.ip}-danger`, text: `⚠️ IP ${this.formatIP(r.ip)} 超过阈值 ${detail}`, style:{borderColor:'#4a2627',color:'#ffb3b4'} })
+        } else if (r._risk >= 50) {
+          const near = [`1h:${r.distinctVideosH1}/${this.thresholds.ipVid1h}`, `6h:${r.distinctVideosH6}/${this.thresholds.ip6h}`, `12h:${r.distinctVideosH12}/${this.thresholds.ip12h}`]
+          alerts.push({ key: `ip-${r.ip}-warn`, text: `ℹ️ IP ${this.formatIP(r.ip)} 接近阈值（${near.join('，')}）`, style:{borderColor:'#4a3a17',color:'#ffd89c'} })
+        }
       }
       for (const u of userRows) {
         const displayName = (u.name && u.name.trim()) ? u.name : `用户${u.id}`
-        if (u._risk >= 80) alerts.push({ key: `u-${u.id}-danger`, text: `⚠️ 用户 ${displayName} 超过阈值（视频:${u.distinctVideosH1} / IP数:${u.ipCount}）`, style:{borderColor:'#4a2627',color:'#ffb3b4'} })
-        else if (u._risk >= 50) alerts.push({ key: `u-${u.id}-warn`, text: `ℹ️ 用户 ${displayName} 接近阈值（视频:${u.distinctVideosH1}）`, style:{borderColor:'#4a3a17',color:'#ffd89c'} })
+        const userTriggers = []
+        if (this.thresholds.userVid1h > 0 && u.distinctVideosH1 >= this.thresholds.userVid1h) userTriggers.push(`1h不同视频数 ${u.distinctVideosH1}/${this.thresholds.userVid1h}`)
+        if (this.thresholds.user6h > 0 && u.distinctVideosH6 >= this.thresholds.user6h) userTriggers.push(`6h不同视频数 ${u.distinctVideosH6}/${this.thresholds.user6h}`)
+        if (this.thresholds.user12h > 0 && u.distinctVideosH12 >= this.thresholds.user12h) userTriggers.push(`12h不同视频数 ${u.distinctVideosH12}/${this.thresholds.user12h}`)
+        if (this.thresholds.userIpHard > 0 && u.ipCount >= this.thresholds.userIpHard) userTriggers.push(`IP数量 ${u.ipCount}/${this.thresholds.userIpHard}`)
+        if (u._risk >= 80) {
+          const detail = userTriggers.length ? `（触发项：${userTriggers.join('，')}）` : `（当前分数:${u._risk}）`
+          alerts.push({ key: `u-${u.id}-danger`, text: `⚠️ 用户 ${displayName} 超过阈值 ${detail}`, style:{borderColor:'#4a2627',color:'#ffb3b4'} })
+        } else if (u._risk >= 50) {
+          const near = [`1h:${u.distinctVideosH1}/${this.thresholds.userVid1h}`, `6h:${u.distinctVideosH6}/${this.thresholds.user6h}`, `12h:${u.distinctVideosH12}/${this.thresholds.user12h}`, `IP:${u.ipCount}/${this.thresholds.userIpHard}`]
+          alerts.push({ key: `u-${u.id}-warn`, text: `ℹ️ 用户 ${displayName} 接近阈值（${near.join('，')}）`, style:{borderColor:'#4a3a17',color:'#ffd89c'} })
+        }
       }
       this.alerts = alerts
     },
@@ -697,7 +723,9 @@ export default {
           ip6h: Number(t.ip6h) || 0,
           ip12h: Number(t.ip12h) || 0,
           user6h: Number(t.user6h) || 0,
-          user12h: Number(t.user12h) || 0
+          user12h: Number(t.user12h) || 0,
+          uaHard: Number(t.uaHard) || 0,
+          userIpHard: Number(t.userIpHard) || 0
         }
         localStorage.setItem('usage_thresholds', JSON.stringify(num))
       } catch (e) {
@@ -715,7 +743,9 @@ export default {
           ip6h: isFinite(Number(parsed.ip6h)) ? Number(parsed.ip6h) : (isFinite(Number(parsed.ip8h)) ? Number(parsed.ip8h) : this.thresholds.ip6h),
           ip12h: isFinite(Number(parsed.ip12h)) ? Number(parsed.ip12h) : this.thresholds.ip12h,
           user6h: isFinite(Number(parsed.user6h)) ? Number(parsed.user6h) : (isFinite(Number(parsed.user8h)) ? Number(parsed.user8h) : this.thresholds.user6h),
-          user12h: isFinite(Number(parsed.user12h)) ? Number(parsed.user12h) : this.thresholds.user12h
+          user12h: isFinite(Number(parsed.user12h)) ? Number(parsed.user12h) : this.thresholds.user12h,
+          uaHard: isFinite(Number(parsed.uaHard)) ? Number(parsed.uaHard) : this.thresholds.uaHard,
+          userIpHard: isFinite(Number(parsed.userIpHard)) ? Number(parsed.userIpHard) : this.thresholds.userIpHard
         }
         this.thresholds = merged
       } catch (e) {
