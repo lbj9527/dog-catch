@@ -5905,6 +5905,7 @@ server.on('upgrade', (req, socket, head) => {
     let urlObj;
     try { urlObj = new URL(req.url, `http://${req.headers.host}`); } catch { socket.destroy(); return; }
     if (urlObj.pathname !== '/ws/ai-translate') { socket.destroy(); return; }
+    try { console.log(`[WS] Upgrade /ws/ai-translate from ${req.socket.remoteAddress}`); } catch {}
     wss.handleUpgrade(req, socket, head, (ws) => {
         wss.emit('connection', ws, req);
     });
@@ -5912,6 +5913,7 @@ server.on('upgrade', (req, socket, head) => {
 
 wss.on('connection', (ws, req) => {
     const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    try { console.log(`[WS] Client connected to /ws/ai-translate ip=${ip}`); } catch {}
     let alive = true;
     ws.on('pong', () => { alive = true; });
     const heartbeat = setInterval(() => {
@@ -5930,6 +5932,7 @@ wss.on('connection', (ws, req) => {
         try {
             pyWs = new WebSocket(PY_AI_SERVICE_URL.replace(/\s+/g,'').trim());
             pyWs.on('open', () => {
+                try { console.log(`[WS] Bridge connected -> ${PY_AI_SERVICE_URL}`); } catch {}
                 // 将会话元信息同步给 Python 服务
                 try { pyWs.send(JSON.stringify({ type:'hello', videoUrl: session.videoUrl, isHLS: session.isHLS, targetLang: session.targetLang, preferredSrcLang: session.preferredSrcLang })); } catch {}
                 try { ws.send(JSON.stringify({ type:'ready' })); } catch {}
@@ -5938,12 +5941,13 @@ wss.on('connection', (ws, req) => {
                 try {
                     if (isBinary) return; // 仅转发文本消息
                     const msg = JSON.parse(buf.toString('utf8'));
+                    try { console.log('[WS] PY->Client', msg && msg.type); } catch {}
                     // 透传 Python 返回的 partial/final/error
                     ws.send(JSON.stringify(msg));
                 } catch {}
             });
-            pyWs.on('error', () => { try { ws.send(JSON.stringify({ type:'error', code:'PY_CONN', message:'Python服务连接失败' })); } catch {} });
-            pyWs.on('close', () => { try { ws.send(JSON.stringify({ type:'error', code:'PY_CLOSED', message:'Python服务已关闭' })); } catch {} });
+            pyWs.on('error', () => { try { console.warn('[WS] Python bridge error'); } catch {} try { ws.send(JSON.stringify({ type:'error', code:'PY_CONN', message:'Python服务连接失败' })); } catch {} });
+            pyWs.on('close', () => { try { console.warn('[WS] Python bridge closed'); } catch {} try { ws.send(JSON.stringify({ type:'error', code:'PY_CLOSED', message:'Python服务已关闭' })); } catch {} });
         } catch (e) {
             try { ws.send(JSON.stringify({ type:'error', code:'PY_INIT', message:'Python服务初始化失败' })); } catch {}
         }
@@ -5954,6 +5958,7 @@ wss.on('connection', (ws, req) => {
     ws.on('message', async (data, isBinary) => {
         try {
             if (isBinary) {
+                try { console.log('[WS] Client audio chunk', data && data.length); } catch {}
                 // 音频分片：直接转发给 Python 服务
                 if (pyWs && pyWs.readyState === WebSocket.OPEN) {
                     try { pyWs.send(data); } catch {}
@@ -5967,6 +5972,7 @@ wss.on('connection', (ws, req) => {
                 session.isHLS = !!j.isHLS;
                 session.targetLang = String(j.targetLang || 'zh');
                 session.preferredSrcLang = String(j.preferredSrcLang || 'auto');
+                try { console.log(`[WS] Client hello isHLS=${session.isHLS} target=${session.targetLang} src=${session.preferredSrcLang}`); } catch {}
                 if (pyWs && pyWs.readyState === WebSocket.OPEN) {
                     try { pyWs.send(JSON.stringify(j)); } catch {}
                 }
@@ -5979,7 +5985,7 @@ wss.on('connection', (ws, req) => {
             }
         } catch {}
     });
-    ws.on('close', () => { try { clearInterval(heartbeat); } catch {} });
+    ws.on('close', () => { try { console.log('[WS] Client disconnected from /ws/ai-translate'); } catch {} try { clearInterval(heartbeat); } catch {} });
 });
 
 server.listen(PORT, () => {

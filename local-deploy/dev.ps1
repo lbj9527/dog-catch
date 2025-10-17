@@ -101,9 +101,12 @@ function Start-Backend {
   $deepseekKeyFile = Join-Path $SecretsDir 'DEEPSEEK_API_KEY.txt'
   $deepseekEndpointFile = Join-Path $SecretsDir 'DEEPSEEK_ENDPOINT.txt'
   $deepseekModelFile = Join-Path $SecretsDir 'DEEPSEEK_MODEL.txt'
-  $deepseekKey = (Test-Path $deepseekKeyFile) ? (Get-Content -Raw -Path $deepseekKeyFile).Trim() : ''
-  $deepseekEndpoint = (Test-Path $deepseekEndpointFile) ? (Get-Content -Raw -Path $deepseekEndpointFile).Trim() : ''
-  $deepseekModel = (Test-Path $deepseekModelFile) ? (Get-Content -Raw -Path $deepseekModelFile).Trim() : ''
+  $deepseekKey = ''
+  if (Test-Path $deepseekKeyFile) { $deepseekKey = (Get-Content -Raw -Path $deepseekKeyFile).Trim() }
+  $deepseekEndpoint = ''
+  if (Test-Path $deepseekEndpointFile) { $deepseekEndpoint = (Get-Content -Raw -Path $deepseekEndpointFile).Trim() }
+  $deepseekModel = ''
+  if (Test-Path $deepseekModelFile) { $deepseekModel = (Get-Content -Raw -Path $deepseekModelFile).Trim() }
 
   $cmd = @"
 cd "$BackendDir"

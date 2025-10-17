@@ -1356,6 +1356,8 @@ class VideoPlayer {
                     return;
                 }
                 // 允许所有用户选择任何字幕，权限控制在 switchSubtitleVariant 中处理
+                try { this.stopAiRealtimeTranslation(); } catch {}
+                try { if (this._aiTrack) this._aiTrack.mode = 'disabled'; } catch {}
                 this.switchSubtitleVariant(videoId);
             };
         }
@@ -2984,11 +2986,13 @@ class VideoPlayer {
         trackEl.addEventListener('load', () => {
             try {
                 const tracks = this.player.video.textTracks;
+                // 仅显示刚加载的字幕轨道，禁用其它（包括 AI 实时翻译轨道）
                 for (let i = 0; i < tracks.length; i++) {
                     const track = tracks[i];
-                    if (track.kind === 'subtitles') {
-                        track.mode = 'showing';
-                    }
+                    const isAi = (track.label === 'AI实时翻译');
+                    const isCurrent = (trackEl.track && track === trackEl.track) || (track.label === '中文字幕');
+                    track.mode = isCurrent ? 'showing' : 'disabled';
+                    if (isAi) track.mode = 'disabled';
                 }
             } catch {}
         });
@@ -3156,6 +3160,15 @@ class VideoPlayer {
         this._aiWs = null;
         try { if (this._recorder && this._recorder.state !== 'inactive') this._recorder.stop(); } catch {}
         this._recorder = null;
+        try {
+            if (this._aiTrack) {
+                this._aiTrack.mode = 'disabled';
+                if (this._aiTrack.cues) {
+                    const cues = Array.from(this._aiTrack.cues);
+                    cues.forEach(c => { try { this._aiTrack.removeCue(c); } catch {} });
+                }
+            }
+        } catch {}
     }
 
     _ensureAiSubtitleTrack() {

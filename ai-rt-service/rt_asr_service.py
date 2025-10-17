@@ -74,6 +74,7 @@ async def handler(ws: WebSocketServerProtocol, path: str):
         return
 
     session = SessionState()
+    first_chunk_logged = False
     # 首次 ready 信号，前端据此展示“已就绪”提示
     try:
         await ws.send(json.dumps({ 'type': 'ready' }))
@@ -94,8 +95,12 @@ async def handler(ws: WebSocketServerProtocol, path: str):
                 if data.get('type') == 'hello':
                     session.video_url = str(data.get('videoUrl', '') or '')
                     session.is_hls = bool(data.get('isHLS', False))
-                    session.target_lang = str(data.get('targetLang', 'zh'))
+                    session.target_lang = str(data.get('TargetLang', data.get('targetLang', 'zh')))
                     session.preferred_src_lang = str(data.get('preferredSrcLang', 'auto'))
+                    try:
+                        print(f"[PY] hello: isHLS={session.is_hls} target={session.target_lang} src={session.preferred_src_lang} video={session.video_url}")
+                    except Exception:
+                        pass
                     # 在完整实现中，此处可初始化 FasterWhisper 模型与 DeepSeek 客户端
                     continue
                 elif data.get('type') == 'close':
@@ -109,14 +114,15 @@ async def handler(ws: WebSocketServerProtocol, path: str):
 
             # 二进制消息：前端的音频分片（WebM/Opus 或其他）
             if isinstance(message, (bytes, bytearray)):
-                # 占位：不做实际 ASR，直接回推提示文本
-                now = time.monotonic()
-                start = max(0.0, now - 1.0)
-                end = start + 2.0
+                if not first_chunk_logged:
+                    try:
+                        print(f"[PY] first audio chunk received, len={len(message)}")
+                    except Exception:
+                        pass
+                    first_chunk_logged = True
+                # 占位：不做实际 ASR，直接回推提示文本（不携带时间戳，前端使用当前播放时间）
                 resp = {
                     'type': 'partial',
-                    'start': float(start),
-                    'end': float(end),
                     'text_src': '…',
                     'text_opt': '…',
                     'text_trans': 'Python服务已接收音频分片，等待ASR/翻译实现'
