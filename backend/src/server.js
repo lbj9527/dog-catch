@@ -1347,6 +1347,14 @@ app.post('/api/user/login/password', requireCaptchaIfFlagged, loginRateLimit, as
         if (!email || !password) return res.status(400).json({ error: '缺少必要参数' });
         const user = await getAsync('SELECT * FROM users WHERE lower(email)=lower(?)', [email]);
         if (!user || !user.password_hash || !bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: '邮箱或密码错误' });
+        // 账号状态校验：封禁不可登录
+        const status = String(user.status || '').toLowerCase();
+        if (status === 'banned') {
+            return res.status(403).json({ error: '账户已封禁' });
+        }
+        if (status && status !== 'active') {
+            return res.status(403).json({ error: '用户状态不可用' });
+        }
         await runAsync('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
         const token = jwt.sign({ id: user.id, username: user.username, role: 'user', tv: Number(user.token_version||0), membership: (user.membership || 'free') }, JWT_SECRET, { expiresIn: '7d' });
         return res.json({ message:'登录成功', token, user: { id:user.id, username:user.username, email:user.email } });

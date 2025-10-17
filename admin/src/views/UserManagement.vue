@@ -33,6 +33,14 @@
 			<el-table :data="tableData" v-loading="loading" height="420" stripe>
 				<el-table-column prop="username" label="用户名" width="150" />
 				<el-table-column prop="email" label="邮箱" width="180" />
+				<!-- 新增：账户状态列 -->
+				<el-table-column prop="status" label="账户状态" width="120">
+					<template #default="scope">
+						<el-tag :type="scope.row.status === 'banned' ? 'danger' : 'success'" size="small">
+							{{ scope.row.status === 'banned' ? '已封禁' : '正常' }}
+						</el-tag>
+					</template>
+				</el-table-column>
 				<el-table-column prop="gender" label="性别" width="80">
 					<template #default="scope">
 						{{ scope.row.gender || '未设置' }}
