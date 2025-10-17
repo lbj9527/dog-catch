@@ -1343,10 +1343,20 @@ class VideoPlayer {
         if (subtitleSelectEl) {
             subtitleSelectEl.onchange = (e) => {
                 const videoId = e.target.value;
-                if (videoId) {
-                    // 允许所有用户选择任何字幕，权限控制在switchSubtitleVariant中处理
-                    this.switchSubtitleVariant(videoId);
+                if (!videoId) return;
+                // 新增：AI实时翻译模式（仅支持 m3u8/HLS 源）
+                if (videoId === '__AI_RT__') {
+                    const isHls = !!(this.currentVideoUrl && (this.currentVideoUrl.includes('.m3u8') || /#EXTM3U/i.test(this.currentVideoUrl)));
+                    if (!isHls) {
+                        this.showMessage('当前视频类型不支持AI实时翻译（仅限m3u8）', 'warning');
+                        e.target.value = '';
+                        return;
+                    }
+                    this.startAiRealtimeTranslation();
+                    return;
                 }
+                // 允许所有用户选择任何字幕，权限控制在 switchSubtitleVariant 中处理
+                this.switchSubtitleVariant(videoId);
             };
         }
         
@@ -2673,6 +2683,8 @@ class VideoPlayer {
             if (!resp.ok) {
                 // 回退为按当前 videoId 加载单一字幕
                 await this.loadSubtitleByVideoId(this.currentVideoId);
+                // 始终构建下拉框，提供“AI实时翻译”选项
+                this.buildSubtitleSelector(this.currentVideoId);
                 return;
             }
             const data = await resp.json();
@@ -2680,6 +2692,8 @@ class VideoPlayer {
             
             if (this.subtitleVariants.length === 0) {
                 await this.loadSubtitleByVideoId(this.currentVideoId);
+                // 始终构建下拉框，提供“AI实时翻译”选项
+                this.buildSubtitleSelector(this.currentVideoId);
                 return;
             }
             
@@ -2763,6 +2777,16 @@ class VideoPlayer {
         const select = document.getElementById('subtitleSelect');
         if (!select) return;
         select.innerHTML = '';
+        // 新增：AI实时翻译常驻选项（仅在 m3u8 源可用）
+        try {
+            const isHls = !!(this.currentVideoUrl && (this.currentVideoUrl.includes('.m3u8') || /#EXTM3U/i.test(this.currentVideoUrl)));
+            const aiOpt = document.createElement('option');
+            aiOpt.value = '__AI_RT__';
+            aiOpt.textContent = isHls ? 'AI实时翻译' : 'AI实时翻译（当前源不支持）';
+            aiOpt.title = '仅支持m3u8源，切换后将捕获音频进行云端实时翻译';
+            aiOpt.disabled = !isHls;
+            select.appendChild(aiOpt);
+        } catch {}
         this.subtitleVariants.forEach(v => {
             const option = document.createElement('option');
             option.value = v.video_id;
@@ -3019,6 +3043,8 @@ class VideoPlayer {
         // 关闭封禁事件订阅
         try { this.stopBanEventStream(); } catch {}
         try {
+            // 停止AI实时翻译，释放录制与连接
+            try { this.stopAiRealtimeTranslation && this.stopAiRealtimeTranslation(); } catch {}
             if (this.player && typeof this.player.destroy === 'function') {
                 this.player.destroy();
                 this.player = null;
@@ -3079,6 +3105,114 @@ class VideoPlayer {
             try { this.banEventSource.close(); } catch {}
             this.banEventSource = null;
         }
+    }
+    
+    // 新增：AI实时翻译 —— 前端音频采集 + WebSocket 管理 + 动态字幕轨道
+    startAiRealtimeTranslation() {
+        try { this.stopAiRealtimeTranslation(); } catch {}
+        this._ensureAiSubtitleTrack();
+        const base = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : (location.origin);
+        let wsUrl = base.replace(/^http/, 'ws');
+        wsUrl = wsUrl.replace(/\/$/, '') + '/ws/ai-translate';
+        this._aiWs = new WebSocket(wsUrl + `?isHls=1`);
+        this._aiWs.onopen = () => {
+            const hello = { type:'hello', videoUrl: this.currentVideoUrl, isHLS:true, targetLang:'zh', preferredSrcLang:'auto' };
+            try { this._aiWs.send(JSON.stringify(hello)); } catch {}
+            this._startMediaRecorderStream();
+            // 禁用点赞与观看数，仅AI字幕模式
+            try {
+                const likeBtn = document.getElementById('likeButton');
+                const likeCount = document.getElementById('likeCount');
+                if (likeBtn) { likeBtn.disabled = true; likeBtn.title = 'AI实时翻译模式下不可点赞'; }
+                if (likeCount) { likeCount.style.display = 'none'; likeCount.textContent = '0'; }
+            } catch {}
+        };
+        this._aiWs.onmessage = (ev) => {
+            try {
+                const msg = JSON.parse(ev.data);
+                if (msg.type === 'ready') {
+                    this.showMessage('AI实时翻译已就绪', 'info');
+                    setTimeout(() => this.clearMessage(), 1500);
+                } else if (msg.type === 'partial' || msg.type === 'final') {
+                    const text = String(msg.text_trans || msg.text_opt || msg.text_src || '').replace(/\\N/g, '\n').replace(/\\n/g, '\n');
+                    const start = Number(msg.start || this.player.video.currentTime);
+                    const end = Number(msg.end || (start + 2));
+                    this._addAiCue(start, end, text);
+                } else if (msg.type === 'error') {
+                    this.showMessage(msg.message || 'AI翻译错误', 'error');
+                }
+            } catch {}
+        };
+        this._aiWs.onerror = () => { this.showMessage('AI翻译连接异常', 'error'); };
+        this._aiWs.onclose = () => {
+            try { if (this._recorder && this._recorder.state !== 'inactive') this._recorder.stop(); } catch {}
+            this._recorder = null;
+        };
+    }
+
+    stopAiRealtimeTranslation() {
+        try { if (this._aiWs && this._aiWs.readyState === WebSocket.OPEN) this._aiWs.send(JSON.stringify({ type:'close' })); } catch {}
+        try { this._aiWs && this._aiWs.close(); } catch {}
+        this._aiWs = null;
+        try { if (this._recorder && this._recorder.state !== 'inactive') this._recorder.stop(); } catch {}
+        this._recorder = null;
+    }
+
+    _ensureAiSubtitleTrack() {
+        try { const trackEls = this.player.video.querySelectorAll('track'); trackEls.forEach(el => el.remove()); } catch {}
+        let aiTrack = null;
+        try { aiTrack = Array.from(this.player.video.textTracks || []).find(t => t.kind === 'subtitles' && t.label === 'AI实时翻译'); } catch {}
+        if (!aiTrack) {
+            try { aiTrack = this.player.video.addTextTrack('subtitles', 'AI实时翻译', 'zh-CN'); aiTrack.mode = 'showing'; } catch {}
+        } else { aiTrack.mode = 'showing'; }
+        this._aiTrack = aiTrack;
+    }
+
+    _addAiCue(start, end, text) {
+        try { if (!this._aiTrack) return; const cue = new VTTCue(start, end, text); this._aiTrack.addCue(cue); } catch (e) { console.warn('add AI cue failed', e && e.message); }
+    }
+
+    _startMediaRecorderStream() {
+        try {
+            const v = this.player && this.player.video;
+            if (!v) { this.showMessage('未找到视频元素，无法采集音频', 'warning'); return; }
+            // 优先使用 captureStream 并检查音轨
+            let stream = null;
+            try { if (typeof v.captureStream === 'function') stream = v.captureStream(); } catch {}
+            let audioTracks = stream ? stream.getAudioTracks() : [];
+            if (!audioTracks || audioTracks.length === 0) {
+                // 回退：使用 WebAudio API 采集（不依赖 captureStream 的音轨）
+                try {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    const source = ctx.createMediaElementSource(v);
+                    const dest = ctx.createMediaStreamDestination();
+                    source.connect(dest);
+                    source.connect(ctx.destination);
+                    stream = dest.stream;
+                    audioTracks = stream.getAudioTracks();
+                } catch (err) {
+                    console.warn('WebAudio 回退失败:', err && err.message);
+                }
+            }
+            if (!stream || !audioTracks || audioTracks.length === 0) {
+                this.showMessage('当前源无可用音轨，无法开启AI实时翻译', 'error');
+                return;
+            }
+            const audioStream = new MediaStream(audioTracks);
+            const options = { mimeType: 'audio/webm;codecs=opus' };
+            let recorder;
+            try { recorder = new MediaRecorder(audioStream, options); } catch { recorder = new MediaRecorder(audioStream); }
+            this._recorder = recorder;
+            recorder.ondataavailable = async (evt) => {
+                try {
+                    const blob = evt.data; if (!blob || !blob.size) return;
+                    const arr = await blob.arrayBuffer();
+                    if (this._aiWs && this._aiWs.readyState === WebSocket.OPEN) { this._aiWs.send(arr); }
+                } catch {}
+            };
+            // 某些浏览器需要在有数据流后再 start；增加一次性延迟
+            setTimeout(() => { try { recorder.start(1000); } catch (e) { console.warn('MediaRecorder start 失败:', e && e.message); this.showMessage('无法启动音频录制，请检查视频源或浏览器兼容性', 'error'); } }, 200);
+        } catch (e) { console.warn('startMediaRecorderStream error:', e && e.message); this.showMessage('音频采集失败：' + (e && e.message ? e.message : '未知错误'), 'error'); }
     }
     
     // 转换SRT为WebVTT格式

@@ -262,3 +262,4 @@ subtitlescript/progress.json
 subtitlescript/output/actor_*.csv
 subtitlescript/database/actresses.db-shm
 subtitlescript/database/actresses.db-wal
+ai-rt-service/venv/

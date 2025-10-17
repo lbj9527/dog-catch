@@ -20,6 +20,8 @@ const crypto = require('crypto');
 const Redis = require('ioredis');
 const geoip = require('geoip-lite');
 const axios = require('axios');
+const { WebSocketServer } = require('ws');
+const WebSocket = require('ws');
 
 // 图片上传数量限制常量
 const MAX_IMAGES = 5;
@@ -5894,8 +5896,93 @@ app.use((req, res) => {
     res.status(404).json({ error: '接口不存在' });
 });
 
-// 启动服务器
-app.listen(PORT, () => {
+// 启动服务器（改为使用 http.Server，便于挂载 WebSocket）
+const server = http.createServer(app);
+
+// WebSocket 网关：/ws/ai-translate
+const wss = new WebSocketServer({ noServer: true });
+server.on('upgrade', (req, socket, head) => {
+    let urlObj;
+    try { urlObj = new URL(req.url, `http://${req.headers.host}`); } catch { socket.destroy(); return; }
+    if (urlObj.pathname !== '/ws/ai-translate') { socket.destroy(); return; }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+    });
+});
+
+wss.on('connection', (ws, req) => {
+    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    let alive = true;
+    ws.on('pong', () => { alive = true; });
+    const heartbeat = setInterval(() => {
+        if (!alive) { try { ws.terminate(); } catch {} clearInterval(heartbeat); return; }
+        alive = false;
+        try { ws.ping(); } catch {}
+    }, 30000);
+
+    // 会话状态
+    const session = { videoUrl: '', isHLS: false, targetLang: 'zh', preferredSrcLang: 'auto' };
+
+    // 桥接到 Python 实时服务
+    const PY_AI_SERVICE_URL = process.env.PY_AI_SERVICE_URL || '';
+    let pyWs = null;
+    if (PY_AI_SERVICE_URL) {
+        try {
+            pyWs = new WebSocket(PY_AI_SERVICE_URL.replace(/\s+/g,'').trim());
+            pyWs.on('open', () => {
+                // 将会话元信息同步给 Python 服务
+                try { pyWs.send(JSON.stringify({ type:'hello', videoUrl: session.videoUrl, isHLS: session.isHLS, targetLang: session.targetLang, preferredSrcLang: session.preferredSrcLang })); } catch {}
+                try { ws.send(JSON.stringify({ type:'ready' })); } catch {}
+            });
+            pyWs.on('message', (buf, isBinary) => {
+                try {
+                    if (isBinary) return; // 仅转发文本消息
+                    const msg = JSON.parse(buf.toString('utf8'));
+                    // 透传 Python 返回的 partial/final/error
+                    ws.send(JSON.stringify(msg));
+                } catch {}
+            });
+            pyWs.on('error', () => { try { ws.send(JSON.stringify({ type:'error', code:'PY_CONN', message:'Python服务连接失败' })); } catch {} });
+            pyWs.on('close', () => { try { ws.send(JSON.stringify({ type:'error', code:'PY_CLOSED', message:'Python服务已关闭' })); } catch {} });
+        } catch (e) {
+            try { ws.send(JSON.stringify({ type:'error', code:'PY_INIT', message:'Python服务初始化失败' })); } catch {}
+        }
+    } else {
+        try { ws.send(JSON.stringify({ type:'ready' })); } catch {}
+    }
+
+    ws.on('message', async (data, isBinary) => {
+        try {
+            if (isBinary) {
+                // 音频分片：直接转发给 Python 服务
+                if (pyWs && pyWs.readyState === WebSocket.OPEN) {
+                    try { pyWs.send(data); } catch {}
+                }
+                return;
+            }
+            const text = data.toString('utf8');
+            const j = JSON.parse(text);
+            if (j && j.type === 'hello') {
+                session.videoUrl = String(j.videoUrl || '');
+                session.isHLS = !!j.isHLS;
+                session.targetLang = String(j.targetLang || 'zh');
+                session.preferredSrcLang = String(j.preferredSrcLang || 'auto');
+                if (pyWs && pyWs.readyState === WebSocket.OPEN) {
+                    try { pyWs.send(JSON.stringify(j)); } catch {}
+                }
+                return;
+            }
+            if (j && j.type === 'close') {
+                try { ws.close(); } catch {}
+                try { pyWs && pyWs.close(); } catch {}
+                return;
+            }
+        } catch {}
+    });
+    ws.on('close', () => { try { clearInterval(heartbeat); } catch {} });
+});
+
+server.listen(PORT, () => {
     console.log(`🚀 后端服务器启动成功`);
     console.log(`📡 服务地址: http://localhost:${PORT}`);
     console.log(`🔑 默认管理员账号: admin / admin123`);

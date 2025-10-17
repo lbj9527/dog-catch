@@ -17,6 +17,7 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $BackendDir  = Join-Path $Root 'backend'
 $FrontendDir = Join-Path $Root 'frontend'
 $AdminDir    = Join-Path $Root 'admin'
+$AiSvcDir    = Join-Path $Root 'ai-rt-service'
 $SecretsDir  = Join-Path $PSScriptRoot '.secrets'
 $PidsDir     = Join-Path $PSScriptRoot '.pids'
 
@@ -24,6 +25,7 @@ $PidsDir     = Join-Path $PSScriptRoot '.pids'
 $BackendPidFile  = Join-Path $PidsDir 'backend.pid'
 $FrontendPidFile = Join-Path $PidsDir 'frontend.pid'
 $AdminPidFile    = Join-Path $PidsDir 'admin.pid'
+$AiSvcPidFile    = Join-Path $PidsDir 'ai-rt-service.pid'
 
 function Ensure-Dirs {
   foreach ($d in @($SecretsDir, $PidsDir)) { if (!(Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null } }
@@ -82,10 +84,27 @@ function Wait-Port {
   return $false
 }
 
+function Get-FreePort {
+  param([int]$StartPort = 9001, [int]$MaxTry = 50)
+  for ($p = $StartPort; $p -lt ($StartPort + $MaxTry); $p++) {
+    $inUse = Test-NetConnection -ComputerName 'localhost' -Port $p -InformationLevel Quiet
+    if (-not $inUse) { return $p }
+  }
+  return $StartPort
+}
+
 function Start-Backend {
   Ensure-NodeModules $BackendDir
   $secret = Get-Or-Create-JwtSecret
   $cors = 'http://localhost:3000,http://localhost:3001,http://localhost:5173'
+  # 读取本地 DeepSeek 配置（可选）
+  $deepseekKeyFile = Join-Path $SecretsDir 'DEEPSEEK_API_KEY.txt'
+  $deepseekEndpointFile = Join-Path $SecretsDir 'DEEPSEEK_ENDPOINT.txt'
+  $deepseekModelFile = Join-Path $SecretsDir 'DEEPSEEK_MODEL.txt'
+  $deepseekKey = (Test-Path $deepseekKeyFile) ? (Get-Content -Raw -Path $deepseekKeyFile).Trim() : ''
+  $deepseekEndpoint = (Test-Path $deepseekEndpointFile) ? (Get-Content -Raw -Path $deepseekEndpointFile).Trim() : ''
+  $deepseekModel = (Test-Path $deepseekModelFile) ? (Get-Content -Raw -Path $deepseekModelFile).Trim() : ''
+
   $cmd = @"
 cd "$BackendDir"
 `$env:PORT='8000'
@@ -94,6 +113,11 @@ cd "$BackendDir"
 `$env:CAPTCHA_PROVIDER='hcaptcha'
 `$env:CAPTCHA_SITE_KEY='10000000-ffff-ffff-ffff-000000000001'
 `$env:CAPTCHA_SECRET_KEY='0x0000000000000000000000000000000000000000'
+`$env:PY_AI_SERVICE_URL='${global:PY_AI_SERVICE_URL -replace "\"", "" }'
+if (-not `$env:PY_AI_SERVICE_URL -or `$env:PY_AI_SERVICE_URL.Trim() -eq '') { `$env:PY_AI_SERVICE_URL='ws://127.0.0.1:9001/stream' }
+`$env:DEEPSEEK_API_KEY='$deepseekKey'
+`$env:DEEPSEEK_ENDPOINT='$deepseekEndpoint'
+`$env:DEEPSEEK_MODEL='$deepseekModel'
 npm run dev
 "@
   Write-Log 'Starting backend (http://localhost:8000) ...'
@@ -138,8 +162,26 @@ npm run dev
   if (Wait-Port -Port 3001 -TimeoutSec 20) { Write-Log 'Admin ready: http://localhost:3001' } else { Write-Log 'Note: 3001 not open within timeout; it may still be starting.' }
 }
 
+function Start-AiService {
+  # 使用 ai-rt-service 目录启动 Python 微服务
+  $freePort = Get-FreePort -StartPort 9001 -MaxTry 50
+  $cmd = @"
+cd "$AiSvcDir"
+# 激活 venv（如果存在）
+if (Test-Path (Join-Path "$AiSvcDir" 'venv\Scripts\Activate.ps1')) { . "$AiSvcDir\venv\Scripts\Activate.ps1" }
+`$env:PY_AI_PORT='$freePort'
+python rt_asr_service.py
+"@
+  Write-Log "Starting Python AI RT service (ws://127.0.0.1:$freePort/stream) ..."
+  $proc = Start-Process -FilePath 'powershell' -ArgumentList '-NoExit','-Command', $cmd -WorkingDirectory $AiSvcDir -PassThru
+  Save-Pid -procId $proc.Id -file $AiSvcPidFile
+  # 导出后端桥接 URL 到本 shell，供后续 Start-Backend 使用
+  $global:PY_AI_SERVICE_URL = "ws://127.0.0.1:$freePort/stream"
+  if (Wait-Port -Port $freePort -TimeoutSec 20) { Write-Log "AI RT service ready: ws://127.0.0.1:$freePort/stream" } else { Write-Log "Note: $freePort not open within timeout; it may still be starting." }
+}
+
 function Stop-All {
-  foreach ($f in @($BackendPidFile,$FrontendPidFile,$AdminPidFile)) {
+  foreach ($f in @($BackendPidFile,$FrontendPidFile,$AdminPidFile,$AiSvcPidFile)) {
     $procId = Read-Pid $f
     if ($null -ne $procId -and (Is-Process-Running $procId)) {
       Write-Log "Stopping PID=$procId ($f) ..."
@@ -173,6 +215,7 @@ switch ($action) {
   'stop-all'       { Stop-All }
   'status'         { Show-Status }
   'start-all'      {
+    Start-AiService
     Start-Backend
     Start-Frontend
     Start-Admin
