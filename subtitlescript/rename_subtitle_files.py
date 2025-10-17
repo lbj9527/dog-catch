@@ -151,6 +151,17 @@ def extract_video_id(filename):
     if m:
         return f"CARIB-{m.group(1)}_{m.group(2)}"
     
+    # 新增：FC2PPV 特殊处理
+    # A. FC2PPV-880231_1 -> FC2-PPV-880231(1)
+    m = re.search(r'fc2\s*ppv[-_](\d+)_(\d{1,3})$', base, re.IGNORECASE)
+    if m:
+        return f"FC2-PPV-{m.group(1)}({m.group(2)})"
+    
+    # B. fc2-ppv-2712268 / FC2PPV-2712268 -> FC2-PPV-2712268
+    m = re.search(r'fc2[-_]?ppv[-_](\d+)$', base, re.IGNORECASE)
+    if m:
+        return f"FC2-PPV-{m.group(1)}"
+    
     # 26. 处理下划线格式，如 NIMA_027 -> NIMA-027
     m = re.search(r'([a-z]+)_(\d{2,5})', base, re.IGNORECASE)
     if m:
@@ -179,17 +190,25 @@ def extract_video_id(filename):
                     bracket_suf = re.search(r'([A-Z])(?=[\(（])', base_upper)
                     if bracket_suf:
                         suf = bracket_suf.group(1)
-        return f"{prefix}-{num}{suf or ''}".upper()
+        # 新增：将数字段统一补齐为三位（如 NUKA-30 -> NUKA-030，NUKA-3 -> NUKA-003）
+        num_padded = num.zfill(3) if num.isdigit() and len(num) < 3 else num
+        return f"{prefix}-{num_padded}{suf or ''}".upper()
     
     # 29. 其次：无连字符的字母+数字，如 NAKA008 -> NAKA-008，支持紧随其后的单字母后缀，如 NAKA008B
     m = re.search(r'([a-z]+)(\d{2,5})([a-z])?', base, re.IGNORECASE)
     if m:
-        return f"{m.group(1)}-{m.group(2)}{m.group(3) or ''}".upper()
+        letters, num, suf = m.group(1), m.group(2), m.group(3) or ''
+        # 新增：将数字段统一补齐为三位
+        num_padded = num.zfill(3) if num.isdigit() and len(num) < 3 else num
+        return f"{letters}-{num_padded}{suf}".upper()
     
     # 30. 字母+空格+数字，如 ABP 744 -> ABP-744，支持紧随其后的单字母后缀，如 ABP 744B
     m = re.search(r'([a-z]+)\s+(\d{2,5})([a-z])?', base, re.IGNORECASE)
     if m:
-        return f"{m.group(1)}-{m.group(2)}{m.group(3) or ''}".upper()
+        letters, num, suf = m.group(1), m.group(2), m.group(3) or ''
+        # 新增：将数字段统一补齐为三位
+        num_padded = num.zfill(3) if num.isdigit() and len(num) < 3 else num
+        return f"{letters}-{num_padded}{suf}".upper()
     
     return None
 
@@ -252,8 +271,11 @@ def rename_files_in_directory(directory, dry_run=False):
             dir_used_names[parent_dir] = set(existing_names)
         used_set = dir_used_names[parent_dir]
         
-        # 构建新文件名
-        new_filename = f"{video_id}{file_path.suffix}"
+        # 构建新文件名（保留原文件名末尾的(数字)复制后缀，如 (2)）
+        base_no_ext = re.sub(r'\.[^/.]+$', '', file_path.name)
+        copy_suffix_match = re.search(r'\((\d{1,3})\)$', base_no_ext)
+        copy_suffix = f"({copy_suffix_match.group(1)})" if copy_suffix_match else ""
+        new_filename = f"{video_id}{copy_suffix}{file_path.suffix}"
         new_file_path = file_path.parent / new_filename
         
         # 检查是否需要重命名
@@ -266,7 +288,7 @@ def rename_files_in_directory(directory, dry_run=False):
         # 检查目标文件是否已存在，或本批次已占用；若冲突则添加序号
         if (new_file_path.exists() and new_file_path != file_path) or (new_filename in used_set):
             counter = 2
-            base_name = video_id
+            base_name = f"{video_id}{copy_suffix}"
             extension = file_path.suffix
             found_unique = False
             
