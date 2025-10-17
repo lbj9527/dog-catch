@@ -3083,14 +3083,22 @@ class VideoPlayer {
     
     // 转换SRT为WebVTT格式
     convertSRTtoVTT(srtContent) {
-        if (srtContent.startsWith('WEBVTT')) {
-            return srtContent; // 已经是VTT格式
+        // 规范换行并将字幕中的 \\N/\\n 标记转换为实际换行
+        let content = srtContent
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n')
+            .replace(/\\N/g, '\n')
+            .replace(/\\n/g, '\n');
+        
+        if (content.startsWith('WEBVTT')) {
+            // 已经是VTT格式，也返回处理过换行的内容
+            return content;
         }
         
         let vtt = 'WEBVTT\n\n';
         
         // 简单的SRT到VTT转换
-        const lines = srtContent.split('\n');
+        const lines = content.split('\n');
         let inSubtitle = false;
         
         for (let line of lines) {
@@ -3108,7 +3116,7 @@ class VideoPlayer {
                 vtt += '\n';
                 inSubtitle = false;
             } else if (line !== '' && inSubtitle) {
-                // 字幕文本
+                // 字幕文本（其中可能包含已被替换为真实换行的片段）
                 vtt += line + '\n';
             }
         }
