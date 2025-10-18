@@ -263,3 +263,7 @@ subtitlescript/output/actor_*.csv
 subtitlescript/database/actresses.db-shm
 subtitlescript/database/actresses.db-wal
 ai-rt-service/venv/
+ai-rt-service/models/
+ai-rt-service/.hf
+ai-rt-service/small.pt
+

@@ -1,7 +1,13 @@
 [CmdletBinding()]
 param(
-  [ValidateSet("start-all","start-backend","start-frontend","start-admin","stop-all","status")] [string]$action = "start-all",
-  [switch]$Open
+  [ValidateSet("start-all","start-backend","start-frontend","start-admin","start-ai","stop-all","status")] [string]$action = "start-all",
+  [switch]$Open,
+  # 新增：是否启用代理（socks5）
+  [switch]$Proxy,
+  # 新增：代理地址（可选，默认 socks5h://127.0.0.1:7890）
+  [string]$ProxyUrl,
+  # 新增：为 AI RT 服务注入 INSECURE=1 以禁用 TLS 校验
+  [switch]$Insecure
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,6 +32,8 @@ $BackendPidFile  = Join-Path $PidsDir 'backend.pid'
 $FrontendPidFile = Join-Path $PidsDir 'frontend.pid'
 $AdminPidFile    = Join-Path $PidsDir 'admin.pid'
 $AiSvcPidFile    = Join-Path $PidsDir 'ai-rt-service.pid'
+# 新增：WLK 服务器 PID 文件
+$WlkPidFile      = Join-Path $PidsDir 'wlk.pid'
 
 function Ensure-Dirs {
   foreach ($d in @($SecretsDir, $PidsDir)) { if (!(Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null } }
@@ -168,11 +176,24 @@ npm run dev
 function Start-AiService {
   # 使用 ai-rt-service 目录启动 Python 微服务
   $freePort = Get-FreePort -StartPort 9001 -MaxTry 50
+  # 可选：为 Python 微服务注入代理（socks5）
+  $proxyUrl = if ($Proxy -and $ProxyUrl -and $ProxyUrl.Trim().Length -gt 0) { $ProxyUrl.Trim() } elseif ($Proxy) { 'socks5h://127.0.0.1:7890' } else { '' }
+  $proxyLines = if ($Proxy -and $proxyUrl) { "`$env:HTTP_PROXY='$proxyUrl'`n`$env:HTTPS_PROXY='$proxyUrl'`n`$env:ALL_PROXY='$proxyUrl'" } else { "" }
+  # 新增：根据 -Insecure 注入环境变量，禁用 TLS 验证
+  $insecureLine = if ($Insecure) { "`$env:INSECURE='1'" } else { "" }
   $cmd = @"
 cd "$AiSvcDir"
+$proxyLines
+$insecureLine
 # 激活 venv（如果存在）
 if (Test-Path (Join-Path "$AiSvcDir" 'venv\Scripts\Activate.ps1')) { . "$AiSvcDir\venv\Scripts\Activate.ps1" }
 `$env:PY_AI_PORT='$freePort'
+# 持久化微服务 WS 路径
+`$env:PY_AI_WS_PATH='/stream'
+# 持久化 WLK 连接参数到微服务环境
+`$env:WLK_HOST='127.0.0.1'
+`$env:WLK_PORT='9002'
+`$env:WLK_WS_PATH='/asr'
 python rt_asr_service.py
 "@
   Write-Log "Starting Python AI RT service (ws://127.0.0.1:$freePort/stream) ..."
@@ -183,8 +204,59 @@ python rt_asr_service.py
   if (Wait-Port -Port $freePort -TimeoutSec 20) { Write-Log "AI RT service ready: ws://127.0.0.1:$freePort/stream" } else { Write-Log "Note: $freePort not open within timeout; it may still be starting." }
 }
 
+# 新增：启动 WhisperLiveKit 服务，标准化到 9002 端口
+function Start-WLKService {
+  $wlkPort = 9002
+  # 单实例守护：如果已有运行实例或端口已被占用，则跳过启动
+  $existingPid = Read-Pid $WlkPidFile
+  if ($null -ne $existingPid -and (Is-Process-Running $existingPid)) {
+    Write-Log "WLK already running (PID=$existingPid): ws://127.0.0.1:$wlkPort/asr"
+    return
+  }
+  if (Wait-Port -Port $wlkPort -TimeoutSec 1) {
+    Write-Log "WLK port $wlkPort already open; skip starting a new instance."
+    return
+  }
+  $ptPath = Join-Path $AiSvcDir 'small.pt'
+  $hfHome = Join-Path $AiSvcDir '.hf'
+  $hfCache = Join-Path $AiSvcDir '.hf\\cache'
+  # 可选：为 WLK 注入代理（socks5），用于首次下载模型或依赖
+  $proxyUrl = if ($Proxy -and $ProxyUrl -and $ProxyUrl.Trim().Length -gt 0) { $ProxyUrl.Trim() } elseif ($Proxy) { 'socks5h://127.0.0.1:7890' } else { '' }
+  $proxyLines = if ($Proxy -and $proxyUrl) { "`$env:HTTP_PROXY='$proxyUrl'`n`$env:HTTPS_PROXY='$proxyUrl'`n`$env:ALL_PROXY='$proxyUrl'" } else { "" }
+  $cmd = @"
+$proxyLines
+# 设置 Hugging Face 缓存到项目内，避免重复下载
+`$env:HF_HOME='$hfHome'
+`$env:HF_CACHE_DIR='$hfCache'
+`$env:HF_ENDPOINT='https://hf-mirror.com'
+# 统一 Torch 与 Transformers 缓存路径到 .hf\cache
+`$env:TORCH_HOME='$hfCache'
+`$env:TRANSFORMERS_CACHE='$hfCache'
+# 激活 venv（如果存在）
+if (Test-Path (Join-Path "$AiSvcDir" 'venv\Scripts\Activate.ps1')) { . "$AiSvcDir\venv\Scripts\Activate.ps1" }
+# 启动 WLK：优先使用本地 .pt；若不存在则回退为 --model small
+if (Test-Path '$ptPath') {
+  if (Get-Command whisperlivekit-server -ErrorAction SilentlyContinue) {
+    whisperlivekit-server --host 127.0.0.1 --port $wlkPort --language ja --backend faster-whisper --model-path "$ptPath"
+  } else {
+    python -m whisperlivekit.server --host 127.0.0.1 --port $wlkPort --language ja --backend faster-whisper --model-path "$ptPath"
+  }
+} else {
+  if (Get-Command whisperlivekit-server -ErrorAction SilentlyContinue) {
+    whisperlivekit-server --host 127.0.0.1 --port $wlkPort --language ja --backend faster-whisper --model small
+  } else {
+    python -m whisperlivekit.server --host 127.0.0.1 --port $wlkPort --language ja --backend faster-whisper --model small
+  }
+}
+"@
+  Write-Log "Starting WLK (ws://127.0.0.1:$wlkPort/asr) ..."
+  $proc = Start-Process -FilePath 'powershell' -ArgumentList '-NoExit','-Command', $cmd -WorkingDirectory $AiSvcDir -PassThru
+  Save-Pid -procId $proc.Id -file $WlkPidFile
+  if (Wait-Port -Port $wlkPort -TimeoutSec 30) { Write-Log "WLK ready: ws://127.0.0.1:$wlkPort/asr" } else { Write-Log 'Note: 9002 not open within timeout; it may still be starting.' }
+}
+
 function Stop-All {
-  foreach ($f in @($BackendPidFile,$FrontendPidFile,$AdminPidFile,$AiSvcPidFile)) {
+  foreach ($f in @($BackendPidFile,$FrontendPidFile,$AdminPidFile,$AiSvcPidFile,$WlkPidFile)) {
     $procId = Read-Pid $f
     if ($null -ne $procId -and (Is-Process-Running $procId)) {
       Write-Log "Stopping PID=$procId ($f) ..."
@@ -198,7 +270,8 @@ function Show-Status {
   $items = @(
     @{ Name='Backend';  File=$BackendPidFile;  Port=8000; Url='http://localhost:8000' },
     @{ Name='Frontend'; File=$FrontendPidFile; Port=5173; Url='http://localhost:5173/?api=http://localhost:8000' },
-    @{ Name='Admin';    File=$AdminPidFile;    Port=3001; Url='http://localhost:3001' }
+    @{ Name='Admin';    File=$AdminPidFile;    Port=3001; Url='http://localhost:3001' },
+    @{ Name='WLK';      File=$WlkPidFile;      Port=9002; Url='ws://127.0.0.1:9002/asr' }
   )
   foreach ($it in $items) {
     $procId = Read-Pid $it.File
@@ -215,19 +288,20 @@ switch ($action) {
   'start-backend'  { Start-Backend; if ($Open) { Start-Process 'http://localhost:8000' } }
   'start-frontend' { Start-Frontend; if ($Open) { Start-Process 'http://localhost:5173/?api=http://localhost:8000' } }
   'start-admin'    { Start-Admin;    if ($Open) { Start-Process 'http://localhost:3001' } }
+  'start-ai'       { Start-AiService }
   'stop-all'       { Stop-All }
   'status'         { Show-Status }
   'start-all'      {
+    Start-WLKService
     Start-AiService
     Start-Backend
     Start-Frontend
     Start-Admin
     if ($Open) {
       Start-Sleep -Seconds 1
-      #Start-Process 'http://localhost:5173/?api=http://localhost:8000'  # 由 userscript 触发
       Start-Process 'http://localhost:3001'
     }
     Show-Status
   }
-  default { Write-Host 'Usage: .\dev.ps1 [start-all|start-backend|start-frontend|start-admin|stop-all|status] [-Open]' }
+  default { Write-Host 'Usage: .\dev.ps1 [start-all|start-backend|start-frontend|start-admin|start-ai|stop-all|status] [-Open] [-Proxy] [-ProxyUrl <socks5-url>] [-Insecure]' }
 }

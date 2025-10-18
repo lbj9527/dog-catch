@@ -2960,20 +2960,28 @@ class VideoPlayer {
     addSubtitleTrack() {
         if (!this.player || !this.subtitleUrl) return;
 
-        // 先移除所有已有字幕轨道，避免重复和旧源残留
+        // 保留 AI 实时翻译轨道（若正在运行），避免被误禁用
+        const aiActive = !!(this._aiWs && this._aiWs.readyState === WebSocket.OPEN);
+
+        // 先移除所有已有字幕轨道元素，避免重复和旧源残留；同时仅在非 AI 模式下禁用所有文本轨道
         try {
             const existing = Array.from(this.player.video.textTracks);
             existing.forEach(t => {
                 if (t.kind === 'subtitles') {
-                    t.mode = 'disabled';
+                    // AI 实时翻译轨道在运行时保持显示，其它轨道禁用
+                    if (aiActive && t.label === 'AI实时翻译') {
+                        t.mode = 'showing';
+                    } else {
+                        t.mode = 'disabled';
+                    }
                 }
             });
-            // 移除所有 track 元素
+            // 移除所有 <track> 元素（不影响通过 addTextTrack 创建的 AI 轨道）
             const trackElements = this.player.video.querySelectorAll('track');
             trackElements.forEach(el => el.remove());
         } catch {}
 
-        // 添加新的字幕轨道
+        // 添加新的字幕轨道（常规“中文字幕”）
         const trackEl = document.createElement('track');
         trackEl.kind = 'subtitles';
         trackEl.src = this.subtitleUrl;
@@ -2982,17 +2990,22 @@ class VideoPlayer {
         trackEl.default = true;
         this.player.video.appendChild(trackEl);
 
-        // 显示字幕
+        // 设置显示策略：AI 模式下仅显示 AI 轨道；非 AI 模式显示当前“中文字幕”
         trackEl.addEventListener('load', () => {
             try {
                 const tracks = this.player.video.textTracks;
-                // 仅显示刚加载的字幕轨道，禁用其它（包括 AI 实时翻译轨道）
+                const aiActiveNow = !!(this._aiWs && this._aiWs.readyState === WebSocket.OPEN);
                 for (let i = 0; i < tracks.length; i++) {
                     const track = tracks[i];
                     const isAi = (track.label === 'AI实时翻译');
-                    const isCurrent = (trackEl.track && track === trackEl.track) || (track.label === '中文字幕');
-                    track.mode = isCurrent ? 'showing' : 'disabled';
-                    if (isAi) track.mode = 'disabled';
+                    if (aiActiveNow) {
+                        // AI 模式：仅显示 AI 轨道，禁用其它轨道（包括刚加载的“中文字幕”）
+                        track.mode = isAi ? 'showing' : 'disabled';
+                    } else {
+                        // 非 AI 模式：仅显示当前“中文字幕”轨道，禁用其它轨道
+                        const isCurrent = (trackEl.track && track === trackEl.track) || (track.label === '中文字幕');
+                        track.mode = isCurrent ? 'showing' : 'disabled';
+                    }
                 }
             } catch {}
         });
@@ -3118,9 +3131,13 @@ class VideoPlayer {
         const base = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : (location.origin);
         let wsUrl = base.replace(/^http/, 'ws');
         wsUrl = wsUrl.replace(/\/$/, '') + '/ws/ai-translate';
-        this._aiWs = new WebSocket(wsUrl + `?isHls=1`);
+        this._aiWs = new WebSocket(wsUrl + `?isHls=0`);
         this._aiWs.onopen = () => {
-            const hello = { type:'hello', videoUrl: this.currentVideoUrl, isHLS:true, targetLang:'zh', preferredSrcLang:'auto' };
+            // 初始化时间偏移与去重集合
+            this._aiTimeOffset = 0;
+            this._aiTimeOffsetCalibrated = false;
+            this._aiCueKeys = new Set();
+            const hello = { type:'hello', videoUrl: this.currentVideoUrl, isHLS:false, targetLang:'zh', preferredSrcLang:'auto' };
             try { this._aiWs.send(JSON.stringify(hello)); } catch {}
             this._startMediaRecorderStream();
             // 禁用点赞与观看数，仅AI字幕模式
@@ -3134,14 +3151,37 @@ class VideoPlayer {
         this._aiWs.onmessage = (ev) => {
             try {
                 const msg = JSON.parse(ev.data);
+                const _txt = String(msg.text_trans || msg.text_opt || msg.text_src || '');
+                console.debug('[AI-WS] onmessage', msg.type, 'text_len=', _txt.length, msg);
                 if (msg.type === 'ready') {
                     this.showMessage('AI实时翻译已就绪', 'info');
                     setTimeout(() => this.clearMessage(), 1500);
-                } else if (msg.type === 'partial' || msg.type === 'final') {
-                    const text = String(msg.text_trans || msg.text_opt || msg.text_src || '').replace(/\\N/g, '\n').replace(/\\n/g, '\n');
-                    const start = Number(msg.start || this.player.video.currentTime);
-                    const end = Number(msg.end || (start + 2));
-                    this._addAiCue(start, end, text);
+                } else if (msg.type === 'partial') {
+                    // 仅预览气泡，不入轨
+                    const previewText = _txt.replace(/\\N/g, '\n').replace(/\\n/g, '\n');
+                    this._showAiPreviewBubble(previewText);
+                } else if (msg.type === 'final') {
+                    const text = _txt.replace(/\\N/g, '\n').replace(/\\n/g, '\n');
+                    let start = Number(msg.start);
+                    let end = Number(msg.end);
+                    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+                        start = this.player.video.currentTime;
+                        end = start + Math.max(1.5, Math.min(5, Math.ceil(text.length / 12)));
+                    }
+                    // 首次校准时间偏移
+                    if (!this._aiTimeOffsetCalibrated) {
+                        this._aiTimeOffset = this.player.video.currentTime - start;
+                        this._aiTimeOffsetCalibrated = true;
+                    }
+                    const adjStart = Math.max(0, start + this._aiTimeOffset);
+                    const adjEnd = Math.max(adjStart + 0.2, end + this._aiTimeOffset);
+                    const key = `${text}|${adjStart.toFixed(2)}|${adjEnd.toFixed(2)}`;
+                    if (!this._aiCueKeys.has(key)) {
+                        this._aiCueKeys.add(key);
+                        this._addAiCue(adjStart, adjEnd, text);
+                    }
+                    // 移除预览气泡
+                    this._hideAiPreviewBubble();
                 } else if (msg.type === 'error') {
                     this.showMessage(msg.message || 'AI翻译错误', 'error');
                 }
@@ -3151,6 +3191,7 @@ class VideoPlayer {
         this._aiWs.onclose = () => {
             try { if (this._recorder && this._recorder.state !== 'inactive') this._recorder.stop(); } catch {}
             this._recorder = null;
+            this._hideAiPreviewBubble();
         };
     }
 
@@ -3183,6 +3224,43 @@ class VideoPlayer {
 
     _addAiCue(start, end, text) {
         try { if (!this._aiTrack) return; const cue = new VTTCue(start, end, text); this._aiTrack.addCue(cue); } catch (e) { console.warn('add AI cue failed', e && e.message); }
+    }
+
+    _showAiPreviewBubble(text) {
+        try {
+            if (!text) { this._hideAiPreviewBubble(); return; }
+            let el = this._aiPreviewEl;
+            if (!el) {
+                el = document.createElement('div');
+                el.className = 'ai-preview-bubble';
+                el.style.position = 'absolute';
+                el.style.left = '50%';
+                el.style.bottom = '15%';
+                el.style.transform = 'translateX(-50%)';
+                el.style.maxWidth = '80%';
+                el.style.background = 'rgba(0,0,0,0.6)';
+                el.style.color = '#fff';
+                el.style.fontSize = '16px';
+                el.style.lineHeight = '1.4';
+                el.style.borderRadius = '8px';
+                el.style.padding = '8px 12px';
+                el.style.zIndex = '1000';
+                el.style.whiteSpace = 'pre-wrap';
+                const stage = document.querySelector('.stage') || this.player.container || document.body;
+                stage.appendChild(el);
+                this._aiPreviewEl = el;
+            }
+            el.textContent = text;
+        } catch {}
+    }
+
+    _hideAiPreviewBubble() {
+        try {
+            if (this._aiPreviewEl && this._aiPreviewEl.parentNode) {
+                this._aiPreviewEl.parentNode.removeChild(this._aiPreviewEl);
+            }
+            this._aiPreviewEl = null;
+        } catch {}
     }
 
     _startMediaRecorderStream() {
@@ -3219,12 +3297,13 @@ class VideoPlayer {
             recorder.ondataavailable = async (evt) => {
                 try {
                     const blob = evt.data; if (!blob || !blob.size) return;
+                    console.debug('[AI-REC] chunk size', blob.size);
                     const arr = await blob.arrayBuffer();
                     if (this._aiWs && this._aiWs.readyState === WebSocket.OPEN) { this._aiWs.send(arr); }
                 } catch {}
             };
             // 某些浏览器需要在有数据流后再 start；增加一次性延迟
-            setTimeout(() => { try { recorder.start(1000); } catch (e) { console.warn('MediaRecorder start 失败:', e && e.message); this.showMessage('无法启动音频录制，请检查视频源或浏览器兼容性', 'error'); } }, 200);
+            setTimeout(() => { try { recorder.start(1500); console.debug('[AI-REC] recorder.start(1500)'); } catch (e) { console.warn('MediaRecorder start 失败:', e && e.message); this.showMessage('无法启动音频录制，请检查视频源或浏览器兼容性', 'error'); } }, 200);
         } catch (e) { console.warn('startMediaRecorderStream error:', e && e.message); this.showMessage('音频采集失败：' + (e && e.message ? e.message : '未知错误'), 'error'); }
     }
     
